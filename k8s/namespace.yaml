@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: csv-to-yaml
+  labels:
+    name: csv-to-yaml
+    app.kubernetes.io/name: csv-to-yaml
+    app.kubernetes.io/instance: csv-to-yaml
+    # Add any other labels you want to apply to the namespace

@@ -1,0 +1,16 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: csv-to-yaml-pdb
+  namespace: default
+  labels:
+    app: csv-to-yaml
+    app.kubernetes.io/name: csv-to-yaml
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 1  # At least 1 pod should always be available
+  selector:
+    matchLabels:
+      app: csv-to-yaml
+  # Alternatively, you can use maxUnavailable instead of minAvailable
+  # maxUnavailable: 1  # Maximum 1 pod can be unavailable during disruption

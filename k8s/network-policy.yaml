@@ -1,0 +1,60 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: csv-to-yaml-network-policy
+  namespace: default
+  labels:
+    app: csv-to-yaml
+    app.kubernetes.io/name: csv-to-yaml
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: csv-to-yaml
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  # Allow ingress traffic from the ingress controller
+  ingress:
+  - from:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: nginx-ingress
+          app.kubernetes.io/component: controller
+    ports:
+    - protocol: TCP
+      port: 5000
+  
+  # Allow egress traffic to necessary services
+  egress:
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow egress to the internet (adjust as needed)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  # Allow all egress within the cluster (adjust as needed)
+  - to:
+    - namespaceSelector: {}
+      podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 1-65535
