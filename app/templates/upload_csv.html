@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>Step 3: Upload CSV Data File</h2>
+    <form method="post" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="csv_file">Select CSV file</label>
+            <input type="file" class="form-control-file" id="csv_file" name="csv_file" accept=".csv" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Next</button>
+    </form>
+{% endblock %}

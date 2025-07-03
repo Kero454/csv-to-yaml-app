@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>Processing Complete!</h2>
+    <p>Your files have been uploaded and the experiment configuration has been created successfully.</p>
+    <a href="{{ url_for('routes.list_files') }}" class="btn btn-info">View All Files</a>
+    <a href="{{ url_for('routes.experiment') }}" class="btn btn-primary">Start Another Experiment</a>
+{% endblock %}

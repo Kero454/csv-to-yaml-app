@@ -1,44 +1,38 @@
 import os
-from flask import Flask, jsonify, request
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_login import LoginManager
+from config import Config
 
-def create_app(test_config=None):
-    """Create and configure an instance of the Flask application."""
-    app = Flask(__name__, instance_relative_config=True, template_folder='../templates')
+db = SQLAlchemy()
+migrate = Migrate()
+login = LoginManager()
+login.login_view = 'auth.login'
+login.login_message = 'Please log in to access this page.'
 
-    # --- Configuration ---
-    app.config.from_mapping(
-        SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
-        UPLOAD_FOLDER=os.environ.get('UPLOAD_FOLDER', os.path.join(app.instance_path, 'uploads')),
-        MAX_CONTENT_LENGTH=16 * 1024 * 1024  # 16 MB
-    )
+def create_app(config_class=Config):
+    app = Flask(__name__, instance_relative_config=True)
+    app.config.from_object(config_class)
 
-    if test_config is None:
-        # load the instance config, if it exists, when not testing
-        app.config.from_pyfile('config.py', silent=True)
-    else:
-        # load the test config if passed in
-        app.config.update(test_config)
-
-    # --- Ensure the instance folder exists ---
+    # Ensure the instance folder exists
     try:
         os.makedirs(app.instance_path)
     except OSError:
         pass
-    
-    # --- Ensure the upload folder exists ---
-    try:
-        os.makedirs(app.config['UPLOAD_FOLDER'])
-    except OSError:
-        pass
 
-    # --- Register Blueprints ---
-    from . import routes
-    app.register_blueprint(routes.web)
+    db.init_app(app)
+    migrate.init_app(app, db)
+    login.init_app(app)
 
-    # --- Health Check ---
-    @app.route('/health')
-    def health_check():
-        return jsonify({'status': 'healthy'}), 200
+    # Register blueprints
+    from app.routes import web as routes_blueprint
+    app.register_blueprint(routes_blueprint)
 
-    print("App created successfully")
+    from app.auth import auth_bp as auth_blueprint
+    app.register_blueprint(auth_blueprint, url_prefix='/auth')
+
+    from . import models
+
     return app
+

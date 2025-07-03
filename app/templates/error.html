@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>An unexpected error has occurred</h1>
+    <p>The administrator has been notified. Sorry for the inconvenience!</p>
+    <p><b>Error Code:</b> {{ code }}</p>
+    <p><b>Details:</b> {{ error }}</p>
+    {% if message %}
+        <pre>{{ message }}</pre>
+    {% endif %}
+    <p><a href="{{ url_for('routes.index') }}">Back</a></p>
+{% endblock %}

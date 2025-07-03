@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Hi, {{ current_user.username }}!</h1>
+    <p>Welcome to the CSV-to-YAML application.</p>
+    <p>Click <a href="{{ url_for('routes.experiment') }}">here to start a new experiment</a>.</p>
+{% endblock %}

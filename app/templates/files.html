@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>Uploaded Files</h2>
+    {% if files_by_user %}
+        {% for user, files in files_by_user.items() %}
+            <h3>User: {{ user }}</h3>
+            <ul class="list-group mb-4">
+                {% for file in files %}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('routes.serve_upload', filepath=file) }}">{{ file }}</a>
+                    </li>
+                {% else %}
+                    <li class="list-group-item">No files found for this user.</li>
+                {% endfor %}
+            </ul>
+        {% endfor %}
+    {% else %}
+        <p>No files have been uploaded yet.</p>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Hi, {{ current_user.username if current_user.is_authenticated else 'Guest' }}!</h1>
+    {% if current_user.is_authenticated %}
+        <p>You are logged in.</p>
+        <p><a href="{{ url_for('routes.experiment') }}">Start a new experiment</a></p>
+        <p><a href="{{ url_for('routes.list_files') }}">View your uploaded files</a></p>
+    {% else %}
+        <p>Please <a href="{{ url_for('auth.login') }}">login</a> to continue.</p>
+    {% endif %}
+{% endblock %}
