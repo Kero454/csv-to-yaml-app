@@ -2,63 +2,13 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: csv-to-yaml-ingress
+  namespace: csv-to-yaml
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
-    # Security headers
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      more_set_headers "X-Content-Type-Options: nosniff";
-      more_set_headers "X-Frame-Options: DENY";
-      more_set_headers "X-XSS-Protection: 1; mode=block";
-      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
-    # Enable CORS
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
-    # Rate limiting
-    nginx.ingress.kubernetes.io/limit-connections: "100"
-    nginx.ingress.kubernetes.io/limit-rps: "100"
-    # SSL/TLS
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    # Timeouts
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
     nginx.ingress.kubernetes.io/proxy-body-size: "16m"
-    # Enable gzip
-    nginx.ingress.kubernetes.io/enable-http2: "true"
-    nginx.ingress.kubernetes.io/enable-gzip: "true"
-    nginx.ingress.kubernetes.io/gzip-types: "application/javascript application/json application/vnd.api+json application/xml application/xhtml+xml application/x-font-ttf font/opentype image/svg+xml text/css text/plain text/xml"
-    # Session affinity
-    nginx.ingress.kubernetes.io/affinity: "cookie"
-    nginx.ingress.kubernetes.io/session-cookie-name: "route"
-    nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
-    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
-    # HSTS (uncomment in production with valid SSL)
-    # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-    # nginx.ingress.kubernetes.io/hsts: "true"
-    # nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
-    # nginx.ingress.kubernetes.io/hsts-include-subdomains: "true"
-    # nginx.ingress.kubernetes.io/hsts-preload: "true"
 spec:
-  # Uncomment and configure your domain in production
-  # tls:
-  # - hosts:
-  #   - csv-to-yaml.yourdomain.com
-  #   secretName: csv-to-yaml-tls
   rules:
-  # Uncomment and configure your domain in production
-  # - host: csv-to-yaml.yourdomain.com
-  #   http:
-  #     paths:
-  #     - path: /
-  #       pathType: Prefix
-  #       backend:
-  #         service:
-  #           name: csv-to-yaml-service
-  #           port:
-  #             number: 80
   - http:
       paths:
       - path: /

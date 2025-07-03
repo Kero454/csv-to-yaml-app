@@ -2,17 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: csv-to-yaml-app
+  namespace: csv-to-yaml
   labels:
     app: csv-to-yaml
-    app.kubernetes.io/name: csv-to-yaml
-    app.kubernetes.io/component: backend
 spec:
-  replicas: 2
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+  replicas: 1
   selector:
     matchLabels:
       app: csv-to-yaml
@@ -20,53 +14,27 @@ spec:
     metadata:
       labels:
         app: csv-to-yaml
-        app.kubernetes.io/name: csv-to-yaml
-        app.kubernetes.io/component: backend
     spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 2000
       containers:
       - name: csv-to-yaml
-        image: csv-to-yaml-app:latest
-        imagePullPolicy: IfNotPresent
+        image: kerollosadel/csv-to-yaml-app:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 5000
-          name: http
-          protocol: TCP
-        env:
-        - name: FLASK_ENV
-          value: "production"
-        - name: UPLOAD_FOLDER
-          value: "/app/Users"
-        - name: MAX_CONTENT_LENGTH
-          value: "16777216"  # 16MB
         resources:
           requests:
             cpu: "100m"
-            memory: "256Mi"
+            memory: "128Mi"
           limits:
             cpu: "500m"
-            memory: "512Mi"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 5
-          periodSeconds: 5
+            memory: "256Mi"
+        env:
+        - name: UPLOAD_FOLDER
+          value: /uploads
         volumeMounts:
-        - name: users-storage
-          mountPath: /app/Users
-          subPath: users
+        - name: uploads
+          mountPath: /uploads
       volumes:
-      - name: users-storage
+      - name: uploads
         persistentVolumeClaim:
-          claimName: csv-to-yaml-users-pvc
+          claimName: csv-to-yaml-pvc

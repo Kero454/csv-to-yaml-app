@@ -1,56 +1,44 @@
-"""
-CSV to YAML Converter Application Package
-
-This package contains the core functionality for the CSV to YAML Converter.
-"""
-
 import os
-from flask import Flask
-from werkzeug.middleware.proxy_fix import ProxyFix
+from flask import Flask, jsonify, request
 
-def create_app(config=None):
-    """Create and configure the Flask application."""
-    app = Flask(__name__)
+def create_app(test_config=None):
+    """Create and configure an instance of the Flask application."""
+    app = Flask(__name__, instance_relative_config=True, template_folder='../templates')
+
+    # --- Configuration ---
+    app.config.from_mapping(
+        SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
+        UPLOAD_FOLDER=os.environ.get('UPLOAD_FOLDER', os.path.join(app.instance_path, 'uploads')),
+        MAX_CONTENT_LENGTH=16 * 1024 * 1024  # 16 MB
+    )
+
+    if test_config is None:
+        # load the instance config, if it exists, when not testing
+        app.config.from_pyfile('config.py', silent=True)
+    else:
+        # load the test config if passed in
+        app.config.update(test_config)
+
+    # --- Ensure the instance folder exists ---
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
     
-    # Load default configuration
-    app.config.from_object('config.DefaultConfig')
-    
-    # Load environment-specific configuration
-    env = os.environ.get('FLASK_ENV', 'development')
-    if env == 'production':
-        app.config.from_object('config.ProductionConfig')
-    elif env == 'testing':
-        app.config.from_object('config.TestingConfig')
-    
-    # Load any additional configuration passed in
-    if config is not None:
-        app.config.update(config)
-    
-    # Ensure upload folder exists
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    
-    # Configure logging
-    from app.utils.logging import configure_logging
-    configure_logging(app)
-    
-    # Register blueprints and extensions
-    register_blueprints(app)
-    register_extensions(app)
-    
-    # Add middleware
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-    
+    # --- Ensure the upload folder exists ---
+    try:
+        os.makedirs(app.config['UPLOAD_FOLDER'])
+    except OSError:
+        pass
+
+    # --- Register Blueprints ---
+    from . import routes
+    app.register_blueprint(routes.web)
+
+    # --- Health Check ---
+    @app.route('/health')
+    def health_check():
+        return jsonify({'status': 'healthy'}), 200
+
+    print("App created successfully")
     return app
-
-def register_blueprints(app):
-    """Register Flask blueprints."""
-    # Import blueprints here to avoid circular imports
-    from app.api.v1 import api_bp as api_v1_bp
-    
-    # Register API v1 blueprint
-    app.register_blueprint(api_v1_bp, url_prefix='/api/v1')
-
-def register_extensions(app):
-    """Register Flask extensions."""
-    # Initialize extensions here
-    pass

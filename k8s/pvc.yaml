@@ -1,26 +1,14 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: csv-to-yaml-users-pvc
-  namespace: default
-  labels:
-    app: csv-to-yaml
-    app.kubernetes.io/name: csv-to-yaml
-    app.kubernetes.io/component: storage
-  annotations:
-    # For cloud providers, you might want to specify a storage class
-    # volume.beta.kubernetes.io/storage-class: "standard"
-    # For AWS EBS, you might want to specify the volume type
-    # volume.beta.kubernetes.io/aws-ebs-volume-type: "gp3"
+  name: csv-to-yaml-pvc
+  namespace: csv-to-yaml
 spec:
   accessModes:
-    - ReadWriteMany  # Changed from ReadWriteOnce to support multiple pods if needed
+  - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi  # Increased from 1Gi to 10Gi
-  # Uncomment and configure the storage class name if you're using a specific storage class
+      storage: 1Gi
+  # If your cluster has a default StorageClass, you can omit the storageClassName.
+  # Uncomment and set if you need a specific class.
   # storageClassName: standard
-  # volumeMode: Filesystem
-  # selector:
-  #   matchLabels:
-  #     app: csv-to-yaml-storage

@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+    <title>Uploaded Files</title>
+</head>
+<body>
+    <h1>Uploaded Files</h1>
+    <p><a href="{{ url_for('web.index') }}">Back to Start</a></p>
+    <hr>
+    {% if files_by_user %}
+        {% for user, files in files_by_user.items() %}
+            <h2>User: {{ user }}</h2>
+            {% if files %}
+                <ul>
+                {% for file_path in files %}
+                    <li><a href="{{ url_for('web.serve_upload', filepath=file_path) }}" target="_blank">{{ file_path }}</a></li>
+                {% endfor %}
+                </ul>
+            {% else %}
+                <p>No files found for this user.</p>
+            {% endif %}
+        {% endfor %}
+    {% else %}
+        <p>No files have been uploaded yet.</p>
+    {% endif %}
+</body>
+</html>
