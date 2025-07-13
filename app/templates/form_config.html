@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/form_config.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">{{ experiment_name }} Configuration</h2>
+        <a href="{{ url_for('routes.upload_config') }}" class="btn btn-outline-secondary btn-sm">Back to Options</a>
+    </div>
+    
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <!-- Progress indicator -->
+            <div class="progress mb-4" style="height: 8px;">
+                <div id="form-progress" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+            </div>
+            <p id="step-indicator" class="text-center text-muted mb-4">Step 1 of 5</p>
+            
+            <!-- Form begins -->
+            <form id="config-form" action="{{ url_for('routes.save_form_config') }}" method="post">
+                <input type="hidden" name="yaml_data" id="yaml-data">
+                
+                <!-- Step 1: Experiment Information -->
+                <div class="form-step" data-step="1">
+                    <h3 class="card-title mb-4">Experiment Information</h3>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-name" class="form-label">Experiment Name</label>
+                        <input type="text" class="form-control" id="experiment-name" name="experiment-name" value="{{ experiment_name }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-creator" class="form-label">Created By</label>
+                        <input type="text" class="form-control" id="experiment-creator" name="experiment-creator" value="{{ username }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-date" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="experiment-date" name="experiment-date" value="{{ current_date }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="experiment-description" name="experiment-description" rows="3" placeholder="Enter a description of the experiment"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="data-path" class="form-label">Data Path</label>
+                        <input type="text" class="form-control" id="data-path" name="data-path" placeholder="/path/to/data">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="data-dataset" class="form-label">Dataset</label>
+                        <select class="form-select" id="data-dataset" name="data-dataset">
+                            <option value="" selected>Select a dataset</option>
+                            <option value="electricity">electricity</option>
+                            <option value="traffic">traffic</option>
+                            <option value="weather">weather</option>
+                            <option value="etth1">etth1</option>
+                            <option value="etth2">etth2</option>
+                            <option value="ettm1">ettm1</option>
+                            <option value="ettm2">ettm2</option>
+                            <option value="exchange_rate">exchange_rate</option>
+                            <option value="illness">illness</option>
+                        </select>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end mt-4">
+                        <button type="button" class="btn btn-primary next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 2: Model Configuration -->
+                <div class="form-step" data-step="2" style="display: none;">
+                    <h3 class="card-title mb-4">Model Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="model-past-steps" class="form-label">Past Steps</label>
+                        <input type="number" class="form-control" id="model-past-steps" name="model-past-steps" value="96">
+                        <small class="form-text text-muted">Number of past time steps to consider.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="model-future-steps" class="form-label">Future Steps</label>
+                        <input type="number" class="form-control" id="model-future-steps" name="model-future-steps" value="96">
+                        <small class="form-text text-muted">Number of future time steps to predict.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="model-hidden-size" class="form-label">Hidden Size</label>
+                        <input type="number" class="form-control" id="model-hidden-size" name="model-hidden-size" value="128">
+                        <small class="form-text text-muted">Size of hidden dimensions in the model.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="model-dropout" class="form-label">Dropout Rate</label>
+                        <input type="number" class="form-control" id="model-dropout" name="model-dropout" value="0.1" step="0.1" min="0" max="1">
+                        <small class="form-text text-muted">Dropout probability (0-1).</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="model-kind" class="form-label">Model Type</label>
+                        <select class="form-select" id="model-kind" name="model-kind">
+                            <option value="transformer" selected>transformer</option>
+                            <option value="informer">informer</option>
+                            <option value="performer">performer</option>
+                            <option value="linearformer">linearformer</option>
+                        </select>
+                        <small class="form-text text-muted">Type of model architecture to use.</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-primary next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 3: Training Configuration -->
+                <div class="form-step" data-step="3" style="display: none;">
+                    <h3 class="card-title mb-4">Training Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="optimizer-type" class="form-label">Optimizer</label>
+                        <select class="form-select" id="optimizer-type" name="optimizer-type">
+                            <option value="Adam" selected>Adam</option>
+                            <option value="SGD">SGD</option>
+                            <option value="RMSprop">RMSprop</option>
+                            <option value="AdamW">AdamW</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="learning-rate" class="form-label">Learning Rate</label>
+                        <input type="number" class="form-control" id="learning-rate" name="learning-rate" value="0.001" step="0.0001">
+                        <small class="form-text text-muted">Initial learning rate for training.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="batch-size" class="form-label">Batch Size</label>
+                        <input type="number" class="form-control" id="batch-size" name="batch-size" value="32">
+                        <small class="form-text text-muted">Number of samples per batch.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="max-epochs" class="form-label">Maximum Epochs</label>
+                        <input type="number" class="form-control" id="max-epochs" name="max-epochs" value="100">
+                        <small class="form-text text-muted">Maximum number of training epochs.</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="auto-lr-find" name="auto-lr-find" checked>
+                        <label class="form-check-label" for="auto-lr-find">Auto Learning Rate Find</label>
+                        <small class="d-block form-text text-muted">Automatically find optimal learning rate.</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-primary next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 4: Data Split Configuration -->
+                <div class="form-step" data-step="4" style="display: none;">
+                    <h3 class="card-title mb-4">Data Split Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="split-method" class="form-label">Split Method</label>
+                        <select class="form-select" id="split-method" name="split-method">
+                            <option value="chronological" selected>chronological</option>
+                            <option value="random">random</option>
+                        </select>
+                        <small class="form-text text-muted">Method to split training, validation and test sets.</small>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label for="split-train" class="form-label">Train %</label>
+                            <input type="number" class="form-control" id="split-train" name="split-train" value="70" min="10" max="90">
+                        </div>
+                        <div class="col">
+                            <label for="split-val" class="form-label">Validation %</label>
+                            <input type="number" class="form-control" id="split-val" name="split-val" value="10" min="0" max="40">
+                        </div>
+                        <div class="col">
+                            <label for="split-test" class="form-label">Test %</label>
+                            <input type="number" class="form-control" id="split-test" name="split-test" value="20" min="0" max="40">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="test-start-date" class="form-label">Test Start Date (optional)</label>
+                        <input type="date" class="form-control" id="test-start-date" name="test-start-date">
+                        <small class="form-text text-muted">Optional start date for test set when using chronological splitting.</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-primary next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 5: Inference Configuration -->
+                <div class="form-step" data-step="5" style="display: none;">
+                    <h3 class="card-title mb-4">Inference Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="inference-set" class="form-label">Inference Set</label>
+                        <select class="form-select" id="inference-set" name="inference-set">
+                            <option value="test" selected>test</option>
+                            <option value="validation">validation</option>
+                            <option value="train">train</option>
+                        </select>
+                        <small class="form-text text-muted">Dataset to use for inference.</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="load-last" name="load-last" checked>
+                        <label class="form-check-label" for="load-last">Load Last Checkpoint</label>
+                        <small class="d-block form-text text-muted">If unchecked, the best checkpoint will be loaded.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quantiles" class="form-label">Quantiles (comma-separated)</label>
+                        <input type="text" class="form-control" id="quantiles" name="quantiles" value="0.1, 0.5, 0.9">
+                        <small class="form-text text-muted">Quantiles to predict (between 0 and 1).</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-primary" id="preview-btn">Preview Configuration</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- YAML Preview Modal -->
+<div class="modal fade" id="yaml-preview-modal" tabindex="-1" aria-labelledby="yaml-preview-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="yaml-preview-modal-label">Configuration Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="yaml-preview" class="bg-light p-3 rounded" style="max-height: 400px; overflow-y: auto;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Edit</button>
+                <button type="button" class="btn btn-primary" id="submit-config">Save & Continue</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Step navigation
+        let currentStep = 1;
+        const totalSteps = document.querySelectorAll('.form-step').length;
+        
+        function updateProgress() {
+            const progressPercent = ((currentStep - 1) / (totalSteps - 1)) * 100;
+            document.getElementById('form-progress').style.width = `${progressPercent}%`;
+            document.getElementById('step-indicator').textContent = `Step ${currentStep} of ${totalSteps}`;
+        }
+        
+        function showStep(stepNumber) {
+            document.querySelectorAll('.form-step').forEach(step => {
+                step.style.display = 'none';
+            });
+            document.querySelector(`.form-step[data-step="${stepNumber}"]`).style.display = 'block';
+            currentStep = stepNumber;
+            updateProgress();
+        }
+        
+        // Next step buttons
+        document.querySelectorAll('.next-step').forEach(button => {
+            button.addEventListener('click', function() {
+                if (currentStep < totalSteps) {
+                    showStep(currentStep + 1);
+                }
+            });
+        });
+        
+        // Previous step buttons
+        document.querySelectorAll('.prev-step').forEach(button => {
+            button.addEventListener('click', function() {
+                if (currentStep > 1) {
+                    showStep(currentStep - 1);
+                }
+            });
+        });
+        
+        // Preview configuration button
+        document.getElementById('preview-btn').addEventListener('click', function() {
+            // Collect form data and convert to YAML
+            const configData = collectFormData();
+            
+            // Create YAML string (using a simple representation for now)
+            let yamlString = generateYaml(configData);
+            
+            // Display in modal
+            document.getElementById('yaml-preview').textContent = yamlString;
+            document.getElementById('yaml-data').value = yamlString;
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('yaml-preview-modal'));
+            modal.show();
+        });
+        
+        // Submit configuration button
+        document.getElementById('submit-config').addEventListener('click', function() {
+            document.getElementById('config-form').submit();
+        });
+        
+        // Function to collect form data
+        function collectFormData() {
+            return {
+                experiment: {
+                    name: document.getElementById('experiment-name').value,
+                    creator: document.getElementById('experiment-creator').value,
+                    date: document.getElementById('experiment-date').value,
+                    description: document.getElementById('experiment-description').value || '',
+                    data: {
+                        path: document.getElementById('data-path').value || '',
+                        dataset: document.getElementById('data-dataset').value || ''
+                    }
+                },
+                model: {
+                    past_steps: parseInt(document.getElementById('model-past-steps').value || 96),
+                    future_steps: parseInt(document.getElementById('model-future-steps').value || 96),
+                    hidden_size: parseInt(document.getElementById('model-hidden-size').value || 128),
+                    dropout: parseFloat(document.getElementById('model-dropout').value || 0.1),
+                    kind: document.getElementById('model-kind').value || 'transformer'
+                },
+                training: {
+                    optimizer: {
+                        type: document.getElementById('optimizer-type').value || 'Adam',
+                        learning_rate: parseFloat(document.getElementById('learning-rate').value || 0.001),
+                    },
+                    batch_size: parseInt(document.getElementById('batch-size').value || 32),
+                    max_epochs: parseInt(document.getElementById('max-epochs').value || 100),
+                    auto_lr_find: document.getElementById('auto-lr-find').checked
+                },
+                split: {
+                    method: document.getElementById('split-method').value || 'chronological',
+                    train: parseInt(document.getElementById('split-train').value || 70),
+                    validation: parseInt(document.getElementById('split-val').value || 10),
+                    test: parseInt(document.getElementById('split-test').value || 20),
+                    test_start_date: document.getElementById('test-start-date').value || null
+                },
+                inference: {
+                    set: document.getElementById('inference-set').value || 'test',
+                    load_last: document.getElementById('load-last').checked,
+                    quantiles: document.getElementById('quantiles').value.split(',').map(q => parseFloat(q.trim()))
+                }
+            };
+        }
+        
+        // Simple YAML generation function
+        function generateYaml(obj, indent = 0) {
+            let yamlStr = '';
+            const spacing = ' '.repeat(indent * 2);
+            
+            for (const key in obj) {
+                const value = obj[key];
+                if (value === null || value === undefined) continue;
+                
+                if (typeof value === 'object' && !Array.isArray(value)) {
+                    yamlStr += `${spacing}${key}:\n${generateYaml(value, indent + 1)}`;
+                } else if (Array.isArray(value)) {
+                    yamlStr += `${spacing}${key}:\n`;
+                    value.forEach(item => {
+                        yamlStr += `${spacing}  - ${item}\n`;
+                    });
+                } else {
+                    yamlStr += `${spacing}${key}: ${value}\n`;
+                }
+            }
+            
+            return yamlStr;
+        }
+        
+        // Initialize the form
+        updateProgress();
+    });
+</script>
+{% endblock %}

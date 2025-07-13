@@ -1,0 +1,112 @@
+/* Google Form style CSS for the multi-step configuration form */
+
+.form-step {
+  animation: fadeIn 0.5s;
+}
+
+.card {
+  border-radius: 8px;
+  border: none;
+}
+
+.card-body {
+  padding: 2rem;
+}
+
+.progress {
+  background-color: #e0e0e0;
+  border-radius: 20px;
+}
+
+.progress-bar {
+  border-radius: 20px;
+  transition: width 0.3s ease;
+}
+
+.form-control, .form-select {
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  padding: 10px 15px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.25);
+}
+
+.form-label {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.form-text {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.btn-primary {
+  background-color: #4285f4;
+  border-color: #4285f4;
+  border-radius: 4px;
+  padding: 8px 20px;
+  transition: background-color 0.2s;
+}
+
+.btn-primary:hover, .btn-primary:focus {
+  background-color: #3367d6;
+  border-color: #3367d6;
+}
+
+.btn-outline-secondary {
+  color: #5f6368;
+  border-color: #dadce0;
+  border-radius: 4px;
+  padding: 8px 20px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.btn-outline-secondary:hover, .btn-outline-secondary:focus {
+  color: #202124;
+  border-color: #dadce0;
+  background-color: #f1f3f4;
+}
+
+/* Step indicator styling */
+#step-indicator {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #5f6368;
+}
+
+/* Card title styling */
+.card-title {
+  color: #202124;
+  border-bottom: 1px solid #f1f1f1;
+  padding-bottom: 0.75rem;
+}
+
+/* Animation for step transitions */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal styling */
+#yaml-preview {
+  font-family: monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Form check styling */
+.form-check-input:checked {
+  background-color: #4285f4;
+  border-color: #4285f4;
+}
+
+/* Make sure split inputs add up to 100% */
+input[type=number] {
+  text-align: center;
+}

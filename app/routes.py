@@ -265,34 +265,76 @@ def health_check():
 
 @web.route('/ready')
 def readiness_check():
-    """Readiness check for Kubernetes."""
-    db_status = 'ok'
-    fs_status = 'ok'
+    """Kubernetes readiness probe endpoint."""
     try:
-        db.session.execute('SELECT 1')
+        # Check if all essential directories exist
+        for directory in [current_app.config['UPLOAD_FOLDER'], 
+                           os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')]:
+            if not os.path.exists(directory):
+                return Response("Storage not ready: Missing directory: {}".format(directory), status=503)
+        
+        # Check if we can write to the upload directory
+        test_file = os.path.join(current_app.config['UPLOAD_FOLDER'], '.readiness_check')
+        try:
+            with open(test_file, 'w') as f:
+                f.write('readiness_check')
+            os.remove(test_file)
+        except Exception as e:
+            return Response("Storage not ready: Write test failed: {}".format(str(e)), status=503)
+        
+        # Check database connectivity
+        try:
+            db.session.execute("SELECT 1")
+        except Exception as e:
+            return Response("Database not ready: {}".format(str(e)), status=503)
+        
+        return Response("OK", status=200)
     except Exception as e:
-        current_app.logger.error(f'Database readiness check failed: {str(e)}')
-        db_status = 'error'
+        return Response("Readiness check failed: {}".format(str(e)), status=503)
 
+@web.route('/config_form', methods=['GET'])
+@login_required
+def config_form():
+    """Display the Google Form-style configuration editor."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    # Generate a template if none exists in the session
+    if 'config_data' not in session:
+        config_data = generate_config_template(session['experiment_name'])
+        session['config_data'] = config_data
+        config_yaml = yaml.dump(config_data, default_flow_style=False)
+        session['config_bytes'] = config_yaml.encode('utf-8')
+        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+    
+    current_date_str = datetime.now().strftime('%Y-%m-%d')
+    return render_template('form_config.html', experiment_name=session['experiment_name'], 
+                           username=current_user.username, current_date=current_date_str)
+
+@web.route('/save_form_config', methods=['POST'])
+@login_required
+def save_form_config():
+    """Save the configuration from the Google Form-style editor."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+        
+    yaml_data = request.form.get('yaml_data')
+    if not yaml_data:
+        flash('No configuration data received.')
+        return redirect(url_for('routes.config_form'))
+    
     try:
-        test_file = os.path.join(current_app.config['UPLOAD_FOLDER'], '.readycheck')
-        with open(test_file, 'w') as f:
-            f.write('readycheck')
-        os.remove(test_file)
-    except Exception as e:
-        current_app.logger.error(f'Filesystem readiness check failed: {str(e)}')
-        fs_status = 'error'
-
-    if db_status == 'ok' and fs_status == 'ok':
-        return jsonify({'status': 'ready'}), 200
-    else:
-        return jsonify({
-            'status': 'not ready',
-            'services': {
-                'database': db_status,
-                'filesystem': fs_status
-            }
-        }), 503
+        # Parse the YAML to validate it
+        config_data = yaml.safe_load(yaml_data)
+        session['config_data'] = config_data
+        session['config_bytes'] = yaml_data.encode('utf-8')
+        flash('Configuration saved successfully!')
+        return redirect(url_for('routes.upload_csv'))
+    except yaml.YAMLError as e:
+        flash(f'Invalid YAML format: {str(e)}')
+        return redirect(url_for('routes.config_form'))
 
 # Error handlers
 @web.errorhandler(404)
