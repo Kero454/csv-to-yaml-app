@@ -2,6 +2,8 @@
 
 {% block content %}
     <h2>Step 2: Configuration File</h2>
+    
+    <!-- Upload Option -->
     <div class="card mb-4">
         <div class="card-header bg-primary text-white">
             <h5 class="mb-0">Option 1: Upload Configuration File</h5>
@@ -17,26 +19,46 @@
         </div>
     </div>
     
-    <div class="card mb-4">
-        <div class="card-header bg-success text-white">
-            <h5 class="mb-0">Option 2: Generate Template</h5>
+    <!-- Template and Basic Form Options -->
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Option 2: Generate Template</h5>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <p>Don't have a configuration file? Generate a template that you can edit.</p>
+                    <form method="post" class="mt-auto">
+                        <input type="hidden" name="generate_template" value="true">
+                        <button type="submit" class="btn btn-success">Generate Template</button>
+                    </form>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
-            <p>Don't have a configuration file? Generate a template that you can edit.</p>
-            <form method="post">
-                <input type="hidden" name="generate_template" value="true">
-                <button type="submit" class="btn btn-success">Generate Template</button>
-            </form>
+        
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Option 3: Basic Form Editor</h5>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <p>Create your configuration using a simple step-by-step form interface.</p>
+                    <div class="mt-auto">
+                        <a href="{{ url_for('routes.config_form') }}" class="btn btn-info">Open Basic Editor</a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-
-    <div class="card">
-        <div class="card-header bg-info text-white">
-            <h5 class="mb-0">Option 3: Google Form-Style Editor</h5>
+    
+    <!-- Advanced Form Option -->
+    <div class="card mb-4">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0">Option 4: Advanced Configuration Editor</h5>
         </div>
         <div class="card-body">
-            <p>Create your configuration using an intuitive, step-by-step form interface.</p>
-            <a href="{{ url_for('routes.config_form') }}" class="btn btn-info">Open Form Editor</a>
+            <p>Use a comprehensive multi-step form with advanced model configuration options, including scheduler settings, optimization parameters, and detailed model configurations.</p>
+            <a href="{{ url_for('routes.advanced_config_form') }}" class="btn btn-warning">Open Advanced Editor</a>
         </div>
     </div>
 {% endblock %}

@@ -312,10 +312,32 @@ def config_form():
     return render_template('form_config.html', experiment_name=session['experiment_name'], 
                            username=current_user.username, current_date=current_date_str)
 
+@web.route('/advanced_config_form', methods=['GET'])
+@login_required
+def advanced_config_form():
+    """Display the advanced Google Form-style configuration editor."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    # Generate or use existing config data
+    if 'config_data' not in session:
+        config_data = generate_config_template(session['experiment_name'])
+        session['config_data'] = config_data
+        config_yaml = yaml.dump(config_data, default_flow_style=False)
+        session['config_bytes'] = config_yaml.encode('utf-8')
+        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+    
+    current_date_str = datetime.now().strftime('%Y-%m-%d')
+    return render_template('advanced_form_config.html', 
+                           experiment_name=session['experiment_name'], 
+                           username=current_user.username, 
+                           current_date=current_date_str)
+
 @web.route('/save_form_config', methods=['POST'])
 @login_required
 def save_form_config():
-    """Save the configuration from the Google Form-style editor."""
+    """Save the configuration from the basic Google Form-style editor."""
     if 'experiment_name' not in session:
         flash('Experiment session expired. Please start again.')
         return redirect(url_for('routes.experiment'))
@@ -335,6 +357,30 @@ def save_form_config():
     except yaml.YAMLError as e:
         flash(f'Invalid YAML format: {str(e)}')
         return redirect(url_for('routes.config_form'))
+        
+@web.route('/save_advanced_form_config', methods=['POST'])
+@login_required
+def save_advanced_form_config():
+    """Save the configuration from the advanced Google Form-style editor."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+        
+    yaml_data = request.form.get('yaml_data')
+    if not yaml_data:
+        flash('No configuration data received.')
+        return redirect(url_for('routes.advanced_config_form'))
+    
+    try:
+        # Parse the YAML to validate it
+        config_data = yaml.safe_load(yaml_data)
+        session['config_data'] = config_data
+        session['config_bytes'] = yaml_data.encode('utf-8')
+        flash('Advanced configuration saved successfully!')
+        return redirect(url_for('routes.upload_csv'))
+    except yaml.YAMLError as e:
+        flash(f'Invalid YAML format: {str(e)}')
+        return redirect(url_for('routes.advanced_config_form'))
 
 # Error handlers
 @web.errorhandler(404)

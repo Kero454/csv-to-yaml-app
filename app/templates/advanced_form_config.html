@@ -1,0 +1,1046 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/form_config.css') }}">
+<style>
+    .section-title {
+        color: #4285f4;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        font-size: 1.2rem;
+    }
+    .nested-section {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
+    }
+    .form-section {
+        padding-bottom: 1.5rem;
+    }
+    .tooltip-icon {
+        color: #5f6368;
+        cursor: help;
+    }
+    .code-field {
+        font-family: monospace;
+        font-size: 0.9rem;
+    }
+    .tab-content {
+        padding-top: 1.5rem;
+    }
+    .nav-tabs .nav-link {
+        color: #5f6368;
+    }
+    .nav-tabs .nav-link.active {
+        color: #4285f4;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Advanced Configuration: {{ experiment_name }}</h2>
+        <a href="{{ url_for('routes.upload_config') }}" class="btn btn-outline-secondary btn-sm">Back to Options</a>
+    </div>
+    
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <!-- Progress indicator -->
+            <div class="progress mb-4" style="height: 8px;">
+                <div id="form-progress" class="progress-bar bg-warning" role="progressbar" style="width: 0%"></div>
+            </div>
+            <p id="step-indicator" class="text-center text-muted mb-4">Step 1 of 8</p>
+            
+            <!-- Form begins -->
+            <form id="config-form" action="{{ url_for('routes.save_advanced_form_config') }}" method="post">
+                <input type="hidden" name="yaml_data" id="yaml-data">
+                
+                <!-- Step 1: Basic Experiment Information -->
+                <div class="form-step" data-step="1">
+                    <h3 class="card-title mb-4">Experiment Information</h3>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-name" class="form-label">Experiment Name</label>
+                        <input type="text" class="form-control" id="experiment-name" name="experiment-name" value="{{ experiment_name }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-creator" class="form-label">Created By</label>
+                        <input type="text" class="form-control" id="experiment-creator" name="experiment-creator" value="{{ username }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-date" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="experiment-date" name="experiment-date" value="{{ current_date }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="experiment-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="experiment-description" name="experiment-description" rows="3" placeholder="Enter a description of the experiment"></textarea>
+                    </div>
+                    
+                    <h4 class="section-title">Dataset Configuration</h4>
+                    <div class="nested-section">
+                        <div class="mb-3">
+                            <label for="data-path" class="form-label">Data Path <small class="text-muted">(str)</small></label>
+                            <input type="text" class="form-control" id="data-path" name="data-path" placeholder="/path/to/data">
+                            <small class="form-text text-muted">Path to the data directory</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="dataset" class="form-label">Dataset <small class="text-muted">(str)</small></label>
+                            <select class="form-select" id="dataset" name="dataset">
+                                <option value="" selected>Select a dataset</option>
+                                <option value="electricity">electricity</option>
+                                <option value="traffic">traffic</option>
+                                <option value="weather">weather</option>
+                                <option value="etth1">etth1</option>
+                                <option value="etth2">etth2</option>
+                                <option value="ettm1">ettm1</option>
+                                <option value="ettm2">ettm2</option>
+                                <option value="exchange_rate">exchange_rate</option>
+                                <option value="illness">illness</option>
+                            </select>
+                            <small class="form-text text-muted">Dataset name</small>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end mt-4">
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 2: Scheduler Configuration -->
+                <div class="form-step" data-step="2" style="display: none;">
+                    <h3 class="card-title mb-4">Scheduler Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="scheduler-optimizer" class="form-label">Optimizer <small class="text-muted">(Optimizer)</small></label>
+                        <select class="form-select" id="scheduler-optimizer" name="scheduler-optimizer">
+                            <option value="Adam" selected>Adam</option>
+                            <option value="SGD">SGD</option>
+                            <option value="RMSprop">RMSprop</option>
+                            <option value="AdamW">AdamW</option>
+                        </select>
+                        <small class="form-text text-muted">Wrapped optimizer</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="step-size" class="form-label">Step Size <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="step-size" name="step-size" value="30" min="1">
+                        <small class="form-text text-muted">Period of learning rate decay</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="gamma" class="form-label">Gamma <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="gamma" name="gamma" value="0.1" step="0.01" min="0" max="1">
+                        <small class="form-text text-muted">Multiplicative factor of learning rate decay. Default: 0.1</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="last-epoch" class="form-label">Last Epoch <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="last-epoch" name="last-epoch" value="-1">
+                        <small class="form-text text-muted">The index of last epoch. Default: -1</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="verbose" name="verbose">
+                        <label class="form-check-label" for="verbose">Verbose</label>
+                        <small class="d-block form-text text-muted">If checked, prints a message to stdout for each update. Default: False</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 3: Optimizer Configuration -->
+                <div class="form-step" data-step="3" style="display: none;">
+                    <h3 class="card-title mb-4">Optimizer Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="optim-type" class="form-label">Optimizer Type</label>
+                        <select class="form-select" id="optim-type" name="optim-type">
+                            <option value="Adam" selected>Adam</option>
+                            <option value="SGD">SGD</option>
+                            <option value="RMSprop">RMSprop</option>
+                            <option value="AdamW">AdamW</option>
+                        </select>
+                        <small class="form-text text-muted">Type of optimizer</small>
+                    </div>
+                    
+                    <div id="adam-params" class="optimizer-params">
+                        <h4 class="section-title">Adam Optimizer Parameters</h4>
+                        
+                        <div class="mb-3">
+                            <label for="learning-rate" class="form-label">Learning Rate <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="learning-rate" name="learning-rate" value="0.001" step="0.0001" min="0">
+                            <small class="form-text text-muted">Default: 1e-3</small>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="beta1" class="form-label">Beta1 <small class="text-muted">(float)</small></label>
+                                <input type="number" class="form-control" id="beta1" name="beta1" value="0.9" step="0.01" min="0" max="1">
+                                <small class="form-text text-muted">First beta parameter. Default: 0.9</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="beta2" class="form-label">Beta2 <small class="text-muted">(float)</small></label>
+                                <input type="number" class="form-control" id="beta2" name="beta2" value="0.999" step="0.001" min="0" max="1">
+                                <small class="form-text text-muted">Second beta parameter. Default: 0.999</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="epsilon" class="form-label">Epsilon <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="epsilon" name="epsilon" value="0.00000001" step="0.00000001" min="0">
+                            <small class="form-text text-muted">Term added for numerical stability. Default: 1e-8</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="weight-decay" class="form-label">Weight Decay <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="weight-decay" name="weight-decay" value="0" step="0.0001" min="0">
+                            <small class="form-text text-muted">L2 penalty. Default: 0</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="amsgrad" name="amsgrad">
+                            <label class="form-check-label" for="amsgrad">AMSGrad</label>
+                            <small class="d-block form-text text-muted">Whether to use the AMSGrad variant. Default: False</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="foreach" name="foreach">
+                            <label class="form-check-label" for="foreach">Foreach</label>
+                            <small class="d-block form-text text-muted">Whether foreach implementation is used. Default: None</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="maximize" name="maximize">
+                            <label class="form-check-label" for="maximize">Maximize</label>
+                            <small class="d-block form-text text-muted">Maximize the params based on the objective. Default: False</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="capturable" name="capturable">
+                            <label class="form-check-label" for="capturable">Capturable</label>
+                            <small class="d-block form-text text-muted">Whether to use capturable in the optimizer. Default: False</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="differentiable" name="differentiable">
+                            <label class="form-check-label" for="differentiable">Differentiable</label>
+                            <small class="d-block form-text text-muted">Whether to allow optimization through the gradient steps. Default: False</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="fused" name="fused">
+                            <label class="form-check-label" for="fused">Fused</label>
+                            <small class="d-block form-text text-muted">Whether to use fused implementation if available. Default: None</small>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 4: Model Configuration -->
+                <div class="form-step" data-step="4" style="display: none;">
+                    <h3 class="card-title mb-4">Model Configuration</h3>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="past-steps" class="form-label">Past Steps <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="past-steps" name="past-steps" value="96" min="1">
+                            <small class="form-text text-muted">Number of past datapoints used</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="future-steps" class="form-label">Future Steps <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="future-steps" name="future-steps" value="96" min="1">
+                            <small class="form-text text-muted">Number of future lag to predict</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="past-channels" class="form-label">Past Channels <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="past-channels" name="past-channels" value="1" min="1">
+                            <small class="form-text text-muted">Number of numeric past variables, must be >0</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="future-channels" class="form-label">Future Channels <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="future-channels" name="future-channels" value="1" min="0">
+                            <small class="form-text text-muted">Number of future numeric variables</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="embs" class="form-label">Embeddings <small class="text-muted">(List)</small></label>
+                        <input type="text" class="form-control" id="embs" name="embs" placeholder="e.g., 10,20,30">
+                        <small class="form-text text-muted">List of the initial dimension of the categorical variables (comma-separated)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="cat-emb-dim" class="form-label">Categorical Embedding Dimension <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="cat-emb-dim" name="cat-emb-dim" value="10" min="1">
+                        <small class="form-text text-muted">Final dimension of each categorical variable</small>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="hidden-rnn" class="form-label">Hidden RNN Size <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="hidden-rnn" name="hidden-rnn" value="128" min="1">
+                            <small class="form-text text-muted">Hidden size of the RNN block</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="num-layers-rnn" class="form-label">RNN Layers <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="num-layers-rnn" name="num-layers-rnn" value="1" min="1">
+                            <small class="form-text text-muted">Number of RNN layers</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="kind" class="form-label">RNN Kind <small class="text-muted">(str)</small></label>
+                            <select class="form-select" id="kind" name="kind">
+                                <option value="GRU" selected>GRU</option>
+                                <option value="LSTM">LSTM</option>
+                            </select>
+                            <small class="form-text text-muted">One among GRU or LSTM</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="kernel-size" class="form-label">Kernel Size <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="kernel-size" name="kernel-size" value="3" min="1" max="10">
+                            <small class="form-text text-muted">Kernel size in the encoder convolutional block</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="sum-emb" name="sum-emb">
+                        <label class="form-check-label" for="sum-emb">Sum Embeddings</label>
+                        <small class="d-block form-text text-muted">If checked, the contribution of each embedding will be summed-up otherwise stacked</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="out-channels" class="form-label">Output Channels <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="out-channels" name="out-channels" value="1" min="1">
+                        <small class="form-text text-muted">Number of output channels</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="activation" class="form-label">Activation <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="activation" name="activation">
+                            <option value="ReLU" selected>ReLU</option>
+                            <option value="LeakyReLU">LeakyReLU</option>
+                            <option value="Sigmoid">Sigmoid</option>
+                            <option value="Tanh">Tanh</option>
+                        </select>
+                        <small class="form-text text-muted">Activation function (PyTorch). Default: torch.nn.ReLU</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="remove-last" name="remove-last">
+                        <label class="form-check-label" for="remove-last">Remove Last</label>
+                        <small class="d-block form-text text-muted">If checked, the model learns the difference respect to the last seen point</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="dropout-rate" class="form-label">Dropout Rate <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="dropout-rate" name="dropout-rate" value="0.1" step="0.1" min="0" max="0.9">
+                        <small class="form-text text-muted">Dropout rate in Dropout layers</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use-bn" name="use-bn">
+                        <label class="form-check-label" for="use-bn">Use Batch Normalization</label>
+                        <small class="d-block form-text text-muted">If checked, BN layers will be added and dropouts will be removed</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="num-blocks" class="form-label">Number of Blocks <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="num-blocks" name="num-blocks" value="4" min="1">
+                        <small class="form-text text-muted">Number of xLSTM blocks (only for xlstm), default 4</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="bidirectional" name="bidirectional" checked>
+                        <label class="form-check-label" for="bidirectional">Bidirectional</label>
+                        <small class="d-block form-text text-muted">If checked, the RNN are bidirectional, default True</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="lstm-type" class="form-label">LSTM Type <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="lstm-type" name="lstm-type">
+                            <option value="" selected>Not specified</option>
+                            <option value="slstm">slstm</option>
+                            <option value="mlstm">mlstm</option>
+                        </select>
+                        <small class="form-text text-muted">Only for xLSTM (slstm or mlstm)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="persistence-weight" class="form-label">Persistence Weight <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="persistence-weight" name="persistence-weight" value="0" step="0.1" min="0">
+                        <small class="form-text text-muted">Weight controlling the divergence from persistence model. Default 0</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="loss-type" class="form-label">Loss Type <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="loss-type" name="loss-type">
+                            <option value="l1" selected>l1</option>
+                            <option value="mse">mse</option>
+                            <option value="linear_penalization">linear_penalization</option>
+                            <option value="exponential_penalization">exponential_penalization</option>
+                        </select>
+                        <small class="form-text text-muted">This model uses custom losses or l1 or mse. Custom losses can be linear_penalization or exponential_penalization. Default l1</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quantiles" class="form-label">Quantiles <small class="text-muted">(List[int])</small></label>
+                        <input type="text" class="form-control" id="quantiles" name="quantiles" value="0.1,0.5,0.9">
+                        <small class="form-text text-muted">We can use quantile loss if len(quantiles) > 0 (usually 0.1,0.5,0.9) or L1loss in case len(quantiles)==0. Defaults to []</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="n-classes" class="form-label">Number of Classes <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="n-classes" name="n-classes" value="0" min="0">
+                        <small class="form-text text-muted">Number of classes (0 in regression)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="model-optim" class="form-label">Optimizer <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="model-optim" name="model-optim">
+                            <option value="" selected>None (Default: Adam)</option>
+                            <option value="Adam">Adam</option>
+                            <option value="SGD">SGD</option>
+                            <option value="RMSprop">RMSprop</option>
+                            <option value="AdamW">AdamW</option>
+                        </select>
+                        <small class="form-text text-muted">If not None it expects a PyTorch optim method. Defaults to None that is mapped to Adam</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 5: Split Parameters -->
+                <div class="form-step" data-step="5" style="display: none;">
+                    <h3 class="card-title mb-4">Split Parameters</h3>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="perc-train" class="form-label">Training % <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="perc-train" name="perc-train" value="0.6" step="0.1" min="0" max="1">
+                            <small class="form-text text-muted">Fraction of the training set. Default: 0.6</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="perc-valid" class="form-label">Validation % <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="perc-valid" name="perc-valid" value="0.2" step="0.1" min="0" max="1">
+                            <small class="form-text text-muted">Fraction of the validation set. Default: 0.2</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="perc-test" class="form-label">Test % <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="perc-test" name="perc-test" value="0.2" step="0.1" min="0" max="1">
+                            <small class="form-text text-muted">Calculated as 1 - (train% + validation%)</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Training Range <small class="text-muted">(List[datetime])</small></label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <input type="date" class="form-control" id="range-train-start" name="range-train-start">
+                                <small class="form-text text-muted">Start date</small>
+                            </div>
+                            <div class="col-md-6">
+                                <input type="date" class="form-control" id="range-train-end" name="range-train-end">
+                                <small class="form-text text-muted">End date</small>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">A list of two elements indicating the starting and end point of the training set. Default: None</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Validation Range <small class="text-muted">(List[datetime])</small></label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <input type="date" class="form-control" id="range-valid-start" name="range-valid-start">
+                                <small class="form-text text-muted">Start date</small>
+                            </div>
+                            <div class="col-md-6">
+                                <input type="date" class="form-control" id="range-valid-end" name="range-valid-end">
+                                <small class="form-text text-muted">End date</small>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">A list of two elements indicating the starting and end point of the validation set. Default: None</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Test Range <small class="text-muted">(List[datetime])</small></label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <input type="date" class="form-control" id="range-test-start" name="range-test-start">
+                                <small class="form-text text-muted">Start date</small>
+                            </div>
+                            <div class="col-md-6">
+                                <input type="date" class="form-control" id="range-test-end" name="range-test-end">
+                                <small class="form-text text-muted">End date</small>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">A list of two elements indicating the starting and end point of the test set. Default: None</small>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="split-past-steps" class="form-label">Past Steps <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="split-past-steps" name="split-past-steps" value="100" min="1">
+                            <small class="form-text text-muted">Past step to consider for making the prediction. Default: 100</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="split-future-steps" class="form-label">Future Steps <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="split-future-steps" name="split-future-steps" value="20" min="1">
+                            <small class="form-text text-muted">Future step to predict. Default: 20</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="shift" class="form-label">Shift <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="shift" name="shift" value="0" min="0">
+                        <small class="form-text text-muted">See `create_data_loader`. Default: 0</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="keep-entire-seq" name="keep-entire-seq">
+                        <label class="form-check-label" for="keep-entire-seq">Keep Entire Sequence While Shifting</label>
+                        <small class="d-block form-text text-muted">If the dataset is shifted, you may want the future data be of length future_step+shift (like informer), default false</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="skip-step" class="form-label">Skip Step <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="skip-step" name="skip-step" value="1" min="1">
+                        <small class="form-text text-muted">See `create_data_loader`. Default: 1</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="normalize-per-group" name="normalize-per-group">
+                        <label class="form-check-label" for="normalize-per-group">Normalize Per Group</label>
+                        <small class="d-block form-text text-muted">If true and self.group is not None, the variables are scaled respect to the groups. Default: False</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="check-consecutive" name="check-consecutive" checked>
+                        <label class="form-check-label" for="check-consecutive">Check Consecutive</label>
+                        <small class="d-block form-text text-muted">If false it skips the check on the consecutive ranges. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="scaler" class="form-label">Scaler <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="scaler" name="scaler">
+                            <option value="StandardScaler" selected>StandardScaler</option>
+                            <option value="MinMaxScaler">MinMaxScaler</option>
+                            <option value="RobustScaler">RobustScaler</option>
+                            <option value="None">None</option>
+                        </select>
+                        <small class="form-text text-muted">Instance of a sklearn.preprocessing scaler. Default: 'StandardScaler()'</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 6: Training Configuration -->
+                <div class="form-step" data-step="6" style="display: none;">
+                    <h3 class="card-title mb-4">Training Configuration</h3>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="batch-size" class="form-label">Batch Size <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="batch-size" name="batch-size" value="16" min="1">
+                            <small class="form-text text-muted">Size of batch used in stochastic gradient descent. Default: 16</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="epochs" class="form-label">Epochs <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="epochs" name="epochs" value="100" min="1">
+                            <small class="form-text text-muted">Number of training epochs. Default: 100</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="lr" class="form-label">Learning Rate <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="lr" name="lr" value="0.001" step="0.0001" min="0">
+                        <small class="form-text text-muted">Learning rate for the Adam optimizer. Default: 0.001</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="early-stopping-patience" class="form-label">Early Stopping Patience <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="early-stopping-patience" name="early-stopping-patience" value="20" min="1">
+                        <small class="form-text text-muted">If not None, a early stopping class will be created to stop the training in case of no improvements. Default: 20</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="lr-scheduler-patience" class="form-label">LR Scheduler Patience <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="lr-scheduler-patience" name="lr-scheduler-patience" value="10" min="1">
+                        <small class="form-text text-muted">If not None, a ReduceLROnPlateau will be created with the specified patience. Default: 10</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="lr-scheduler-factor" class="form-label">LR Scheduler Factor <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="lr-scheduler-factor" name="lr-scheduler-factor" value="0.1" step="0.1" min="0" max="1">
+                        <small class="form-text text-muted">Factor by which the learning rate will be reduced (scheduler_patience must be also specified). Default: 0.1</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="clip-gradient-val" class="form-label">Clip Gradient Value <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="clip-gradient-val" name="clip-gradient-val" value="1" step="0.1" min="0">
+                        <small class="form-text text-muted">If None, no gradient clipping, otherwise gradients are clipped. Default: 1</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="shuffle" name="shuffle" checked>
+                        <label class="form-check-label" for="shuffle">Shuffle Training Data</label>
+                        <small class="d-block form-text text-muted">If checked, training data is shuffled. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="grad-accumulation" class="form-label">Gradient Accumulation <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="grad-accumulation" name="grad-accumulation" value="1" min="1">
+                        <small class="form-text text-muted">Number of gradient accumulation. Default: 1</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="weight-decay" class="form-label">Weight Decay <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="train-weight-decay" name="train-weight-decay" value="0" step="0.0001" min="0">
+                        <small class="form-text text-muted">L2 regularization. Default: 0</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="metrics" class="form-label">Metrics <small class="text-muted">(List[str])</small></label>
+                        <select class="form-select" id="metrics" name="metrics" multiple>
+                            <option value="mse" selected>mse</option>
+                            <option value="rmse">rmse</option>
+                            <option value="mae">mae</option>
+                            <option value="mape">mape</option>
+                            <option value="smape">smape</option>
+                        </select>
+                        <small class="form-text text-muted">List of metrics to evaluate the performance. Default: ['mse']</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="main-metric" class="form-label">Main Metric <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="main-metric" name="main-metric">
+                            <option value="mse" selected>mse</option>
+                            <option value="rmse">rmse</option>
+                            <option value="mae">mae</option>
+                            <option value="mape">mape</option>
+                            <option value="smape">smape</option>
+                        </select>
+                        <small class="form-text text-muted">The main metric used for early stopping. Default: 'mse'</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="k-folds" class="form-label">K Folds <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="k-folds" name="k-folds" value="1" min="1">
+                        <small class="form-text text-muted">Number of folds in KFold. Default: 1</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="random-state" class="form-label">Random State <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="random-state" name="random-state" value="42" min="0">
+                        <small class="form-text text-muted">Random state for KFold. Default: 42</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use-best-model" name="use-best-model" checked>
+                        <label class="form-check-label" for="use-best-model">Use Best Model</label>
+                        <small class="d-block form-text text-muted">Whether to use the best model based on the training. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="best-criterion" class="form-label">Best Criterion <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="best-criterion" name="best-criterion">
+                            <option value="val_mse" selected>val_mse</option>
+                            <option value="val_rmse">val_rmse</option>
+                            <option value="val_mae">val_mae</option>
+                            <option value="val_mape">val_mape</option>
+                            <option value="val_smape">val_smape</option>
+                        </select>
+                        <small class="form-text text-muted">The criterion for best model selection. Default: 'val_mse'</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 7: Inference Configuration -->
+                <div class="form-step" data-step="7" style="display: none;">
+                    <h3 class="card-title mb-4">Inference Configuration</h3>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="stride" class="form-label">Stride <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="stride" name="stride" value="1" min="1">
+                            <small class="form-text text-muted">When equal to 1 (default), there is no stride</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="retrain" class="form-label">Retrain <small class="text-muted">(str)</small></label>
+                            <select class="form-select" id="retrain" name="retrain">
+                                <option value="None" selected>None</option>
+                                <option value="all">all</option>
+                                <option value="best">best</option>
+                            </select>
+                            <small class="form-text text-muted">Whether to retrain the model. Default: None</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use-forward-prediction" name="use-forward-prediction" checked>
+                        <label class="form-check-label" for="use-forward-prediction">Use Forward Prediction</label>
+                        <small class="d-block form-text text-muted">Whether to use forward prediction. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="show-progress" name="show-progress" checked>
+                        <label class="form-check-label" for="show-progress">Show Progress</label>
+                        <small class="d-block form-text text-muted">Whether to show progress with a progress bar. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="keep-best-model" name="keep-best-model" checked>
+                        <label class="form-check-label" for="keep-best-model">Keep Best Model</label>
+                        <small class="d-block form-text text-muted">Whether to keep best model for full generative inference. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="max-samples" class="form-label">Max Samples <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="max-samples" name="max-samples" value="-1" min="-1">
+                        <small class="form-text text-muted">Maximum number of samples to use for inference, -1 means all. Default: -1</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="show-plot" name="show-plot" checked>
+                        <label class="form-check-label" for="show-plot">Show Plot</label>
+                        <small class="d-block form-text text-muted">Whether to show plot in recurrent prediction. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="max-forecast" class="form-label">Max Forecast <small class="text-muted">(int)</small></label>
+                        <input type="number" class="form-control" id="max-forecast" name="max-forecast" value="-1" min="-1">
+                        <small class="form-text text-muted">Maximum number of forecasts, -1 means all. Default: -1</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="forecast-strategy" class="form-label">Forecast Strategy <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="forecast-strategy" name="forecast-strategy">
+                            <option value="insample" selected>insample</option>
+                            <option value="outsample">outsample</option>
+                        </select>
+                        <small class="form-text text-muted">Whether to predict in-sample or out-of-sample. Default: 'insample'</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="button" class="btn btn-warning next-step">Next <i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Step 8: Review and Submit -->
+                <div class="form-step" data-step="8" style="display: none;">
+                    <h3 class="card-title mb-4">Review and Submit</h3>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        Please review your configuration before submitting. You can go back to any step to make changes.
+                    </div>
+                    
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#yamlPreviewModal">
+                            <i class="bi bi-eye me-2"></i> Preview YAML Configuration
+                        </button>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary prev-step"><i class="bi bi-arrow-left"></i> Previous</button>
+                        <button type="submit" class="btn btn-success" id="submit-config-btn">
+                            <i class="bi bi-check-circle me-2"></i> Save Configuration
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- YAML Preview Modal -->
+<div class="modal fade" id="yamlPreviewModal" tabindex="-1" aria-labelledby="yamlPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="yamlPreviewModalLabel">YAML Configuration Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre class="bg-light p-3 rounded" id="yaml-preview" style="max-height: 400px; overflow-y: auto;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('config-form');
+        const formSteps = document.querySelectorAll('.form-step');
+        const progressBar = document.getElementById('form-progress');
+        const stepIndicator = document.getElementById('step-indicator');
+        const yamlPreview = document.getElementById('yaml-preview');
+        const yamlDataInput = document.getElementById('yaml-data');
+        const totalSteps = formSteps.length;
+        let currentStep = 1;
+        
+        // Initialize the form
+        updateFormState();
+        
+        // Handle next button clicks
+        document.querySelectorAll('.next-step').forEach(button => {
+            button.addEventListener('click', () => {
+                if (currentStep < totalSteps) {
+                    currentStep++;
+                    updateFormState();
+                }
+            });
+        });
+        
+        // Handle previous button clicks
+        document.querySelectorAll('.prev-step').forEach(button => {
+            button.addEventListener('click', () => {
+                if (currentStep > 1) {
+                    currentStep--;
+                    updateFormState();
+                }
+            });
+        });
+        
+        // Show YAML preview when modal is opened
+        const yamlModal = document.getElementById('yamlPreviewModal');
+        yamlModal.addEventListener('show.bs.modal', function () {
+            const yamlData = generateYAML();
+            yamlPreview.textContent = yamlData;
+            yamlDataInput.value = yamlData;
+        });
+        
+        // Handle form submission
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const yamlData = generateYAML();
+            yamlDataInput.value = yamlData;
+            this.submit();
+        });
+        
+        // Update form state based on current step
+        function updateFormState() {
+            formSteps.forEach((step, index) => {
+                if (index + 1 === currentStep) {
+                    step.style.display = 'block';
+                } else {
+                    step.style.display = 'none';
+                }
+            });
+            
+            // Update progress bar and step indicator
+            const progress = (currentStep / totalSteps) * 100;
+            progressBar.style.width = `${progress}%`;
+            stepIndicator.textContent = `Step ${currentStep} of ${totalSteps}`;
+        }
+        
+        // Generate YAML from form data
+        function generateYAML() {
+            const formData = new FormData(form);
+            const data = {};
+            
+            // Basic information
+            data.experiment_name = formData.get('experiment-name');
+            data.creator = formData.get('experiment-creator');
+            data.date = formData.get('experiment-date');
+            if (formData.get('experiment-description')) {
+                data.description = formData.get('experiment-description');
+            }
+            
+            // Dataset configuration
+            data.data = {};
+            if (formData.get('data-path')) data.data.path = formData.get('data-path');
+            if (formData.get('dataset')) data.data.dataset = formData.get('dataset');
+            
+            // Scheduler configuration
+            data.scheduler = {
+                optimizer: formData.get('scheduler-optimizer'),
+                step_size: parseInt(formData.get('step-size')),
+                gamma: parseFloat(formData.get('gamma')),
+                last_epoch: parseInt(formData.get('last-epoch')),
+                verbose: formData.get('verbose') === 'on'
+            };
+            
+            // Optimizer configuration
+            data.optimizer = {
+                type: formData.get('optim-type'),
+                learning_rate: parseFloat(formData.get('learning-rate')),
+                beta1: parseFloat(formData.get('beta1')),
+                beta2: parseFloat(formData.get('beta2')),
+                epsilon: parseFloat(formData.get('epsilon')),
+                weight_decay: parseFloat(formData.get('weight-decay')),
+                amsgrad: formData.get('amsgrad') === 'on',
+                foreach: formData.get('foreach') === 'on',
+                maximize: formData.get('maximize') === 'on',
+                capturable: formData.get('capturable') === 'on',
+                differentiable: formData.get('differentiable') === 'on',
+                fused: formData.get('fused') === 'on'
+            };
+            
+            // Model configuration
+            data.model = {
+                past_steps: parseInt(formData.get('past-steps')),
+                future_steps: parseInt(formData.get('future-steps')),
+                past_channels: parseInt(formData.get('past-channels')),
+                future_channels: parseInt(formData.get('future-channels'))
+            };
+            
+            // Add embs if present
+            const embs = formData.get('embs');
+            if (embs) {
+                data.model.embs = embs.split(',').map(e => parseInt(e.trim()));
+            } else {
+                data.model.embs = [];
+            }
+            
+            data.model.cat_emb_dim = parseInt(formData.get('cat-emb-dim'));
+            data.model.hidden_RNN = parseInt(formData.get('hidden-rnn'));
+            data.model.num_layers_RNN = parseInt(formData.get('num-layers-rnn'));
+            data.model.kind = formData.get('kind');
+            data.model.kernel_size = parseInt(formData.get('kernel-size'));
+            data.model.sum_emb = formData.get('sum-emb') === 'on';
+            data.model.out_channels = parseInt(formData.get('out-channels'));
+            data.model.activation = formData.get('activation');
+            data.model.remove_last = formData.get('remove-last') === 'on';
+            data.model.dropout_rate = parseFloat(formData.get('dropout-rate'));
+            data.model.use_bn = formData.get('use-bn') === 'on';
+            data.model.num_blocks = parseInt(formData.get('num-blocks'));
+            data.model.bidirectional = formData.get('bidirectional') === 'on';
+            
+            const lstmType = formData.get('lstm-type');
+            if (lstmType) data.model.lstm_type = lstmType;
+            
+            data.model.persistence_weight = parseFloat(formData.get('persistence-weight'));
+            data.model.loss_type = formData.get('loss-type');
+            
+            // Add quantiles if present
+            const quantiles = formData.get('quantiles');
+            if (quantiles) {
+                data.model.quantiles = quantiles.split(',').map(q => parseFloat(q.trim()));
+            } else {
+                data.model.quantiles = [];
+            }
+            
+            data.model.n_classes = parseInt(formData.get('n-classes'));
+            
+            const modelOptim = formData.get('model-optim');
+            if (modelOptim) data.model.optim = modelOptim;
+            
+            // Split parameters
+            data.split = {
+                perc_train: parseFloat(formData.get('perc-train')),
+                perc_valid: parseFloat(formData.get('perc-valid')),
+                perc_test: parseFloat(formData.get('perc-test'))
+            };
+            
+            // Add training range if present
+            if (formData.get('range-train-start') && formData.get('range-train-end')) {
+                data.split.range_train = [formData.get('range-train-start'), formData.get('range-train-end')];
+            }
+            
+            // Add validation range if present
+            if (formData.get('range-valid-start') && formData.get('range-valid-end')) {
+                data.split.range_valid = [formData.get('range-valid-start'), formData.get('range-valid-end')];
+            }
+            
+            // Add test range if present
+            if (formData.get('range-test-start') && formData.get('range-test-end')) {
+                data.split.range_test = [formData.get('range-test-start'), formData.get('range-test-end')];
+            }
+            
+            data.split.past_steps = parseInt(formData.get('split-past-steps'));
+            data.split.future_steps = parseInt(formData.get('split-future-steps'));
+            data.split.shift = parseInt(formData.get('shift'));
+            data.split.keep_entire_seq = formData.get('keep-entire-seq') === 'on';
+            data.split.skip_step = parseInt(formData.get('skip-step'));
+            data.split.normalize_per_group = formData.get('normalize-per-group') === 'on';
+            data.split.check_consecutive = formData.get('check-consecutive') === 'on';
+            data.split.scaler = formData.get('scaler');
+            
+            // Training configuration
+            data.training = {
+                batch_size: parseInt(formData.get('batch-size')),
+                epochs: parseInt(formData.get('epochs')),
+                lr: parseFloat(formData.get('lr')),
+                early_stopping_patience: parseInt(formData.get('early-stopping-patience')),
+                lr_scheduler_patience: parseInt(formData.get('lr-scheduler-patience')),
+                lr_scheduler_factor: parseFloat(formData.get('lr-scheduler-factor')),
+                clip_gradient_val: parseFloat(formData.get('clip-gradient-val')),
+                shuffle: formData.get('shuffle') === 'on',
+                grad_accumulation: parseInt(formData.get('grad-accumulation')),
+                weight_decay: parseFloat(formData.get('train-weight-decay'))
+            };
+            
+            // Get multiple selected metrics
+            const metricsSelect = document.getElementById('metrics');
+            const selectedMetrics = Array.from(metricsSelect.selectedOptions).map(option => option.value);
+            data.training.metrics = selectedMetrics.length > 0 ? selectedMetrics : ['mse'];
+            
+            data.training.main_metric = formData.get('main-metric');
+            data.training.k_folds = parseInt(formData.get('k-folds'));
+            data.training.random_state = parseInt(formData.get('random-state'));
+            data.training.use_best_model = formData.get('use-best-model') === 'on';
+            data.training.best_criterion = formData.get('best-criterion');
+            
+            // Inference configuration
+            data.inference = {
+                stride: parseInt(formData.get('stride')),
+                retrain: formData.get('retrain') !== 'None' ? formData.get('retrain') : null,
+                use_forward_prediction: formData.get('use-forward-prediction') === 'on',
+                show_progress: formData.get('show-progress') === 'on',
+                keep_best_model: formData.get('keep-best-model') === 'on',
+                max_samples: parseInt(formData.get('max-samples')),
+                show_plot: formData.get('show-plot') === 'on',
+                max_forecast: parseInt(formData.get('max-forecast')),
+                forecast_strategy: formData.get('forecast-strategy')
+            };
+            
+            // Convert to YAML format
+            return Object.entries(data).map(([key, value]) => {
+                if (typeof value === 'object' && value !== null) {
+                    return `${key}:\n${Object.entries(value).map(([k, v]) => {
+                        return `  ${k}: ${JSON.stringify(v)}`;
+                    }).join('\n')}`;
+                } else {
+                    return `${key}: ${JSON.stringify(value)}`;
+                }
+            }).join('\n');
+        }
+    });
+</script>
+{% endblock %}
+
+{% endblock %}
