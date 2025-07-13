@@ -1,12 +1,32 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h2>Step 2: Upload Configuration File</h2>
-    <form method="post" enctype="multipart/form-data">
-        <div class="form-group">
-            <label for="config_file">Select configuration file (e.g., .yml, .json)</label>
-            <input type="file" class="form-control-file" id="config_file" name="config_file" required>
+    <h2>Step 2: Configuration File</h2>
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Option 1: Upload Configuration File</h5>
         </div>
-        <button type="submit" class="btn btn-primary">Next</button>
-    </form>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="config_file">Select configuration file (e.g., .yml, .json)</label>
+                    <input type="file" class="form-control-file" id="config_file" name="config_file">
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">Upload and Continue</button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">Option 2: Generate Template</h5>
+        </div>
+        <div class="card-body">
+            <p>Don't have a configuration file? Generate a template that you can edit.</p>
+            <form method="post">
+                <input type="hidden" name="generate_template" value="true">
+                <button type="submit" class="btn btn-success">Generate Template</button>
+            </form>
+        </div>
+    </div>
 {% endblock %}

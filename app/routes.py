@@ -4,7 +4,7 @@ Application routes.
 
 from flask import (
     Blueprint, flash, redirect, render_template, request, session, url_for,
-    current_app, send_file, jsonify
+    current_app, send_file, jsonify, Response
 )
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
@@ -13,6 +13,60 @@ import csv
 import yaml
 from datetime import datetime
 from app import db
+
+def generate_config_template(experiment_name):
+    """Generate a template configuration file for the experiment.
+    
+    Args:
+        experiment_name: Name of the experiment
+        
+    Returns:
+        Dict containing the template configuration
+    """
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    
+    # Create a template with common configuration options
+    template = {
+        "experiment": {
+            "name": experiment_name,
+            "date": current_date,
+            "created_by": current_user.username,
+            "description": "Enter experiment description here"
+        },
+        "data": {
+            "csv_file": "Will be set from uploaded CSV",
+            "input_columns": ["column1", "column2"],  # Replace with actual columns from CSV
+            "output_columns": ["target"],  # Replace with actual target column
+            "preprocessing": {
+                "normalize": True,
+                "handle_missing": "mean"  # Options: mean, median, zero, none
+            }
+        },
+        "model": {
+            "architecture": "Will be set from uploaded architecture files",
+            "hyperparameters": {
+                "learning_rate": 0.001,
+                "batch_size": 32,
+                "epochs": 100,
+                "early_stopping": True,
+                "patience": 10
+            },
+            "evaluation": {
+                "metrics": ["accuracy", "precision", "recall", "f1"],
+                "test_split": 0.2,
+                "validation_split": 0.1,
+                "cross_validation": False,
+                "cv_folds": 5
+            }
+        },
+        "output": {
+            "save_predictions": True,
+            "save_model": True,
+            "visualization": ["confusion_matrix", "roc_curve"]
+        }
+    }
+    
+    return template
 
 # Create a blueprint for web routes
 web = Blueprint('routes', __name__)
@@ -38,14 +92,51 @@ def upload_config():
     if 'experiment_name' not in session:
         flash('Experiment session expired. Please start again.')
         return redirect(url_for('routes.experiment'))
+    
     if request.method == 'POST':
-        config_file = request.files.get('config_file')
-        if not config_file or config_file.filename == '':
-            flash('Please upload a configuration file.')
-            return redirect(request.url)
-        session['config_filename'] = secure_filename(config_file.filename)
-        session['config_bytes'] = config_file.read()
-        return redirect(url_for('routes.upload_csv'))
+        # Check if the user wants to generate a template
+        if 'generate_template' in request.form:
+            # Generate a template config file
+            config_data = generate_config_template(session['experiment_name'])
+            config_yaml = yaml.dump(config_data, default_flow_style=False)
+            
+            # Store in session
+            session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+            session['config_bytes'] = config_yaml.encode('utf-8')
+            
+            # Return the template for editing
+            return render_template('edit_config.html', 
+                                   config_content=config_yaml,
+                                   experiment_name=session['experiment_name'])
+        # Handle file upload
+        elif 'config_file' in request.files:
+            config_file = request.files.get('config_file')
+            if not config_file or config_file.filename == '':
+                flash('Please upload a configuration file or generate a template.')
+                return redirect(request.url)
+            session['config_filename'] = secure_filename(config_file.filename)
+            session['config_bytes'] = config_file.read()
+            return redirect(url_for('routes.upload_csv'))
+        # Handle saving edited config
+        elif 'edited_config' in request.form:
+            config_content = request.form.get('edited_config')
+            if not config_content:
+                flash('Configuration cannot be empty.')
+                return redirect(request.url)
+            
+            # Validate YAML format
+            try:
+                yaml.safe_load(config_content)
+            except yaml.YAMLError as e:
+                flash(f'Invalid YAML format: {str(e)}')
+                return render_template('edit_config.html', 
+                                      config_content=config_content,
+                                      experiment_name=session['experiment_name'])
+            
+            # Store in session
+            session['config_bytes'] = config_content.encode('utf-8')
+            return redirect(url_for('routes.upload_csv'))
+    
     return render_template('upload_config.html')
 
 @web.route('/upload_csv', methods=['GET', 'POST'])
