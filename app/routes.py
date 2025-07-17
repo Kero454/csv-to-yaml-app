@@ -75,7 +75,7 @@ web = Blueprint('routes', __name__)
 @web.route('/index')
 def index():
     if current_user.is_authenticated:
-        return render_template('index.html', title='Home')
+        return redirect(url_for('routes.experiment_explorer'))
     return redirect(url_for('auth.login'))
 
 @web.route('/experiment', methods=['GET', 'POST'])
@@ -291,6 +291,213 @@ def readiness_check():
         return Response("OK", status=200)
     except Exception as e:
         return Response("Readiness check failed: {}".format(str(e)), status=503)
+
+@web.route('/experiment_explorer')
+@login_required
+def experiment_explorer():
+    """Display all experiments and associated files for the current user."""
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    base_path = os.path.join(upload_folder, 'Users')
+    user_path = os.path.join(base_path, secure_filename(current_user.username))
+    
+    if not os.path.exists(user_path):
+        return render_template('experiment_explorer.html', experiments=[])
+    
+    experiments = []
+    
+    # Find all experiment directories for this user
+    for experiment_name in os.listdir(user_path):
+        exp_path = os.path.join(user_path, experiment_name)
+        if os.path.isdir(exp_path) and experiment_name != 'Data':  # Skip the Data directory
+            try:
+                # Try to read experiment metadata
+                config_path = os.path.join(exp_path, f"config_{experiment_name}.yaml")
+                timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')  # Default timestamp
+                
+                if os.path.exists(config_path):
+                    with open(config_path, 'r') as f:
+                        config_data = yaml.safe_load(f)
+                        if config_data and 'timestamp' in config_data:
+                            timestamp = datetime.fromisoformat(config_data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Get configuration files
+                config_files = []
+                for file in os.listdir(exp_path):
+                    if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
+                        file_path = os.path.join(secure_filename(current_user.username), experiment_name, file)
+                        file_size = os.path.getsize(os.path.join(exp_path, file))
+                        config_files.append({
+                            'name': file,
+                            'path': file_path,
+                            'size': f"{file_size / 1024:.1f} KB"
+                        })
+                
+                # Get architecture files
+                arch_files = []
+                arch_dir = os.path.join(exp_path, 'Architecture')
+                if os.path.exists(arch_dir) and os.path.isdir(arch_dir):
+                    for file in os.listdir(arch_dir):
+                        if os.path.isfile(os.path.join(arch_dir, file)):
+                            file_path = os.path.join(secure_filename(current_user.username), experiment_name, 'Architecture', file)
+                            file_size = os.path.getsize(os.path.join(arch_dir, file))
+                            arch_files.append({
+                                'name': file,
+                                'path': file_path,
+                                'size': f"{file_size / 1024:.1f} KB"
+                            })
+                
+                # Get data files (linked from Data directory)
+                data_files = []
+                data_dir = os.path.join(user_path, 'Data')
+                if os.path.exists(data_dir) and os.path.isdir(data_dir):
+                    for csv_dir in os.listdir(data_dir):
+                        csv_path = os.path.join(data_dir, csv_dir)
+                        if os.path.isdir(csv_path):
+                            for file in os.listdir(csv_path):
+                                if file.lower().endswith('.csv') and os.path.isfile(os.path.join(csv_path, file)):
+                                    file_path = os.path.join(secure_filename(current_user.username), 'Data', csv_dir, file)
+                                    file_size = os.path.getsize(os.path.join(csv_path, file))
+                                    data_files.append({
+                                        'name': file,
+                                        'path': file_path,
+                                        'size': f"{file_size / 1024:.1f} KB"
+                                    })
+                
+                experiments.append({
+                    'name': experiment_name,
+                    'path': exp_path,
+                    'timestamp': timestamp,
+                    'config_files': config_files,
+                    'arch_files': arch_files,
+                    'data_files': data_files
+                })
+            except Exception as e:
+                current_app.logger.error(f"Error processing experiment {experiment_name}: {str(e)}")
+    
+    # Sort experiments by timestamp (newest first)
+    experiments.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    return render_template('experiment_explorer.html', experiments=experiments)
+
+@web.route('/template_optimizer_form', methods=['GET', 'POST'])
+@login_required
+def template_optimizer_form():
+    """Template optimizer form with 6 steps for advanced configuration."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    if request.method == 'POST':
+        # Process form data and generate YAML configuration
+        config_data = {
+            'dataset': {
+                'dataset': request.form.get('dataset', 'electricity'),
+                'path': request.form.get('dataset_path', '/home/agobbi/Projects/ExpTS/data')
+            },
+            'scheduler_config': {
+                'gamma': float(request.form.get('scheduler_gamma', 0.75)),
+                'step_size': int(request.form.get('scheduler_step_size', 2500))
+            },
+            'optim_config': {
+                'lr': float(request.form.get('optim_lr', 0.00005)),
+                'weight_decay': float(request.form.get('optim_weight_decay', 0.0001))
+            },
+            'model_configs': {
+                'past_steps': int(request.form.get('model_past_steps', 64)),
+                'future_steps': int(request.form.get('model_future_steps', 64)),
+                'quantiles': _parse_quantiles(request.form.get('model_quantiles', '')),
+                'past_channels': _parse_null_value(request.form.get('model_past_channels')),
+                'future_channels': _parse_null_value(request.form.get('model_future_channels')),
+                'embs': _parse_null_value(request.form.get('model_embs')),
+                'out_channels': _parse_null_value(request.form.get('model_out_channels')),
+                'loss_type': _parse_null_value(request.form.get('model_loss_type')),
+                'persistence_weight': float(request.form.get('model_persistence_weight', 1.0))
+            },
+            'split_params': {
+                'perc_train': float(request.form.get('split_perc_train', 0.6)),
+                'perc_valid': float(request.form.get('split_perc_valid', 0.2)),
+                'range_train': _parse_null_value(request.form.get('split_range_train')),
+                'range_validation': _parse_null_value(request.form.get('split_range_validation')),
+                'range_test': _parse_null_value(request.form.get('split_range_test')),
+                'shift': int(request.form.get('split_shift', 0)),
+                'starting_point': _parse_null_value(request.form.get('split_starting_point')),
+                'skip_step': int(request.form.get('split_skip_step', 1)),
+                'past_steps': 'model_configs@past_steps',
+                'future_steps': 'model_configs@future_steps'
+            },
+            'train_config': {
+                'dirpath': request.form.get('train_dirpath', '/home/agobbi/Projects/ExpTS/electricity'),
+                'num_workers': int(request.form.get('train_num_workers', 0)),
+                'auto_lr_find': request.form.get('train_auto_lr_find') == 'on',
+                'devices': _parse_devices(request.form.get('train_devices', '0')),
+                'seed': int(request.form.get('train_seed', 42))
+            },
+            'inference': {
+                'output_path': request.form.get('inference_output_path', '/home/agobbi/Projects/ExpTS/electricity'),
+                'load_last': request.form.get('inference_load_last') == 'on',
+                'batch_size': int(request.form.get('inference_batch_size', 200)),
+                'num_workers': int(request.form.get('inference_num_workers', 4)),
+                'set': request.form.get('inference_set', 'test'),
+                'rescaling': request.form.get('inference_rescaling') == 'on'
+            },
+            'defaults': [
+                '_self_',
+                {'architecture': _parse_null_value(request.form.get('defaults_architecture'))},
+                {'override hydra/launcher': request.form.get('defaults_hydra_launcher', 'joblib')}
+            ],
+            'hydra': {
+                'launcher': {
+                    'n_jobs': int(request.form.get('hydra_n_jobs', 4)),
+                    'verbose': int(request.form.get('hydra_verbose', 1)),
+                    'pre_dispatch': int(request.form.get('hydra_pre_dispatch', 4)),
+                    'batch_size': int(request.form.get('hydra_batch_size', 4)),
+                    '_target_': request.form.get('hydra_target', 'hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher')
+                },
+                'output_subdir': _parse_null_value(request.form.get('output_subdir')),
+                'sweeper': {
+                    'params': {
+                        'architecture': request.form.get('sweeper_params', 'glob(*)')
+                    }
+                }
+            }
+        }
+        
+        # Store configuration in session
+        session['config_data'] = config_data
+        config_yaml = yaml.dump(config_data, default_flow_style=False)
+        session['config_bytes'] = config_yaml.encode('utf-8')
+        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+        
+        flash('Configuration generated successfully!')
+        return redirect(url_for('routes.upload_csv'))
+    
+    current_date_str = datetime.now().strftime('%Y-%m-%d')
+    return render_template('template_optimizer_form.html', 
+                           experiment_name=session['experiment_name'], 
+                           username=current_user.username, 
+                           current_date=current_date_str)
+
+def _parse_quantiles(quantiles_str):
+    """Parse comma-separated quantiles string into list."""
+    if not quantiles_str or not quantiles_str.strip():
+        return []
+    try:
+        return [float(q.strip()) for q in quantiles_str.split(',') if q.strip()]
+    except ValueError:
+        return []
+
+def _parse_null_value(value):
+    """Parse form value, returning None for empty or 'null' values."""
+    if not value or value.strip().lower() in ['null', 'none', '']:
+        return None
+    return value.strip()
+
+def _parse_devices(devices_str):
+    """Parse comma-separated devices string into list of integers."""
+    try:
+        return [int(d.strip()) for d in devices_str.split(',') if d.strip()]
+    except ValueError:
+        return [0]
 
 @web.route('/config_form', methods=['GET'])
 @login_required

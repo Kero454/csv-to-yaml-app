@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .step-indicator {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 30px;
+    }
+    .step {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: #e9ecef;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 10px;
+        font-weight: bold;
+        color: #6c757d;
+        position: relative;
+    }
+    .step.active {
+        background-color: #007bff;
+        color: white;
+    }
+    .step.completed {
+        background-color: #28a745;
+        color: white;
+    }
+    .step::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 100%;
+        width: 20px;
+        height: 2px;
+        background-color: #e9ecef;
+        transform: translateY(-50%);
+    }
+    .step:last-child::after {
+        display: none;
+    }
+    .step.completed::after {
+        background-color: #28a745;
+    }
+    .form-step {
+        display: none;
+    }
+    .form-step.active {
+        display: block;
+    }
+    .navigation-buttons {
+        margin-top: 30px;
+        display: flex;
+        justify-content: space-between;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Template Optimizer - {{ experiment_name }}</h1>
+    <p class="text-muted">Advanced multi-step configuration wizard for machine learning experiments</p>
+    
+    <!-- Step Indicator -->
+    <div class="step-indicator">
+        <div class="step active" id="step-1">1</div>
+        <div class="step" id="step-2">2</div>
+        <div class="step" id="step-3">3</div>
+        <div class="step" id="step-4">4</div>
+        <div class="step" id="step-5">5</div>
+        <div class="step" id="step-6">6</div>
+    </div>
+    
+    <form id="templateOptimizerForm" method="post">
+        <!-- Step 1: Dataset + Scheduler + Optimizer Config -->
+        <div class="form-step active" id="form-step-1">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Step 1: Dataset, Scheduler & Optimizer Configuration</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Dataset Configuration -->
+                    <h5>Dataset Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="dataset" class="form-label">Dataset</label>
+                            <input type="text" class="form-control" id="dataset" name="dataset" value="electricity" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="dataset_path" class="form-label">Dataset Path</label>
+                            <input type="text" class="form-control" id="dataset_path" name="dataset_path" value="/home/agobbi/Projects/ExpTS/data" required>
+                        </div>
+                    </div>
+                    
+                    <!-- Scheduler Configuration -->
+                    <h5>Scheduler Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="scheduler_gamma" class="form-label">Gamma</label>
+                            <input type="number" class="form-control" id="scheduler_gamma" name="scheduler_gamma" value="0.75" step="0.01" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="scheduler_step_size" class="form-label">Step Size</label>
+                            <input type="number" class="form-control" id="scheduler_step_size" name="scheduler_step_size" value="2500" required>
+                        </div>
+                    </div>
+                    
+                    <!-- Optimizer Configuration -->
+                    <h5>Optimizer Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="optim_lr" class="form-label">Learning Rate</label>
+                            <input type="number" class="form-control" id="optim_lr" name="optim_lr" value="0.00005" step="0.00001" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="optim_weight_decay" class="form-label">Weight Decay</label>
+                            <input type="number" class="form-control" id="optim_weight_decay" name="optim_weight_decay" value="0.0001" step="0.0001" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 2: Model Configurations -->
+        <div class="form-step" id="form-step-2">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Step 2: Model Configurations</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="model_past_steps" class="form-label">Past Steps</label>
+                            <input type="number" class="form-control" id="model_past_steps" name="model_past_steps" value="64" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="model_future_steps" class="form-label">Future Steps</label>
+                            <input type="number" class="form-control" id="model_future_steps" name="model_future_steps" value="64" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="model_quantiles" class="form-label">Quantiles (comma-separated, leave empty for [])</label>
+                            <input type="text" class="form-control" id="model_quantiles" name="model_quantiles" placeholder="e.g., 0.1,0.5,0.9">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="model_persistence_weight" class="form-label">Persistence Weight</label>
+                            <input type="number" class="form-control" id="model_persistence_weight" name="model_persistence_weight" value="1.0" step="0.1" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="model_past_channels" class="form-label">Past Channels (dataset dependent)</label>
+                            <input type="text" class="form-control" id="model_past_channels" name="model_past_channels" placeholder="null - will be set automatically">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="model_future_channels" class="form-label">Future Channels (dataset dependent)</label>
+                            <input type="text" class="form-control" id="model_future_channels" name="model_future_channels" placeholder="null - will be set automatically">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="model_embs" class="form-label">Embeddings (dataset dependent)</label>
+                            <input type="text" class="form-control" id="model_embs" name="model_embs" placeholder="null - will be set automatically">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="model_out_channels" class="form-label">Output Channels (dataset dependent)</label>
+                            <input type="text" class="form-control" id="model_out_channels" name="model_out_channels" placeholder="null - will be set automatically">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="model_loss_type" class="form-label">Loss Type</label>
+                            <select class="form-control" id="model_loss_type" name="model_loss_type">
+                                <option value="">null - will be set automatically</option>
+                                <option value="mse">MSE</option>
+                                <option value="exponential_penalization">Exponential Penalization</option>
+                                <option value="linear_penalization">Linear Penalization</option>
+                                <option value="additive_iv">Additive IV</option>
+                                <option value="multiplicative_iv">Multiplicative IV</option>
+                                <option value="global_iv">Global IV</option>
+                                <option value="smape">SMAPE</option>
+                                <option value="high_order">High Order</option>
+                                <option value="dilated">Dilated</option>
+                                <option value="mda">MDA</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 3: Split Parameters -->
+        <div class="form-step" id="form-step-3">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Step 3: Split Parameters</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="split_perc_train" class="form-label">Training Percentage</label>
+                            <input type="number" class="form-control" id="split_perc_train" name="split_perc_train" value="0.6" step="0.1" min="0" max="1" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="split_perc_valid" class="form-label">Validation Percentage</label>
+                            <input type="number" class="form-control" id="split_perc_valid" name="split_perc_valid" value="0.2" step="0.1" min="0" max="1" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="split_shift" class="form-label">Shift</label>
+                            <input type="number" class="form-control" id="split_shift" name="split_shift" value="0" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="split_skip_step" class="form-label">Skip Step</label>
+                            <input type="number" class="form-control" id="split_skip_step" name="split_skip_step" value="1" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="split_range_train" class="form-label">Range Train</label>
+                            <input type="text" class="form-control" id="split_range_train" name="split_range_train" placeholder="null - automatic">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="split_range_validation" class="form-label">Range Validation</label>
+                            <input type="text" class="form-control" id="split_range_validation" name="split_range_validation" placeholder="null - automatic">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="split_range_test" class="form-label">Range Test</label>
+                            <input type="text" class="form-control" id="split_range_test" name="split_range_test" placeholder="null - automatic">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="split_starting_point" class="form-label">Starting Point</label>
+                            <input type="text" class="form-control" id="split_starting_point" name="split_starting_point" placeholder="null - automatic">
+                        </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> Past steps and future steps will automatically reference the model configuration values from Step 2.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 4: Train Configuration -->
+        <div class="form-step" id="form-step-4">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Step 4: Training Configuration</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="train_dirpath" class="form-label">Directory Path</label>
+                            <input type="text" class="form-control" id="train_dirpath" name="train_dirpath" value="/home/agobbi/Projects/ExpTS/electricity" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="train_num_workers" class="form-label">Number of Workers</label>
+                            <input type="number" class="form-control" id="train_num_workers" name="train_num_workers" value="0" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="train_seed" class="form-label">Seed</label>
+                            <input type="number" class="form-control" id="train_seed" name="train_seed" value="42" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="train_devices" class="form-label">Devices (comma-separated)</label>
+                            <input type="text" class="form-control" id="train_devices" name="train_devices" value="0" placeholder="e.g., 0,1,2" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="train_auto_lr_find" name="train_auto_lr_find" checked>
+                                <label class="form-check-label" for="train_auto_lr_find">
+                                    Auto Learning Rate Find
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 5: Inference & Defaults -->
+        <div class="form-step" id="form-step-5">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Step 5: Inference & Defaults Configuration</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Inference Configuration -->
+                    <h5>Inference Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="inference_output_path" class="form-label">Output Path</label>
+                            <input type="text" class="form-control" id="inference_output_path" name="inference_output_path" value="/home/agobbi/Projects/ExpTS/electricity" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="inference_batch_size" class="form-label">Batch Size</label>
+                            <input type="number" class="form-control" id="inference_batch_size" name="inference_batch_size" value="200" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="inference_num_workers" class="form-label">Number of Workers</label>
+                            <input type="number" class="form-control" id="inference_num_workers" name="inference_num_workers" value="4" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="inference_set" class="form-label">Set</label>
+                            <select class="form-control" id="inference_set" name="inference_set" required>
+                                <option value="test" selected>test</option>
+                                <option value="train">train</option>
+                                <option value="validation">validation</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="inference_load_last" name="inference_load_last" checked>
+                                <label class="form-check-label" for="inference_load_last">
+                                    Load Last
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="inference_rescaling" name="inference_rescaling" checked>
+                                <label class="form-check-label" for="inference_rescaling">
+                                    Rescaling
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Defaults Configuration -->
+                    <h5>Defaults Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="defaults_architecture" class="form-label">Architecture</label>
+                            <input type="text" class="form-control" id="defaults_architecture" name="defaults_architecture" placeholder="null - will be set automatically">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="defaults_hydra_launcher" class="form-label">Hydra Launcher</label>
+                            <input type="text" class="form-control" id="defaults_hydra_launcher" name="defaults_hydra_launcher" value="joblib" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 6: Hydra & Output Configuration -->
+        <div class="form-step" id="form-step-6">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Step 6: Hydra & Output Configuration</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Hydra Launcher Configuration -->
+                    <h5>Hydra Launcher Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="hydra_n_jobs" class="form-label">Number of Jobs</label>
+                            <input type="number" class="form-control" id="hydra_n_jobs" name="hydra_n_jobs" value="4" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="hydra_verbose" class="form-label">Verbose</label>
+                            <input type="number" class="form-control" id="hydra_verbose" name="hydra_verbose" value="1" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="hydra_pre_dispatch" class="form-label">Pre Dispatch</label>
+                            <input type="number" class="form-control" id="hydra_pre_dispatch" name="hydra_pre_dispatch" value="4" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="hydra_batch_size" class="form-label">Batch Size</label>
+                            <input type="number" class="form-control" id="hydra_batch_size" name="hydra_batch_size" value="4" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label for="hydra_target" class="form-label">Target</label>
+                            <input type="text" class="form-control" id="hydra_target" name="hydra_target" value="hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher" required>
+                        </div>
+                    </div>
+                    
+                    <!-- Output Configuration -->
+                    <h5>Output Configuration</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="output_subdir" class="form-label">Output Subdirectory</label>
+                            <input type="text" class="form-control" id="output_subdir" name="output_subdir" placeholder="null - automatic">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="sweeper_params" class="form-label">Sweeper Parameters</label>
+                            <input type="text" class="form-control" id="sweeper_params" name="sweeper_params" value="glob(*)" required>
+                        </div>
+                    </div>
+                    
+                    <!-- Command Line Example -->
+                    <div class="alert alert-success">
+                        <h6>Example Command Line:</h6>
+                        <code>python train.py --config-dir=config_etth1 --config-name=config_xps -m architecture=itransformer model_configs.loss_type=mse,exponential_penalization,linear_penalization,additive_iv,multiplicative_iv,global_iv,smape,high_order,dilated,mda</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Navigation Buttons -->
+        <div class="navigation-buttons">
+            <button type="button" class="btn btn-secondary" id="prevBtn" onclick="changeStep(-1)" style="display: none;">Previous</button>
+            <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Next</button>
+            <button type="submit" class="btn btn-success" id="submitBtn" style="display: none;">Generate Configuration</button>
+        </div>
+    </form>
+</div>
+
+<script>
+let currentStep = 1;
+const totalSteps = 6;
+
+function changeStep(direction) {
+    if (direction === 1 && currentStep < totalSteps) {
+        // Validate current step before moving forward
+        if (validateStep(currentStep)) {
+            currentStep++;
+            updateStep();
+        }
+    } else if (direction === -1 && currentStep > 1) {
+        currentStep--;
+        updateStep();
+    }
+}
+
+function updateStep() {
+    // Hide all form steps
+    document.querySelectorAll('.form-step').forEach(step => {
+        step.classList.remove('active');
+    });
+    
+    // Show current step
+    document.getElementById(`form-step-${currentStep}`).classList.add('active');
+    
+    // Update step indicators
+    document.querySelectorAll('.step').forEach((step, index) => {
+        step.classList.remove('active', 'completed');
+        if (index + 1 < currentStep) {
+            step.classList.add('completed');
+        } else if (index + 1 === currentStep) {
+            step.classList.add('active');
+        }
+    });
+    
+    // Update navigation buttons
+    document.getElementById('prevBtn').style.display = currentStep > 1 ? 'block' : 'none';
+    document.getElementById('nextBtn').style.display = currentStep < totalSteps ? 'block' : 'none';
+    document.getElementById('submitBtn').style.display = currentStep === totalSteps ? 'block' : 'none';
+}
+
+function validateStep(step) {
+    const currentStepElement = document.getElementById(`form-step-${step}`);
+    const requiredFields = currentStepElement.querySelectorAll('input[required], select[required]');
+    
+    for (let field of requiredFields) {
+        if (!field.value.trim()) {
+            alert(`Please fill in the required field: ${field.previousElementSibling.textContent}`);
+            field.focus();
+            return false;
+        }
+    }
+    return true;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,7 @@
+architecture_files:
+- name.yaml
+csv_file: name.csv
+experiment: kfa
+experiment_config_file: name.yaml
+timestamp: '2025-07-17T14:59:02.341669'
+user: ker#

@@ -60,52 +60,57 @@
                 
                 <!-- Step 1: Basic Experiment Information -->
                 <div class="form-step" data-step="1">
-                    <h3 class="card-title mb-4">Experiment Information</h3>
+                    <h3 class="card-title mb-4">Experiment Information and Dataset Configuration</h3>
                     
                     <div class="mb-3">
                         <label for="experiment-name" class="form-label">Experiment Name</label>
-                        <input type="text" class="form-control" id="experiment-name" name="experiment-name" value="{{ experiment_name }}" required>
+                        <input type="text" class="form-control" id="experiment-name" name="experiment-name" value="{{ experiment_name }}" readonly>
                     </div>
                     
-                    <div class="mb-3">
-                        <label for="experiment-creator" class="form-label">Created By</label>
-                        <input type="text" class="form-control" id="experiment-creator" name="experiment-creator" value="{{ username }}" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="experiment-date" class="form-label">Date</label>
-                        <input type="date" class="form-control" id="experiment-date" name="experiment-date" value="{{ current_date }}" required>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="experiment-date" class="form-label">Date</label>
+                            <input type="date" class="form-control" id="experiment-date" name="experiment-date" value="{{ current_date }}" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="experiment-creator" class="form-label">Created By</label>
+                            <input type="text" class="form-control" id="experiment-creator" name="experiment-creator" value="{{ username }}" readonly>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="experiment-description" class="form-label">Description</label>
-                        <textarea class="form-control" id="experiment-description" name="experiment-description" rows="3" placeholder="Enter a description of the experiment"></textarea>
+                        <textarea class="form-control" id="experiment-description" name="experiment-description" rows="3">Time series experiment with default configurations</textarea>
                     </div>
                     
                     <h4 class="section-title">Dataset Configuration</h4>
-                    <div class="nested-section">
-                        <div class="mb-3">
-                            <label for="data-path" class="form-label">Data Path <small class="text-muted">(str)</small></label>
-                            <input type="text" class="form-control" id="data-path" name="data-path" placeholder="/path/to/data">
-                            <small class="form-text text-muted">Path to the data directory</small>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="dataset-name" class="form-label">Dataset Name</label>
+                            <input type="text" class="form-control" id="dataset-name" name="dataset-name" value="electricity">
                         </div>
-                        
-                        <div class="mb-3">
-                            <label for="dataset" class="form-label">Dataset <small class="text-muted">(str)</small></label>
-                            <select class="form-select" id="dataset" name="dataset">
-                                <option value="" selected>Select a dataset</option>
-                                <option value="electricity">electricity</option>
-                                <option value="traffic">traffic</option>
-                                <option value="weather">weather</option>
-                                <option value="etth1">etth1</option>
-                                <option value="etth2">etth2</option>
-                                <option value="ettm1">ettm1</option>
-                                <option value="ettm2">ettm2</option>
-                                <option value="exchange_rate">exchange_rate</option>
-                                <option value="illness">illness</option>
-                            </select>
-                            <small class="form-text text-muted">Dataset name</small>
+                        <div class="col-md-6">
+                            <label for="dataset-path" class="form-label">Dataset Path</label>
+                            <input type="text" class="form-control" id="dataset-path" name="dataset-path" value="/home/agobbi/Projects/ExpTS/data">
                         </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="dataset" class="form-label">Dataset <small class="text-muted">(str)</small></label>
+                        <select class="form-select" id="dataset" name="dataset">
+                            <option value="" selected>Select a dataset</option>
+                            <option value="electricity">electricity</option>
+                            <option value="traffic">traffic</option>
+                            <option value="weather">weather</option>
+                            <option value="etth1">etth1</option>
+                            <option value="etth2">etth2</option>
+                            <option value="ettm1">ettm1</option>
+                            <option value="ettm2">ettm2</option>
+                            <option value="exchange_rate">exchange_rate</option>
+                            <option value="illness">illness</option>
+                        </select>
+                        <small class="form-text text-muted">Dataset name</small>
                     </div>
                     
                     <div class="d-flex justify-content-end mt-4">
@@ -123,33 +128,56 @@
                             <option value="Adam" selected>Adam</option>
                             <option value="SGD">SGD</option>
                             <option value="RMSprop">RMSprop</option>
-                            <option value="AdamW">AdamW</option>
+                            <option value="Adagrad">Adagrad</option>
                         </select>
-                        <small class="form-text text-muted">Wrapped optimizer</small>
+                        <small class="form-text text-muted">Optimizer to use for training. Default: Adam</small>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="step-size" class="form-label">Step Size <small class="text-muted">(int)</small></label>
-                        <input type="number" class="form-control" id="step-size" name="step-size" value="30" min="1">
-                        <small class="form-text text-muted">Period of learning rate decay</small>
+                        <label for="scheduler-type" class="form-label">Scheduler Type</label>
+                        <select class="form-select" id="scheduler-type" name="scheduler-type">
+                            <option value="StepLR" selected>StepLR</option>
+                            <option value="ReduceLROnPlateau">ReduceLROnPlateau</option>
+                            <option value="CosineAnnealingLR">CosineAnnealingLR</option>
+                            <option value="ExponentialLR">ExponentialLR</option>
+                            <option value="None">None</option>
+                        </select>
+                        <small class="form-text text-muted">Type of learning rate scheduler. Default: StepLR</small>
                     </div>
                     
-                    <div class="mb-3">
-                        <label for="gamma" class="form-label">Gamma <small class="text-muted">(float)</small></label>
-                        <input type="number" class="form-control" id="gamma" name="gamma" value="0.1" step="0.01" min="0" max="1">
-                        <small class="form-text text-muted">Multiplicative factor of learning rate decay. Default: 0.1</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="last-epoch" class="form-label">Last Epoch <small class="text-muted">(int)</small></label>
-                        <input type="number" class="form-control" id="last-epoch" name="last-epoch" value="-1">
-                        <small class="form-text text-muted">The index of last epoch. Default: -1</small>
-                    </div>
-                    
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="verbose" name="verbose">
-                        <label class="form-check-label" for="verbose">Verbose</label>
-                        <small class="d-block form-text text-muted">If checked, prints a message to stdout for each update. Default: False</small>
+                    <div class="scheduler-params" id="steplr-params">
+                        <h4 class="section-title">StepLR Parameters</h4>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="step-size" class="form-label">Step Size <small class="text-muted">(int)</small></label>
+                                <input type="number" class="form-control" id="step-size" name="step-size" value="2500" min="1">
+                                <small class="form-text text-muted">Period of learning rate decay. Default: 2500</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="gamma" class="form-label">Gamma <small class="text-muted">(float)</small></label>
+                                <input type="number" class="form-control" id="gamma" name="gamma" value="0.75" step="0.01" min="0" max="1">
+                                <small class="form-text text-muted">Multiplicative factor of learning rate decay. Default: 0.75</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="epsilon" class="form-label">Epsilon <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="epsilon" name="epsilon" value="1e-8" step="0.00000001" min="0">
+                            <small class="form-text text-muted">Term added for numerical stability. Default: 1e-8</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="verbose" name="verbose">
+                            <label class="form-check-label" for="verbose">Verbose</label>
+                            <small class="d-block form-text text-muted">If checked, prints a message to stdout for each update. Default: False</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="last-epoch" class="form-label">Last Epoch <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="last-epoch" name="last-epoch" value="-1">
+                            <small class="form-text text-muted">The index of last epoch. Default: -1</small>
+                        </div>
                     </div>
                     
                     <div class="d-flex justify-content-between mt-4">
@@ -257,33 +285,33 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="past-steps" class="form-label">Past Steps <small class="text-muted">(int)</small></label>
-                            <input type="number" class="form-control" id="past-steps" name="past-steps" value="96" min="1">
-                            <small class="form-text text-muted">Number of past datapoints used</small>
+                            <input type="number" class="form-control" id="past-steps" name="past-steps" value="64" min="1">
+                            <small class="form-text text-muted">Number of past time steps. Default: 64</small>
                         </div>
                         <div class="col-md-6">
                             <label for="future-steps" class="form-label">Future Steps <small class="text-muted">(int)</small></label>
-                            <input type="number" class="form-control" id="future-steps" name="future-steps" value="96" min="1">
-                            <small class="form-text text-muted">Number of future lag to predict</small>
+                            <input type="number" class="form-control" id="future-steps" name="future-steps" value="64" min="1">
+                            <small class="form-text text-muted">Number of future time steps. Default: 64</small>
                         </div>
                     </div>
                     
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="past-channels" class="form-label">Past Channels <small class="text-muted">(int)</small></label>
-                            <input type="number" class="form-control" id="past-channels" name="past-channels" value="1" min="1">
-                            <small class="form-text text-muted">Number of numeric past variables, must be >0</small>
+                            <input type="text" class="form-control" id="past-channels" name="past-channels" value="null">
+                            <small class="form-text text-muted">Number of numeric past variables. Default: null (dataset dependent)</small>
                         </div>
                         <div class="col-md-6">
                             <label for="future-channels" class="form-label">Future Channels <small class="text-muted">(int)</small></label>
-                            <input type="number" class="form-control" id="future-channels" name="future-channels" value="1" min="0">
-                            <small class="form-text text-muted">Number of future numeric variables</small>
+                            <input type="text" class="form-control" id="future-channels" name="future-channels" value="null">
+                            <small class="form-text text-muted">Number of future numeric variables. Default: null (dataset dependent)</small>
                         </div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="embs" class="form-label">Embeddings <small class="text-muted">(List)</small></label>
-                        <input type="text" class="form-control" id="embs" name="embs" placeholder="e.g., 10,20,30">
-                        <small class="form-text text-muted">List of the initial dimension of the categorical variables (comma-separated)</small>
+                        <input type="text" class="form-control" id="embs" name="embs" value="null">
+                        <small class="form-text text-muted">List of the initial dimension of the categorical variables. Default: null (dataset dependent)</small>
                     </div>
                     
                     <div class="mb-3">
@@ -329,88 +357,26 @@
                     
                     <div class="mb-3">
                         <label for="out-channels" class="form-label">Output Channels <small class="text-muted">(int)</small></label>
-                        <input type="number" class="form-control" id="out-channels" name="out-channels" value="1" min="1">
-                        <small class="form-text text-muted">Number of output channels</small>
+                        <input type="text" class="form-control" id="out-channels" name="out-channels" value="null">
+                        <small class="form-text text-muted">Number of output channels. Default: null (dataset dependent)</small>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="activation" class="form-label">Activation <small class="text-muted">(str)</small></label>
-                        <select class="form-select" id="activation" name="activation">
-                            <option value="ReLU" selected>ReLU</option>
-                            <option value="LeakyReLU">LeakyReLU</option>
-                            <option value="Sigmoid">Sigmoid</option>
-                            <option value="Tanh">Tanh</option>
-                        </select>
-                        <small class="form-text text-muted">Activation function (PyTorch). Default: torch.nn.ReLU</small>
-                    </div>
-                    
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="remove-last" name="remove-last">
-                        <label class="form-check-label" for="remove-last">Remove Last</label>
-                        <small class="d-block form-text text-muted">If checked, the model learns the difference respect to the last seen point</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="dropout-rate" class="form-label">Dropout Rate <small class="text-muted">(float)</small></label>
-                        <input type="number" class="form-control" id="dropout-rate" name="dropout-rate" value="0.1" step="0.1" min="0" max="0.9">
-                        <small class="form-text text-muted">Dropout rate in Dropout layers</small>
-                    </div>
-                    
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="use-bn" name="use-bn">
-                        <label class="form-check-label" for="use-bn">Use Batch Normalization</label>
-                        <small class="d-block form-text text-muted">If checked, BN layers will be added and dropouts will be removed</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="num-blocks" class="form-label">Number of Blocks <small class="text-muted">(int)</small></label>
-                        <input type="number" class="form-control" id="num-blocks" name="num-blocks" value="4" min="1">
-                        <small class="form-text text-muted">Number of xLSTM blocks (only for xlstm), default 4</small>
-                    </div>
-                    
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="bidirectional" name="bidirectional" checked>
-                        <label class="form-check-label" for="bidirectional">Bidirectional</label>
-                        <small class="d-block form-text text-muted">If checked, the RNN are bidirectional, default True</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="lstm-type" class="form-label">LSTM Type <small class="text-muted">(str)</small></label>
-                        <select class="form-select" id="lstm-type" name="lstm-type">
-                            <option value="" selected>Not specified</option>
-                            <option value="slstm">slstm</option>
-                            <option value="mlstm">mlstm</option>
-                        </select>
-                        <small class="form-text text-muted">Only for xLSTM (slstm or mlstm)</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="persistence-weight" class="form-label">Persistence Weight <small class="text-muted">(float)</small></label>
-                        <input type="number" class="form-control" id="persistence-weight" name="persistence-weight" value="0" step="0.1" min="0">
-                        <small class="form-text text-muted">Weight controlling the divergence from persistence model. Default 0</small>
+                        <label for="quantiles" class="form-label">Quantiles <small class="text-muted">(list)</small></label>
+                        <input type="text" class="form-control code-field" id="quantiles" name="quantiles" value="[]">
+                        <small class="form-text text-muted">List of quantiles to predict. Default: [] (commented as [0.1,0.5,0.9])</small>
                     </div>
                     
                     <div class="mb-3">
                         <label for="loss-type" class="form-label">Loss Type <small class="text-muted">(str)</small></label>
-                        <select class="form-select" id="loss-type" name="loss-type">
-                            <option value="l1" selected>l1</option>
-                            <option value="mse">mse</option>
-                            <option value="linear_penalization">linear_penalization</option>
-                            <option value="exponential_penalization">exponential_penalization</option>
-                        </select>
-                        <small class="form-text text-muted">This model uses custom losses or l1 or mse. Custom losses can be linear_penalization or exponential_penalization. Default l1</small>
+                        <input type="text" class="form-control" id="loss-type" name="loss-type" value="null">
+                        <small class="form-text text-muted">Loss function type. Default: null</small>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="quantiles" class="form-label">Quantiles <small class="text-muted">(List[int])</small></label>
-                        <input type="text" class="form-control" id="quantiles" name="quantiles" value="0.1,0.5,0.9">
-                        <small class="form-text text-muted">We can use quantile loss if len(quantiles) > 0 (usually 0.1,0.5,0.9) or L1loss in case len(quantiles)==0. Defaults to []</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="n-classes" class="form-label">Number of Classes <small class="text-muted">(int)</small></label>
-                        <input type="number" class="form-control" id="n-classes" name="n-classes" value="0" min="0">
-                        <small class="form-text text-muted">Number of classes (0 in regression)</small>
+                        <label for="persistence-weight" class="form-label">Persistence Weight <small class="text-muted">(float)</small></label>
+                        <input type="number" class="form-control" id="persistence-weight" name="persistence-weight" value="1.0" step="0.1" min="0">
+                        <small class="form-text text-muted">Weight for persistence loss. Default: 1.0</small>
                     </div>
                     
                     <div class="mb-3">
@@ -437,19 +403,19 @@
                     
                     <div class="row mb-3">
                         <div class="col-md-4">
-                            <label for="perc-train" class="form-label">Training % <small class="text-muted">(float)</small></label>
+                            <label for="perc-train" class="form-label">Train Percentage <small class="text-muted">(float)</small></label>
                             <input type="number" class="form-control" id="perc-train" name="perc-train" value="0.6" step="0.1" min="0" max="1">
-                            <small class="form-text text-muted">Fraction of the training set. Default: 0.6</small>
+                            <small class="form-text text-muted">Percentage of training data. Default: 0.6</small>
                         </div>
                         <div class="col-md-4">
-                            <label for="perc-valid" class="form-label">Validation % <small class="text-muted">(float)</small></label>
+                            <label for="perc-valid" class="form-label">Validation Percentage <small class="text-muted">(float)</small></label>
                             <input type="number" class="form-control" id="perc-valid" name="perc-valid" value="0.2" step="0.1" min="0" max="1">
-                            <small class="form-text text-muted">Fraction of the validation set. Default: 0.2</small>
+                            <small class="form-text text-muted">Percentage of validation data. Default: 0.2</small>
                         </div>
                         <div class="col-md-4">
-                            <label for="perc-test" class="form-label">Test % <small class="text-muted">(float)</small></label>
-                            <input type="number" class="form-control" id="perc-test" name="perc-test" value="0.2" step="0.1" min="0" max="1">
-                            <small class="form-text text-muted">Calculated as 1 - (train% + validation%)</small>
+                            <label for="perc-test" class="form-label">Test Percentage <small class="text-muted">(float)</small></label>
+                            <input type="number" class="form-control" id="perc-test" name="perc-test" value="0.2" step="0.1" min="0" max="1" disabled>
+                            <small class="form-text text-muted">Percentage of test data (calculated as 1-train-valid)</small>
                         </div>
                     </div>
                     
@@ -501,20 +467,20 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="split-past-steps" class="form-label">Past Steps <small class="text-muted">(int)</small></label>
-                            <input type="number" class="form-control" id="split-past-steps" name="split-past-steps" value="100" min="1">
-                            <small class="form-text text-muted">Past step to consider for making the prediction. Default: 100</small>
+                            <input type="text" class="form-control" id="split-past-steps" name="split-past-steps" value="model_configs@past_steps">
+                            <small class="form-text text-muted">Past step to consider for making the prediction. Default: model_configs@past_steps</small>
                         </div>
                         <div class="col-md-6">
                             <label for="split-future-steps" class="form-label">Future Steps <small class="text-muted">(int)</small></label>
-                            <input type="number" class="form-control" id="split-future-steps" name="split-future-steps" value="20" min="1">
-                            <small class="form-text text-muted">Future step to predict. Default: 20</small>
+                            <input type="text" class="form-control" id="split-future-steps" name="split-future-steps" value="model_configs@future_steps">
+                            <small class="form-text text-muted">Future step to predict. Default: model_configs@future_steps</small>
                         </div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="shift" class="form-label">Shift <small class="text-muted">(int)</small></label>
                         <input type="number" class="form-control" id="shift" name="shift" value="0" min="0">
-                        <small class="form-text text-muted">See `create_data_loader`. Default: 0</small>
+                        <small class="form-text text-muted">Shift parameter for data loading. Default: 0</small>
                     </div>
                     
                     <div class="mb-3 form-check">
@@ -526,7 +492,7 @@
                     <div class="mb-3">
                         <label for="skip-step" class="form-label">Skip Step <small class="text-muted">(int)</small></label>
                         <input type="number" class="form-control" id="skip-step" name="skip-step" value="1" min="1">
-                        <small class="form-text text-muted">See `create_data_loader`. Default: 1</small>
+                        <small class="form-text text-muted">Step size for data loading. Default: 1</small>
                     </div>
                     
                     <div class="mb-3 form-check">
@@ -561,6 +527,25 @@
                 <!-- Step 6: Training Configuration -->
                 <div class="form-step" data-step="6" style="display: none;">
                     <h3 class="card-title mb-4">Training Configuration</h3>
+                    
+                    <div class="mb-3">
+                        <label for="dirpath" class="form-label">Output Directory <small class="text-muted">(str)</small></label>
+                        <input type="text" class="form-control" id="dirpath" name="dirpath" value="/home/agobbi/Projects/ExpTS/electricity">
+                        <small class="form-text text-muted">Directory to save model weights and other outputs. Default: "/home/agobbi/Projects/ExpTS/electricity"</small>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="num-workers" class="form-label">Number of Workers <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="num-workers" name="num-workers" value="0" min="0">
+                            <small class="form-text text-muted">Number of dataloader workers. Default: 0</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="seed" class="form-label">Random Seed <small class="text-muted">(int)</small></label>
+                            <input type="number" class="form-control" id="seed" name="seed" value="42" min="0">
+                            <small class="form-text text-muted">Random seed for reproducibility. Default: 42</small>
+                        </div>
+                    </div>
                     
                     <div class="row mb-3">
                         <div class="col-md-6">
@@ -606,6 +591,12 @@
                     </div>
                     
                     <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="auto-lr-find" name="auto-lr-find" checked>
+                        <label class="form-check-label" for="auto-lr-find">Auto Learning Rate Find</label>
+                        <small class="d-block form-text text-muted">If checked, automatically find optimal learning rate. Default: True</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="shuffle" name="shuffle" checked>
                         <label class="form-check-label" for="shuffle">Shuffle Training Data</label>
                         <small class="d-block form-text text-muted">If checked, training data is shuffled. Default: True</small>
@@ -619,8 +610,8 @@
                     
                     <div class="mb-3">
                         <label for="weight-decay" class="form-label">Weight Decay <small class="text-muted">(float)</small></label>
-                        <input type="number" class="form-control" id="train-weight-decay" name="train-weight-decay" value="0" step="0.0001" min="0">
-                        <small class="form-text text-muted">L2 regularization. Default: 0</small>
+                        <input type="number" class="form-control" id="train-weight-decay" name="train-weight-decay" value="0.0001" step="0.0001" min="0">
+                        <small class="form-text text-muted">L2 regularization. Default: 0.0001 (commented as 0.001)</small>
                     </div>
                     
                     <div class="mb-3">
@@ -675,6 +666,12 @@
                             <option value="val_smape">val_smape</option>
                         </select>
                         <small class="form-text text-muted">The criterion for best model selection. Default: 'val_mse'</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="devices" class="form-label">Devices <small class="text-muted">(List[int])</small></label>
+                        <input type="text" class="form-control code-field" id="devices" name="devices" value="[0]">
+                        <small class="form-text text-muted">List of GPU devices to use. Default: [0]</small>
                     </div>
                     
                     <div class="d-flex justify-content-between mt-4">
@@ -992,6 +989,7 @@
             
             // Training configuration
             data.training = {
+                dirpath: formData.get('dirpath'),
                 batch_size: parseInt(formData.get('batch-size')),
                 epochs: parseInt(formData.get('epochs')),
                 lr: parseFloat(formData.get('lr')),
@@ -999,10 +997,22 @@
                 lr_scheduler_patience: parseInt(formData.get('lr-scheduler-patience')),
                 lr_scheduler_factor: parseFloat(formData.get('lr-scheduler-factor')),
                 clip_gradient_val: parseFloat(formData.get('clip-gradient-val')),
+                auto_lr_find: formData.get('auto-lr-find') === 'on',
                 shuffle: formData.get('shuffle') === 'on',
                 grad_accumulation: parseInt(formData.get('grad-accumulation')),
                 weight_decay: parseFloat(formData.get('train-weight-decay'))
             };
+            
+            // Parse and add devices
+            const devicesStr = formData.get('devices');
+            if (devicesStr) {
+                try {
+                    data.training.devices = JSON.parse(devicesStr);
+                } catch (e) {
+                    // If parsing fails, use as string
+                    data.training.devices = [0];
+                }
+            }
             
             // Get multiple selected metrics
             const metricsSelect = document.getElementById('metrics');

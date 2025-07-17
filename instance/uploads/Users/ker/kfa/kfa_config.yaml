@@ -1,0 +1,33 @@
+experiment:
+  name: kfa
+  creator: ker#
+  date: 2025-07-17
+  description: 
+  data:
+    path: 
+    dataset: 
+model:
+  past_steps: 96
+  future_steps: 96
+  hidden_size: 128
+  dropout: 0.1
+  kind: transformer
+training:
+  optimizer:
+    type: Adam
+    learning_rate: 0.001
+  batch_size: 32
+  max_epochs: 100
+  auto_lr_find: true
+split:
+  method: chronological
+  train: 70
+  validation: 10
+  test: 20
+inference:
+  set: test
+  load_last: true
+  quantiles:
+    - 0.1
+    - 0.5
+    - 0.9

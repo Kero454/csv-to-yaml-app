@@ -51,14 +51,25 @@
         </div>
     </div>
     
-    <!-- Advanced Form Option -->
+    <!-- Template with defaults Option -->
     <div class="card mb-4">
         <div class="card-header bg-warning text-dark">
-            <h5 class="mb-0">Option 4: Advanced Configuration Editor</h5>
+            <h5 class="mb-0">Option 4: Use a template</h5>
         </div>
         <div class="card-body">
-            <p>Use a comprehensive multi-step form with advanced model configuration options, including scheduler settings, optimization parameters, and detailed model configurations.</p>
-            <a href="{{ url_for('routes.advanced_config_form') }}" class="btn btn-warning">Open Advanced Editor</a>
+            <p>Use a pre-configured template with default values for time series experiments, including dataset paths, scheduler, optimizer, model configurations, split parameters, training and inference settings.</p>
+            <a href="{{ url_for('routes.advanced_config_form') }}" class="btn btn-warning">Use Template</a>
+        </div>
+    </div>
+    
+    <!-- Template Optimizer Option -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Option 5: Template Optimizer</h5>
+        </div>
+        <div class="card-body">
+            <p>Advanced multi-step configuration wizard optimized for machine learning experiments. Each step builds upon the previous one with intelligent defaults and cross-references between configurations.</p>
+            <a href="{{ url_for('routes.template_optimizer_form') }}" class="btn btn-dark">Start Template Optimizer</a>
         </div>
     </div>
 {% endblock %}

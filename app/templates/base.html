@@ -19,8 +19,8 @@
             <ul class="navbar-nav mr-auto">
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('routes.index') }}">Home</a></li>
                 {% if current_user.is_authenticated %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('routes.experiment_explorer') }}">My Experiments</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('routes.experiment') }}">New Experiment</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('routes.list_files') }}">View Files</a></li>
                 {% endif %}
             </ul>
             <ul class="navbar-nav">
