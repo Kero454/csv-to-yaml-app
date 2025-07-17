@@ -411,69 +411,115 @@
             </div>
         </div>
         
-        <!-- Navigation Buttons -->
         <div class="navigation-buttons">
-            <button type="button" class="btn btn-secondary" id="prevBtn" onclick="changeStep(-1)" style="display: none;">Previous</button>
-            <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Next</button>
-            <button type="submit" class="btn btn-success" id="submitBtn" style="display: none;">Generate Configuration</button>
+            <button type="button" class="btn btn-secondary" id="prevBtn">Previous</button>
+            <div>
+                <button type="button" class="btn btn-primary" id="nextBtn">Next</button>
+                <button type="button" class="btn btn-info" id="previewBtn" style="display: none;">Preview YAML</button>
+                <button type="submit" class="btn btn-success" id="submitBtn" style="display: none;">Generate Config</button>
+            </div>
         </div>
     </form>
 </div>
 
+<!-- YAML Preview Modal -->
+<div class="modal fade" id="yamlPreviewModal" tabindex="-1" aria-labelledby="yamlPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="yamlPreviewModalLabel">YAML Configuration Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre><code id="yaml-preview-content" class="language-yaml"></code></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-let currentStep = 1;
-const totalSteps = 6;
+document.addEventListener('DOMContentLoaded', function() {
+    let currentStep = 1;
+    const totalSteps = 6;
 
-function changeStep(direction) {
-    if (direction === 1 && currentStep < totalSteps) {
-        // Validate current step before moving forward
-        if (validateStep(currentStep)) {
-            currentStep++;
-            updateStep();
-        }
-    } else if (direction === -1 && currentStep > 1) {
-        currentStep--;
-        updateStep();
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const previewBtn = document.getElementById('previewBtn');
+    const form = document.getElementById('templateOptimizerForm');
+
+    function updateButtons() {
+        prevBtn.style.display = currentStep > 1 ? 'inline-block' : 'none';
+        nextBtn.style.display = currentStep < totalSteps ? 'inline-block' : 'none';
+        const isLastStep = currentStep === totalSteps;
+        submitBtn.style.display = isLastStep ? 'inline-block' : 'none';
+        previewBtn.style.display = isLastStep ? 'inline-block' : 'none';
     }
-}
 
-function updateStep() {
-    // Hide all form steps
-    document.querySelectorAll('.form-step').forEach(step => {
-        step.classList.remove('active');
-    });
-    
-    // Show current step
-    document.getElementById(`form-step-${currentStep}`).classList.add('active');
-    
-    // Update step indicators
-    document.querySelectorAll('.step').forEach((step, index) => {
-        step.classList.remove('active', 'completed');
-        if (index + 1 < currentStep) {
-            step.classList.add('completed');
-        } else if (index + 1 === currentStep) {
-            step.classList.add('active');
+    function changeStep(direction) {
+        const newStep = currentStep + direction;
+
+        if (direction > 0) {
+            const currentFormStep = document.getElementById(`form-step-${currentStep}`);
+            const inputs = currentFormStep.querySelectorAll('input[required], select[required]');
+            let isValid = true;
+            inputs.forEach(input => {
+                if (!input.value.trim()) {
+                    isValid = false;
+                    input.classList.add('is-invalid');
+                } else {
+                    input.classList.remove('is-invalid');
+                }
+            });
+            if (!isValid) return;
         }
-    });
-    
-    // Update navigation buttons
-    document.getElementById('prevBtn').style.display = currentStep > 1 ? 'block' : 'none';
-    document.getElementById('nextBtn').style.display = currentStep < totalSteps ? 'block' : 'none';
-    document.getElementById('submitBtn').style.display = currentStep === totalSteps ? 'block' : 'none';
-}
 
-function validateStep(step) {
-    const currentStepElement = document.getElementById(`form-step-${step}`);
-    const requiredFields = currentStepElement.querySelectorAll('input[required], select[required]');
-    
-    for (let field of requiredFields) {
-        if (!field.value.trim()) {
-            alert(`Please fill in the required field: ${field.previousElementSibling.textContent}`);
-            field.focus();
-            return false;
+        if (newStep > 0 && newStep <= totalSteps) {
+            document.getElementById(`form-step-${currentStep}`).classList.remove('active');
+            document.getElementById(`step-${currentStep}`).classList.remove('active');
+
+            if (direction > 0) {
+                document.getElementById(`step-${currentStep}`).classList.add('completed');
+            }
+
+            currentStep = newStep;
+            document.getElementById(`form-step-${currentStep}`).classList.add('active');
+            document.getElementById(`step-${currentStep}`).classList.add('active');
+            updateButtons();
         }
     }
-    return true;
-}
+
+    nextBtn.addEventListener('click', () => changeStep(1));
+    prevBtn.addEventListener('click', () => changeStep(-1));
+
+    previewBtn.addEventListener('click', async function() {
+        const formData = new FormData(form);
+        try {
+            const response = await fetch('{{ url_for("routes.preview_template_yaml") }}', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const yamlContent = document.getElementById('yaml-preview-content');
+                yamlContent.textContent = data.yaml_data;
+                const previewModal = new bootstrap.Modal(document.getElementById('yamlPreviewModal'));
+                previewModal.show();
+            } else {
+                const errorData = await response.json();
+                alert('Failed to generate YAML preview: ' + (errorData.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Preview error:', error);
+            alert('An error occurred while generating the preview.');
+        }
+    });
+
+    updateButtons();
+});
 </script>
 {% endblock %}

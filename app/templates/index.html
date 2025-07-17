@@ -1,7 +1,80 @@
 {% extends "base.html" %}
 
+{% block title %}Home - CSV-to-YAML App{% endblock %}
+
 {% block content %}
-    <h1>Hi, {{ current_user.username }}!</h1>
-    <p>Welcome to the CSV-to-YAML application.</p>
-    <p>Click <a href="{{ url_for('routes.experiment') }}">here to start a new experiment</a>.</p>
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="jumbotron bg-primary text-white p-5 rounded mb-4">
+                <h1 class="display-4">Welcome to CSV-to-YAML App</h1>
+                <p class="lead">Transform your CSV data into structured YAML configurations with ease.</p>
+                <p>Hello, <strong>{{ current_user.username }}</strong>! Ready to create some amazing experiments?</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-plus-circle-fill text-success" style="font-size: 3rem;"></i>
+                    <h5 class="card-title mt-3">Create New Experiment</h5>
+                    <p class="card-text">Start a new experiment by uploading your CSV data and configuration files.</p>
+                    <a href="{{ url_for('routes.experiment') }}" class="btn btn-success">Get Started</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-folder-fill text-primary" style="font-size: 3rem;"></i>
+                    <h5 class="card-title mt-3">My Experiments</h5>
+                    <p class="card-text">View and manage your existing experiments, download results, and preview files.</p>
+                    <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-primary">View Experiments</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-gear-fill text-warning" style="font-size: 3rem;"></i>
+                    <h5 class="card-title mt-3">Template Optimizer</h5>
+                    <p class="card-text">Use our advanced template optimizer to generate optimized YAML configurations.</p>
+                    <a href="{{ url_for('routes.experiment') }}" class="btn btn-warning">Optimize</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Quick Start Guide</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>1. Create an Experiment</h6>
+                            <p>Start by giving your experiment a name and uploading your configuration files.</p>
+                            
+                            <h6>2. Upload Data</h6>
+                            <p>Upload your CSV data files that will be used in your experiment.</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>3. Configure Architecture</h6>
+                            <p>Upload or configure your model architecture files.</p>
+                            
+                            <h6>4. Run & Monitor</h6>
+                            <p>Execute your experiment and monitor the results through our dashboard.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

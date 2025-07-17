@@ -75,7 +75,7 @@ web = Blueprint('routes', __name__)
 @web.route('/index')
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for('routes.experiment_explorer'))
+        return render_template('index.html', username=current_user.username)
     return redirect(url_for('auth.login'))
 
 @web.route('/experiment', methods=['GET', 'POST'])
@@ -258,6 +258,72 @@ def serve_upload(filepath):
         
     return send_file(file_abs_path)
 
+
+@web.route('/view_file_content')
+@login_required
+def view_file_content():
+    """Serve file content for the preview modal."""
+    filepath = request.args.get('filepath')
+    current_app.logger.info(f"Received request for filepath: {filepath}")
+    if not filepath:
+        return jsonify({'error': 'Filepath is required.'}), 400
+
+    # Remove 'uploads/' prefix if present to get the relative path
+    if filepath.startswith('uploads/'):
+        relative_path = filepath[8:]  # Remove 'uploads/' prefix
+    else:
+        relative_path = filepath
+
+    # Security check: Ensure the file is within the user's own directory
+    # inside the main UPLOAD_FOLDER to prevent directory traversal.
+    base_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    safe_filepath = os.path.abspath(os.path.join(base_path, relative_path))
+    
+    current_app.logger.info(f"Base path: {base_path}")
+    current_app.logger.info(f"Safe filepath: {safe_filepath}")
+    current_app.logger.info(f"Absolute base path: {os.path.abspath(base_path)}")
+
+    # 1. Check for directory traversal
+    if not safe_filepath.startswith(os.path.abspath(base_path)):
+        current_app.logger.warning(f"Directory traversal check failed: {safe_filepath} does not start with {os.path.abspath(base_path)}")
+        current_app.logger.warning(f"Potential directory traversal attempt by user {current_user.id} for path {filepath}")
+        return jsonify({'error': 'Access denied.'}), 403
+    
+    current_app.logger.info(f"Directory traversal check passed")
+
+    # 2. Check that the user is accessing their own files
+    # Use secure_filename to sanitize username consistently with file storage
+    sanitized_username = secure_filename(current_user.username)
+    current_app.logger.info(f"Current user: {current_user.username}, Sanitized: {sanitized_username}, User ID: {current_user.id}")
+    current_app.logger.info(f"Relative path: {relative_path}")
+    current_app.logger.info(f"Expected prefix: {sanitized_username}/")
+    if not relative_path.startswith(sanitized_username + '/'):
+        current_app.logger.warning(f"Username check failed: {relative_path} does not start with {sanitized_username}/")
+        current_app.logger.warning(f"User {current_user.id} ({current_user.username}) attempting to access other user's file at {relative_path}")
+        return jsonify({'error': 'Access denied.'}), 403
+    
+    current_app.logger.info(f"Username check passed")
+
+    # Check if file exists before trying to read it
+    current_app.logger.info(f"Checking if file exists: {safe_filepath}")
+    if not os.path.exists(safe_filepath):
+        current_app.logger.warning(f"File not found: {safe_filepath}")
+        return jsonify({'error': 'File not found.'}), 404
+    
+    current_app.logger.info(f"File exists, attempting to read: {safe_filepath}")
+    try:
+        with open(safe_filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        current_app.logger.info(f"Successfully read file, content length: {len(content)}")
+        return jsonify({'content': content})
+    except FileNotFoundError:
+        current_app.logger.error(f"File not found during read: {safe_filepath}")
+        return jsonify({'error': 'File not found.'}), 404
+    except Exception as e:
+        current_app.logger.error(f"Error reading file {safe_filepath} for preview: {e}")
+        return jsonify({'error': 'An error occurred while reading the file.'}), 500
+
+
 @web.route('/health')
 def health_check():
     """Liveness check for Kubernetes."""
@@ -324,11 +390,15 @@ def experiment_explorer():
                 config_files = []
                 for file in os.listdir(exp_path):
                     if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
-                        file_path = os.path.join(secure_filename(current_user.username), experiment_name, file)
+                        # Path for file links (serve_upload route)
+                        file_link_path = os.path.join(secure_filename(current_user.username), experiment_name, file)
+                        # Path for preview data attributes (view_file_content route)
+                        file_preview_path = os.path.join('uploads', secure_filename(current_user.username), experiment_name, file)
                         file_size = os.path.getsize(os.path.join(exp_path, file))
                         config_files.append({
                             'name': file,
-                            'path': file_path,
+                            'path': file_link_path,
+                            'preview_path': file_preview_path,
                             'size': f"{file_size / 1024:.1f} KB"
                         })
                 
@@ -338,11 +408,15 @@ def experiment_explorer():
                 if os.path.exists(arch_dir) and os.path.isdir(arch_dir):
                     for file in os.listdir(arch_dir):
                         if os.path.isfile(os.path.join(arch_dir, file)):
-                            file_path = os.path.join(secure_filename(current_user.username), experiment_name, 'Architecture', file)
+                            # Path for file links (serve_upload route)
+                            file_link_path = os.path.join(secure_filename(current_user.username), experiment_name, 'Architecture', file)
+                            # Path for preview data attributes (view_file_content route)
+                            file_preview_path = os.path.join('uploads', secure_filename(current_user.username), experiment_name, 'Architecture', file)
                             file_size = os.path.getsize(os.path.join(arch_dir, file))
                             arch_files.append({
                                 'name': file,
-                                'path': file_path,
+                                'path': file_link_path,
+                                'preview_path': file_preview_path,
                                 'size': f"{file_size / 1024:.1f} KB"
                             })
                 
@@ -355,11 +429,15 @@ def experiment_explorer():
                         if os.path.isdir(csv_path):
                             for file in os.listdir(csv_path):
                                 if file.lower().endswith('.csv') and os.path.isfile(os.path.join(csv_path, file)):
-                                    file_path = os.path.join(secure_filename(current_user.username), 'Data', csv_dir, file)
+                                    # Path for file links (serve_upload route)
+                                    file_link_path = os.path.join(secure_filename(current_user.username), 'Data', csv_dir, file)
+                                    # Path for preview data attributes (view_file_content route)
+                                    file_preview_path = os.path.join('uploads', secure_filename(current_user.username), 'Data', csv_dir, file)
                                     file_size = os.path.getsize(os.path.join(csv_path, file))
                                     data_files.append({
                                         'name': file,
-                                        'path': file_path,
+                                        'path': file_link_path,
+                                        'preview_path': file_preview_path,
                                         'size': f"{file_size / 1024:.1f} KB"
                                     })
                 
@@ -476,6 +554,93 @@ def template_optimizer_form():
                            experiment_name=session['experiment_name'], 
                            username=current_user.username, 
                            current_date=current_date_str)
+
+@web.route('/preview_template_yaml', methods=['POST'])
+@login_required
+def preview_template_yaml():
+    """Generate a YAML preview from the template optimizer form data."""
+    try:
+        # Process form data and generate YAML configuration
+        config_data = {
+            'dataset': {
+                'dataset': request.form.get('dataset', 'electricity'),
+                'path': request.form.get('dataset_path', '/home/agobbi/Projects/ExpTS/data')
+            },
+            'scheduler_config': {
+                'gamma': float(request.form.get('scheduler_gamma', 0.75)),
+                'step_size': int(request.form.get('scheduler_step_size', 2500))
+            },
+            'optim_config': {
+                'lr': float(request.form.get('optim_lr', 0.00005)),
+                'weight_decay': float(request.form.get('optim_weight_decay', 0.0001))
+            },
+            'model_configs': {
+                'past_steps': int(request.form.get('model_past_steps', 64)),
+                'future_steps': int(request.form.get('model_future_steps', 64)),
+                'quantiles': _parse_quantiles(request.form.get('model_quantiles', '')),
+                'past_channels': _parse_null_value(request.form.get('model_past_channels')),
+                'future_channels': _parse_null_value(request.form.get('model_future_channels')),
+                'embs': _parse_null_value(request.form.get('model_embs')),
+                'out_channels': _parse_null_value(request.form.get('model_out_channels')),
+                'loss_type': _parse_null_value(request.form.get('model_loss_type')),
+                'persistence_weight': float(request.form.get('model_persistence_weight', 1.0))
+            },
+            'split_params': {
+                'perc_train': float(request.form.get('split_perc_train', 0.6)),
+                'perc_valid': float(request.form.get('split_perc_valid', 0.2)),
+                'range_train': _parse_null_value(request.form.get('split_range_train')),
+                'range_validation': _parse_null_value(request.form.get('split_range_validation')),
+                'range_test': _parse_null_value(request.form.get('split_range_test')),
+                'shift': int(request.form.get('split_shift', 0)),
+                'starting_point': _parse_null_value(request.form.get('split_starting_point')),
+                'skip_step': int(request.form.get('split_skip_step', 1)),
+                'past_steps': 'model_configs@past_steps',
+                'future_steps': 'model_configs@future_steps'
+            },
+            'train_config': {
+                'dirpath': request.form.get('train_dirpath', '/home/agobbi/Projects/ExpTS/electricity'),
+                'num_workers': int(request.form.get('train_num_workers', 0)),
+                'auto_lr_find': request.form.get('train_auto_lr_find') == 'on',
+                'devices': _parse_devices(request.form.get('train_devices', '0')),
+                'seed': int(request.form.get('train_seed', 42))
+            },
+            'inference': {
+                'output_path': request.form.get('inference_output_path', '/home/agobbi/Projects/ExpTS/electricity'),
+                'load_last': request.form.get('inference_load_last') == 'on',
+                'batch_size': int(request.form.get('inference_batch_size', 200)),
+                'num_workers': int(request.form.get('inference_num_workers', 4)),
+                'set': request.form.get('inference_set', 'test'),
+                'rescaling': request.form.get('inference_rescaling') == 'on'
+            },
+            'defaults': [
+                '_self_',
+                {'architecture': _parse_null_value(request.form.get('defaults_architecture'))},
+                {'override hydra/launcher': request.form.get('defaults_hydra_launcher', 'joblib')}
+            ],
+            'hydra': {
+                'launcher': {
+                    'n_jobs': int(request.form.get('hydra_n_jobs', 4)),
+                    'verbose': int(request.form.get('hydra_verbose', 1)),
+                    'pre_dispatch': int(request.form.get('hydra_pre_dispatch', 4)),
+                    'batch_size': int(request.form.get('hydra_batch_size', 4)),
+                    '_target_': request.form.get('hydra_target', 'hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher')
+                },
+                'output_subdir': _parse_null_value(request.form.get('output_subdir')),
+                'sweeper': {
+                    'params': {
+                        'architecture': request.form.get('sweeper_params', 'glob(*)')
+                    }
+                }
+            }
+        }
+
+        # Generate YAML string but do not save to session
+        yaml_data = yaml.dump(config_data, default_flow_style=False, sort_keys=False)
+        return jsonify({'yaml_data': yaml_data})
+
+    except Exception as e:
+        current_app.logger.error(f"Error generating YAML preview: {str(e)}")
+        return jsonify({'error': 'Failed to generate preview. Check form data for errors.'}), 400
 
 def _parse_quantiles(quantiles_str):
     """Parse comma-separated quantiles string into list."""
@@ -599,4 +764,3 @@ def internal_error(error):
     db.session.rollback()
     current_app.logger.error(f'Server error: {error}', exc_info=True)
     return render_template('error.html', error='Internal server error', code=500), 500
-

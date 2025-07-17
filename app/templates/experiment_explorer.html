@@ -31,8 +31,11 @@
                                                     <i class="bi bi-file-text me-2 text-primary"></i>
                                                     <a href="{{ url_for('routes.serve_upload', filepath=file.path) }}">{{ file.name }}</a>
                                                 </span>
-                                                <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
-                                            </li>
+                                                 <div>
+                                                     <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
+                                                     <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
+                                                 </div>
+                                             </li>
                                         {% endfor %}
                                     </ul>
                                     
@@ -44,8 +47,11 @@
                                                     <i class="bi bi-file-code me-2 text-success"></i>
                                                     <a href="{{ url_for('routes.serve_upload', filepath=file.path) }}">{{ file.name }}</a>
                                                 </span>
-                                                <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
-                                            </li>
+                                                 <div>
+                                                     <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
+                                                     <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
+                                                 </div>
+                                             </li>
                                         {% endfor %}
                                     </ul>
                                     
@@ -57,8 +63,11 @@
                                                     <i class="bi bi-file-spreadsheet me-2 text-danger"></i>
                                                     <a href="{{ url_for('routes.serve_upload', filepath=file.path) }}">{{ file.name }}</a>
                                                 </span>
-                                                <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
-                                            </li>
+                                                 <div>
+                                                     <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
+                                                     <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
+                                                 </div>
+                                             </li>
                                         {% endfor %}
                                     </ul>
                                 </div>
@@ -75,4 +84,67 @@
         </div>
     {% endif %}
 </div>
+
+<!-- File Preview Modal -->
+<div class="modal fade" id="filePreviewModal" tabindex="-1" aria-labelledby="filePreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="filePreviewModalLabel">File Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre><code id="file-preview-content" class="language-yaml"></code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const previewModal = new bootstrap.Modal(document.getElementById('filePreviewModal'));
+    const modalTitle = document.getElementById('filePreviewModalLabel');
+    const modalContent = document.getElementById('file-preview-content');
+
+    document.querySelectorAll('.preview-btn').forEach(button => {
+        button.addEventListener('click', async function() {
+            const filepath = this.dataset.filepath;
+            const filename = this.dataset.filename; // Correctly define filename
+
+            modalTitle.textContent = `Preview: ${filename}`;
+            modalContent.textContent = 'Loading...';
+            previewModal.show();
+
+            try {
+                const fileExtension = filepath.split('.').pop().toLowerCase();
+                const response = await fetch(`/view_file_content?filepath=${encodeURIComponent(filepath)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    modalContent.textContent = data.content;
+                    // Optional: Add syntax highlighting if you use a library like Prism.js
+                    if (window.Prism) {
+                        // Update the language class based on file extension
+                        const extension = filename.split('.').pop();
+                        let language = 'plaintext';
+                        if (extension === 'yaml' || extension === 'yml') language = 'yaml';
+                        if (extension === 'py') language = 'python';
+                        if (extension === 'csv') language = 'csv';
+                        modalContent.className = `language-${language}`;
+                        Prism.highlightElement(modalContent);
+                    }
+                } else {
+                    const error = await response.json();
+                    modalContent.textContent = `Error: ${error.error || 'Could not load file.'}`;
+                }
+            } catch (error) {
+                console.error('Error fetching file content:', error);
+                modalContent.textContent = 'An unexpected error occurred.';
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

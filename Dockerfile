@@ -22,4 +22,4 @@ RUN mkdir -p ${UPLOAD_FOLDER}/Users
 EXPOSE 5000
 
 # Start the Flask app via gunicorn (factory pattern)
-CMD ["gunicorn", "--worker-class", "gevent", "--workers", "4", "--bind", "0.0.0.0:5000", "run:app"]
+CMD ["gunicorn", "--workers=4", "--bind=0.0.0.0:5000", "-k", "gevent", "--log-level", "info", "run:app"]
