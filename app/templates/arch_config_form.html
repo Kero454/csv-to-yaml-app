@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Configure Architecture File {{ current_file }} of {{ total_files }}</h2>
+        <a href="{{ url_for('routes.arch_config_setup') }}" class="btn btn-outline-secondary btn-sm">Back to Setup</a>
+    </div>
+    
+    <!-- Progress indicator -->
+    <div class="progress mb-4" style="height: 8px;">
+        <div class="progress-bar bg-success" role="progressbar" style="width: {{ (current_file / total_files * 100)|round(1) }}%"></div>
+    </div>
+    <p class="text-center text-muted mb-4">File {{ current_file }} of {{ total_files }}</p>
+    
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <form method="post" action="{{ url_for('routes.arch_config_form') }}">
+                <input type="hidden" name="current_file" value="{{ current_file }}">
+                <input type="hidden" name="total_files" value="{{ total_files }}">
+                
+                <div class="mb-3">
+                    <label for="filename" class="form-label">Architecture File Name</label>
+                    <input type="text" class="form-control" id="filename" name="filename" 
+                           value="{{ filename if filename else '' }}" 
+                           placeholder="e.g., model_architecture.py" required>
+                    <small class="form-text text-muted">Enter the name for this architecture file (include file extension).</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description</label>
+                    <textarea class="form-control" id="description" name="description" rows="3" 
+                              placeholder="Describe what this architecture file does...">{{ description if description else '' }}</textarea>
+                    <small class="form-text text-muted">Optional: Describe the purpose of this architecture file.</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="file_content" class="form-label">Architecture File Content</label>
+                    <textarea class="form-control font-monospace" id="file_content" name="file_content" 
+                              rows="20" style="font-family: monospace;" required>{{ file_content if file_content else default_content }}</textarea>
+                    <small class="form-text text-muted">Enter the Python code for your architecture file.</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="file_type" class="form-label">File Type</label>
+                    <select class="form-select" id="file_type" name="file_type">
+                        <option value="python" {{ 'selected' if file_type == 'python' else '' }}>Python (.py)</option>
+                        <option value="yaml" {{ 'selected' if file_type == 'yaml' else '' }}>YAML (.yaml/.yml)</option>
+                        <option value="json" {{ 'selected' if file_type == 'json' else '' }}>JSON (.json)</option>
+                        <option value="text" {{ 'selected' if file_type == 'text' else '' }}>Text (.txt)</option>
+                    </select>
+                    <small class="form-text text-muted">Select the type of architecture file you're creating.</small>
+                </div>
+                
+                <div class="d-flex justify-content-between mt-4">
+                    {% if current_file > 1 %}
+                        <a href="{{ url_for('routes.arch_config_form', file_num=current_file-1) }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Previous File
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('routes.arch_config_setup') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to Setup
+                        </a>
+                    {% endif %}
+                    
+                    {% if current_file < total_files %}
+                        <button type="submit" class="btn btn-success">
+                            Next File <i class="bi bi-arrow-right"></i>
+                        </button>
+                    {% else %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle"></i> Complete Configuration
+                        </button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        <strong>Tips:</strong>
+        <ul class="mb-0 mt-2">
+            <li>Make sure to include proper Python imports and class definitions</li>
+            <li>Use proper indentation (spaces, not tabs)</li>
+            <li>You can always go back to previous files to make changes</li>
+            <li>The file content will be saved as you progress through each file</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

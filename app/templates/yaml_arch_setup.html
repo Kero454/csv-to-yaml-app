@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Configure YAML Training Models</h2>
+        <a href="{{ url_for('routes.upload_archs') }}" class="btn btn-outline-secondary btn-sm">Back to Options</a>
+    </div>
+    
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <h4 class="card-title mb-4">How many YAML training model files do you want to configure?</h4>
+            
+            <form method="post" action="{{ url_for('routes.yaml_arch_setup') }}">
+                <div class="mb-3">
+                    <label for="num_yaml_files" class="form-label">Number of YAML Training Files</label>
+                    <select class="form-select" id="num_yaml_files" name="num_yaml_files" required>
+                        <option value="">Select number of YAML files</option>
+                        <option value="1">1 YAML file</option>
+                        <option value="2">2 YAML files</option>
+                        <option value="3">3 YAML files</option>
+                        <option value="4">4 YAML files</option>
+                        <option value="5">5 YAML files</option>
+                        <option value="6">6 YAML files</option>
+                        <option value="7">7 YAML files</option>
+                        <option value="8">8 YAML files</option>
+                        <option value="9">9 YAML files</option>
+                        <option value="10">10 YAML files</option>
+                    </select>
+                    <small class="form-text text-muted">Choose how many YAML training model files you want to configure. Each file will have its own Google Form-style configuration interface.</small>
+                </div>
+                
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{{ url_for('routes.upload_archs') }}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-warning">Start YAML Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        <strong>YAML Training Model Configuration:</strong>
+        <ul class="mb-0 mt-2">
+            <li>Configure model parameters (type, retrain settings)</li>
+            <li>Set up time series configurations (name, version, variables)</li>
+            <li>Define model_configs (dimensions, layers, optimization)</li>
+            <li>Configure training parameters (batch size, epochs)</li>
+            <li>Each file will be generated as a complete YAML training configuration</li>
+        </ul>
+    </div>
+    
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>Note:</strong> These YAML files are specifically designed for training models and will include the required "# @package _global_" header and proper structure for model training workflows.
+    </div>
+</div>
+{% endblock %}

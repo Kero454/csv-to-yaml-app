@@ -253,6 +253,498 @@ def upload_archs():
         
     return render_template('upload_archs.html')
 
+@web.route('/arch_config_setup', methods=['GET', 'POST'])
+@login_required
+def arch_config_setup():
+    """Setup page for architecture file configuration - asks user how many files to configure."""
+    if 'experiment_name' not in session or 'csv_bytes' not in session or 'config_bytes' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    if request.method == 'POST':
+        num_files = int(request.form.get('num_files', 1))
+        if num_files < 1 or num_files > 10:
+            flash('Please select a valid number of files (1-10).')
+            return redirect(request.url)
+        
+        # Initialize architecture configuration session data
+        session['arch_config'] = {
+            'total_files': num_files,
+            'current_file': 1,
+            'files': {}  # Will store configuration for each file
+        }
+        
+        return redirect(url_for('routes.arch_config_form', file_num=1))
+    
+    return render_template('arch_config_setup.html')
+
+@web.route('/arch_config_form')
+@web.route('/arch_config_form/<int:file_num>')
+@login_required
+def arch_config_form(file_num=1):
+    """Display configuration form for individual architecture file."""
+    if 'experiment_name' not in session or 'arch_config' not in session:
+        flash('Architecture configuration session expired. Please start again.')
+        return redirect(url_for('routes.arch_config_setup'))
+    
+    arch_config = session['arch_config']
+    total_files = arch_config['total_files']
+    
+    if file_num < 1 or file_num > total_files:
+        flash(f'Invalid file number. Please select a file between 1 and {total_files}.')
+        return redirect(url_for('routes.arch_config_form', file_num=1))
+    
+    # Get existing configuration for this file if it exists
+    file_config = arch_config['files'].get(str(file_num), {})
+    
+    # Default content for new architecture files
+    default_content = '''# Architecture File Template
+# Replace this with your actual architecture implementation
+
+import torch
+import torch.nn as nn
+
+class CustomArchitecture(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(CustomArchitecture, self).__init__()
+        self.layer1 = nn.Linear(input_size, hidden_size)
+        self.layer2 = nn.Linear(hidden_size, output_size)
+        self.activation = nn.ReLU()
+    
+    def forward(self, x):
+        x = self.activation(self.layer1(x))
+        x = self.layer2(x)
+        return x
+'''
+    
+    return render_template('arch_config_form.html',
+                         current_file=file_num,
+                         total_files=total_files,
+                         filename=file_config.get('filename', ''),
+                         description=file_config.get('description', ''),
+                         file_content=file_config.get('content', ''),
+                         file_type=file_config.get('type', 'python'),
+                         default_content=default_content)
+
+@web.route('/arch_config_form', methods=['POST'])
+@login_required
+def save_arch_config():
+    """Save architecture file configuration and navigate to next file or complete."""
+    if 'experiment_name' not in session or 'arch_config' not in session:
+        flash('Architecture configuration session expired. Please start again.')
+        return redirect(url_for('routes.arch_config_setup'))
+    
+    current_file = int(request.form.get('current_file', 1))
+    total_files = int(request.form.get('total_files', 1))
+    
+    # Validate form data
+    filename = request.form.get('filename', '').strip()
+    description = request.form.get('description', '').strip()
+    file_content = request.form.get('file_content', '').strip()
+    file_type = request.form.get('file_type', 'python')
+    
+    if not filename:
+        flash('Please provide a filename for the architecture file.')
+        return redirect(url_for('routes.arch_config_form', file_num=current_file))
+    
+    if not file_content:
+        flash('Please provide content for the architecture file.')
+        return redirect(url_for('routes.arch_config_form', file_num=current_file))
+    
+    # Save current file configuration
+    arch_config = session['arch_config']
+    arch_config['files'][str(current_file)] = {
+        'filename': filename,
+        'description': description,
+        'content': file_content,
+        'type': file_type
+    }
+    session['arch_config'] = arch_config
+    
+    # Determine next action
+    if current_file < total_files:
+        # Go to next file
+        return redirect(url_for('routes.arch_config_form', file_num=current_file + 1))
+    else:
+        # All files configured, process and save them
+        return process_configured_arch_files()
+
+def process_configured_arch_files():
+    """Process all configured architecture files and complete the experiment."""
+    try:
+        safe_user = secure_filename(current_user.username)
+        safe_exp = secure_filename(session['experiment_name'])
+        csv_filename = session['csv_filename']
+        config_filename = session['config_filename']
+        csv_base = os.path.splitext(csv_filename)[0]
+        
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        user_dir = os.path.join(base_upload, safe_user)
+        data_dir = os.path.join(user_dir, 'Data', csv_base)
+        exp_dir = os.path.join(user_dir, safe_exp)
+        arch_dir = os.path.join(exp_dir, 'Architecture')
+        
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(arch_dir, exist_ok=True)
+
+        # Save experiment config file
+        exp_config_path = os.path.join(exp_dir, config_filename)
+        with open(exp_config_path, 'wb') as f:
+            f.write(session['config_bytes'])
+
+        # Save CSV file
+        csv_path = os.path.join(data_dir, csv_filename)
+        with open(csv_path, 'wb') as f:
+            f.write(session['csv_bytes'])
+            
+        # Save all configured architecture files
+        arch_config = session['arch_config']
+        arch_saved = []
+        
+        for file_num, file_config in arch_config['files'].items():
+            filename = secure_filename(file_config['filename'])
+            content = file_config['content']
+            
+            # Add appropriate file extension if not present
+            if file_config['type'] == 'python' and not filename.endswith('.py'):
+                filename += '.py'
+            elif file_config['type'] == 'yaml' and not filename.endswith(('.yaml', '.yml')):
+                filename += '.yaml'
+            elif file_config['type'] == 'json' and not filename.endswith('.json'):
+                filename += '.json'
+            elif file_config['type'] == 'text' and not filename.endswith('.txt'):
+                filename += '.txt'
+            
+            arch_path = os.path.join(arch_dir, filename)
+            with open(arch_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            arch_saved.append({
+                'filename': filename,
+                'description': file_config.get('description', ''),
+                'type': file_config['type']
+            })
+                
+        # Create experiment summary config
+        config_path = os.path.join(exp_dir, f"config_{safe_exp}.yaml")
+        config_data = {
+            'user': current_user.username,
+            'experiment': session['experiment_name'],
+            'experiment_config_file': config_filename,
+            'csv_file': csv_filename,
+            'architecture_files': arch_saved,
+            'configuration_method': 'configured',
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        with open(config_path, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+            
+        # Clean up session
+        session.pop('csv_bytes', None)
+        session.pop('csv_filename', None)
+        session.pop('config_bytes', None)
+        session.pop('config_filename', None)
+        session.pop('arch_config', None)
+        session.pop('experiment_name', None)
+        
+        flash(f'Your experiment with {len(arch_saved)} configured architecture files has been created successfully!')
+        return redirect(url_for('routes.done'))
+        
+    except Exception as e:
+        current_app.logger.error(f"Error processing configured architecture files: {e}")
+        flash('An error occurred while processing your architecture files. Please try again.')
+        return redirect(url_for('routes.arch_config_setup'))
+
+@web.route('/yaml_arch_setup', methods=['GET', 'POST'])
+@login_required
+def yaml_arch_setup():
+    """Setup page for YAML architecture configuration - asks user how many YAML files to configure."""
+    if 'experiment_name' not in session or 'csv_bytes' not in session or 'config_bytes' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    if request.method == 'POST':
+        num_yaml_files = int(request.form.get('num_yaml_files', 1))
+        if num_yaml_files < 1 or num_yaml_files > 10:
+            flash('Please select a valid number of YAML files (1-10).')
+            return redirect(request.url)
+        
+        # Initialize YAML architecture configuration session data
+        session['yaml_arch_config'] = {
+            'total_files': num_yaml_files,
+            'current_file': 1,
+            'files': {}  # Will store configuration for each YAML file
+        }
+        
+        return redirect(url_for('routes.yaml_arch_form', file_num=1))
+    
+    return render_template('yaml_arch_setup.html')
+
+@web.route('/yaml_arch_form')
+@web.route('/yaml_arch_form/<int:file_num>')
+@login_required
+def yaml_arch_form(file_num=1):
+    """Display Google Form-style configuration for individual YAML architecture file."""
+    if 'experiment_name' not in session or 'yaml_arch_config' not in session:
+        flash('YAML architecture configuration session expired. Please start again.')
+        return redirect(url_for('routes.yaml_arch_setup'))
+    
+    yaml_config = session['yaml_arch_config']
+    total_files = yaml_config['total_files']
+    
+    if file_num < 1 or file_num > total_files:
+        flash(f'Invalid file number. Please select a file between 1 and {total_files}.')
+        return redirect(url_for('routes.yaml_arch_form', file_num=1))
+    
+    # Get existing configuration for this file if it exists
+    file_config = yaml_config['files'].get(str(file_num), {})
+    
+    return render_template('yaml_arch_form.html',
+                         current_file=file_num,
+                         total_files=total_files,
+                         # File info
+                         filename=file_config.get('filename', ''),
+                         description=file_config.get('description', ''),
+                         # Model config
+                         model_type=file_config.get('model_type', 'rnn'),
+                         model_retrain=file_config.get('model_retrain', 'true'),
+                         # TS config
+                         ts_name=file_config.get('ts_name', 'lstm'),
+                         ts_version=file_config.get('ts_version', '1'),
+                         ts_enrich=file_config.get('ts_enrich', ''),
+                         use_covariates=file_config.get('use_covariates', 'true'),
+                         past_variables=file_config.get('past_variables', '[1]'),
+                         use_future_covariates=file_config.get('use_future_covariates', 'false'),
+                         future_variables=file_config.get('future_variables', 'null'),
+                         interpolate=file_config.get('interpolate', 'true'),
+                         # Model configs
+                         cat_emb_dim=file_config.get('cat_emb_dim', '128'),
+                         hidden_rnn=file_config.get('hidden_rnn', '64'),
+                         num_layers_rnn=file_config.get('num_layers_rnn', '2'),
+                         kernel_size=file_config.get('kernel_size', '3'),
+                         kind=file_config.get('kind', 'lstm'),
+                         sum_emb=file_config.get('sum_emb', 'true'),
+                         use_bn=file_config.get('use_bn', 'true'),
+                         optim=file_config.get('optim', 'torch.optim.SGD'),
+                         activation=file_config.get('activation', 'torch.nn.ReLU'),
+                         dropout_rate=file_config.get('dropout_rate', '0.2'),
+                         persistence_weight=file_config.get('persistence_weight', '0.010'),
+                         loss_type=file_config.get('loss_type', 'l1'),
+                         remove_last=file_config.get('remove_last', 'true'),
+                         # Training config
+                         batch_size=file_config.get('batch_size', '128'),
+                         max_epochs=file_config.get('max_epochs', '20'))
+
+@web.route('/yaml_arch_form', methods=['POST'])
+@login_required
+def save_yaml_arch_config():
+    """Save YAML architecture file configuration and navigate to next file or complete."""
+    if 'experiment_name' not in session or 'yaml_arch_config' not in session:
+        flash('YAML architecture configuration session expired. Please start again.')
+        return redirect(url_for('routes.yaml_arch_setup'))
+    
+    current_file = int(request.form.get('current_file', 1))
+    total_files = int(request.form.get('total_files', 1))
+    
+    # Validate form data
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        flash('Please provide a filename for the YAML file.')
+        return redirect(url_for('routes.yaml_arch_form', file_num=current_file))
+    
+    # Collect all form data
+    file_config = {
+        'filename': filename,
+        'description': request.form.get('description', '').strip(),
+        # Model config
+        'model_type': request.form.get('model_type', 'rnn'),
+        'model_retrain': request.form.get('model_retrain', 'true'),
+        # TS config
+        'ts_name': request.form.get('ts_name', 'lstm'),
+        'ts_version': request.form.get('ts_version', '1'),
+        'ts_enrich': request.form.get('ts_enrich', ''),
+        'use_covariates': request.form.get('use_covariates', 'true'),
+        'past_variables': request.form.get('past_variables', '[1]'),
+        'use_future_covariates': request.form.get('use_future_covariates', 'false'),
+        'future_variables': request.form.get('future_variables', 'null'),
+        'interpolate': request.form.get('interpolate', 'true'),
+        # Model configs
+        'cat_emb_dim': request.form.get('cat_emb_dim', '128'),
+        'hidden_rnn': request.form.get('hidden_rnn', '64'),
+        'num_layers_rnn': request.form.get('num_layers_rnn', '2'),
+        'kernel_size': request.form.get('kernel_size', '3'),
+        'kind': request.form.get('kind', 'lstm'),
+        'sum_emb': request.form.get('sum_emb', 'true'),
+        'use_bn': request.form.get('use_bn', 'true'),
+        'optim': request.form.get('optim', 'torch.optim.SGD'),
+        'activation': request.form.get('activation', 'torch.nn.ReLU'),
+        'dropout_rate': request.form.get('dropout_rate', '0.2'),
+        'persistence_weight': request.form.get('persistence_weight', '0.010'),
+        'loss_type': request.form.get('loss_type', 'l1'),
+        'remove_last': request.form.get('remove_last', 'true'),
+        # Training config
+        'batch_size': request.form.get('batch_size', '128'),
+        'max_epochs': request.form.get('max_epochs', '20')
+    }
+    
+    # Save current file configuration
+    yaml_config = session['yaml_arch_config']
+    yaml_config['files'][str(current_file)] = file_config
+    session['yaml_arch_config'] = yaml_config
+    
+    # Determine next action
+    if current_file < total_files:
+        # Go to next file
+        return redirect(url_for('routes.yaml_arch_form', file_num=current_file + 1))
+    else:
+        # All files configured, process and save them
+        return process_configured_yaml_arch_files()
+
+def process_configured_yaml_arch_files():
+    """Process all configured YAML architecture files and complete the experiment."""
+    try:
+        safe_user = secure_filename(current_user.username)
+        safe_exp = secure_filename(session['experiment_name'])
+        csv_filename = session['csv_filename']
+        config_filename = session['config_filename']
+        csv_base = os.path.splitext(csv_filename)[0]
+        
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        user_dir = os.path.join(base_upload, safe_user)
+        data_dir = os.path.join(user_dir, 'Data', csv_base)
+        exp_dir = os.path.join(user_dir, safe_exp)
+        arch_dir = os.path.join(exp_dir, 'Architecture')
+        
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(arch_dir, exist_ok=True)
+
+        # Save experiment config file
+        exp_config_path = os.path.join(exp_dir, config_filename)
+        with open(exp_config_path, 'wb') as f:
+            f.write(session['config_bytes'])
+
+        # Save CSV file
+        csv_path = os.path.join(data_dir, csv_filename)
+        with open(csv_path, 'wb') as f:
+            f.write(session['csv_bytes'])
+            
+        # Generate and save all configured YAML architecture files
+        yaml_config = session['yaml_arch_config']
+        arch_saved = []
+        
+        for file_num, file_config in yaml_config['files'].items():
+            filename = secure_filename(file_config['filename'])
+            
+            # Ensure .yaml extension
+            if not filename.endswith(('.yaml', '.yml')):
+                filename += '.yaml'
+            
+            # Generate YAML content
+            yaml_content = generate_yaml_training_config(file_config)
+            
+            arch_path = os.path.join(arch_dir, filename)
+            with open(arch_path, 'w', encoding='utf-8') as f:
+                f.write(yaml_content)
+            
+            arch_saved.append({
+                'filename': filename,
+                'description': file_config.get('description', ''),
+                'type': 'yaml_training_config'
+            })
+                
+        # Create experiment summary config
+        config_path = os.path.join(exp_dir, f"config_{safe_exp}.yaml")
+        config_data = {
+            'user': current_user.username,
+            'experiment': session['experiment_name'],
+            'experiment_config_file': config_filename,
+            'csv_file': csv_filename,
+            'architecture_files': arch_saved,
+            'configuration_method': 'yaml_training_configured',
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        with open(config_path, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+            
+        # Clean up session
+        session.pop('csv_bytes', None)
+        session.pop('csv_filename', None)
+        session.pop('config_bytes', None)
+        session.pop('config_filename', None)
+        session.pop('yaml_arch_config', None)
+        session.pop('experiment_name', None)
+        
+        flash(f'Your experiment with {len(arch_saved)} configured YAML training files has been created successfully!')
+        return redirect(url_for('routes.done'))
+        
+    except Exception as e:
+        current_app.logger.error(f"Error processing configured YAML architecture files: {e}")
+        flash('An error occurred while processing your YAML architecture files. Please try again.')
+        return redirect(url_for('routes.yaml_arch_setup'))
+
+def generate_yaml_training_config(config):
+    """Generate YAML training configuration content from form data."""
+    # Parse list values
+    def parse_list_or_null(value):
+        if value.lower() == 'null' or not value.strip():
+            return None
+        try:
+            # Handle list format like [1, 2, 3] or [1]
+            if value.strip().startswith('[') and value.strip().endswith(']'):
+                return eval(value.strip())
+            else:
+                return value.strip()
+        except:
+            return value.strip()
+    
+    def parse_enrich_list(value):
+        if not value.strip():
+            return []
+        return [item.strip() for item in value.split(',') if item.strip()]
+    
+    # Build the configuration dictionary
+    yaml_config = {
+        'model': {
+            'type': config['model_type'],
+            'retrain': config['model_retrain'] == 'true'
+        },
+        'ts': {
+            'name': config['ts_name'],
+            'version': int(config['ts_version']),
+            'enrich': parse_enrich_list(config['ts_enrich']),
+            'use_covariates': config['use_covariates'] == 'true',
+            'past_variables': parse_list_or_null(config['past_variables']),
+            'use_future_covariates': config['use_future_covariates'] == 'true',
+            'future_variables': parse_list_or_null(config['future_variables']),
+            'interpolate': config['interpolate'] == 'true'
+        },
+        'model_configs': {
+            'cat_emb_dim': int(config['cat_emb_dim']),
+            'hidden_RNN': int(config['hidden_rnn']),
+            'num_layers_RNN': int(config['num_layers_rnn']),
+            'kernel_size': int(config['kernel_size']),
+            'kind': config['kind'],
+            'sum_emb': config['sum_emb'] == 'true',
+            'use_bn': config['use_bn'] == 'true',
+            'optim': config['optim'],
+            'activation': config['activation'],
+            'dropout_rate': float(config['dropout_rate']),
+            'persistence_weight': float(config['persistence_weight']),
+            'loss_type': config['loss_type'],
+            'remove_last': config['remove_last'] == 'true'
+        },
+        'train_config': {
+            'batch_size': int(config['batch_size']),
+            'max_epochs': int(config['max_epochs'])
+        }
+    }
+    
+    # Generate YAML content with header
+    yaml_content = "# @package _global_\n\n"
+    yaml_content += yaml.dump(yaml_config, default_flow_style=False, sort_keys=False)
+    
+    return yaml_content
+
 @web.route('/done')
 @login_required
 def done():

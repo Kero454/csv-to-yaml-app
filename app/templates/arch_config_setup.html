@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Configure Architecture Files</h2>
+        <a href="{{ url_for('routes.upload_archs') }}" class="btn btn-outline-secondary btn-sm">Back to Options</a>
+    </div>
+    
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <h4 class="card-title mb-4">How many architecture files do you want to configure?</h4>
+            
+            <form method="post" action="{{ url_for('routes.arch_config_setup') }}">
+                <div class="mb-3">
+                    <label for="num_files" class="form-label">Number of Architecture Files</label>
+                    <select class="form-select" id="num_files" name="num_files" required>
+                        <option value="">Select number of files</option>
+                        <option value="1">1 file</option>
+                        <option value="2">2 files</option>
+                        <option value="3">3 files</option>
+                        <option value="4">4 files</option>
+                        <option value="5">5 files</option>
+                        <option value="6">6 files</option>
+                        <option value="7">7 files</option>
+                        <option value="8">8 files</option>
+                        <option value="9">9 files</option>
+                        <option value="10">10 files</option>
+                    </select>
+                    <small class="form-text text-muted">Choose how many architecture files you want to configure. You'll configure each file individually in the next steps.</small>
+                </div>
+                
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{{ url_for('routes.upload_archs') }}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-success">Start Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        <strong>How it works:</strong>
+        <ul class="mb-0 mt-2">
+            <li>Select the number of architecture files you want to configure</li>
+            <li>You'll be taken through a step-by-step configuration process</li>
+            <li>Each file will have its own configuration page</li>
+            <li>After configuring all files, you can proceed to complete your experiment</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

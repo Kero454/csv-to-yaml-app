@@ -1,12 +1,43 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h2>Step 4: Upload Architecture Files</h2>
-    <form method="post" enctype="multipart/form-data">
-        <div class="form-group">
-            <label for="arch_files">Select one or more architecture files</label>
-            <input type="file" class="form-control-file" id="arch_files" name="arch_files" multiple required>
+    <h2>Step 4: Architecture Files</h2>
+    
+    <!-- Upload Option -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Option 1: Upload Architecture Files</h5>
         </div>
-        <button type="submit" class="btn btn-success">Finish and Process</button>
-    </form>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="arch_files">Select one or more architecture files</label>
+                    <input type="file" class="form-control-file" id="arch_files" name="arch_files" multiple required>
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">Upload and Continue</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Configuration Option -->
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">Option 2: Configure Architecture Files</h5>
+        </div>
+        <div class="card-body">
+            <p>Configure multiple architecture files step by step. You'll specify how many files you want to configure, then configure each one individually.</p>
+            <a href="{{ url_for('routes.arch_config_setup') }}" class="btn btn-success">Configure Architecture Files</a>
+        </div>
+    </div>
+    
+    <!-- YAML Training Configuration Option -->
+    <div class="card mb-4">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0">Option 3: Configure YAML Training Models</h5>
+        </div>
+        <div class="card-body">
+            <p>Configure multiple YAML files for training models using a Google Form-style interface. Perfect for model configurations, time series settings, and training parameters.</p>
+            <a href="{{ url_for('routes.yaml_arch_setup') }}" class="btn btn-warning">Configure YAML Training Files</a>
+        </div>
+    </div>
 {% endblock %}
