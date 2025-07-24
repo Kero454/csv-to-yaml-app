@@ -88,7 +88,28 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="dataset-name" class="form-label">Dataset Name</label>
-                            <input type="text" class="form-control" id="dataset-name" name="dataset-name" value="electricity">
+                            <select class="form-select" id="dataset-name" name="dataset-name">
+                                <option value="" selected>Select a dataset (or upload new CSV file in next step)</option>
+                                {% if user_csv_files %}
+                                    <optgroup label="Your Uploaded CSV Files">
+                                        {% for csv_file in user_csv_files %}
+                                            <option value="{{ csv_file.path }}">{{ csv_file.display_name }}</option>
+                                        {% endfor %}
+                                    </optgroup>
+                                {% endif %}
+                                <optgroup label="Default Datasets">
+                                    <option value="electricity">electricity</option>
+                                    <option value="traffic">traffic</option>
+                                    <option value="weather">weather</option>
+                                    <option value="etth1">etth1</option>
+                                    <option value="etth2">etth2</option>
+                                    <option value="ettm1">ettm1</option>
+                                    <option value="ettm2">ettm2</option>
+                                    <option value="exchange_rate">exchange_rate</option>
+                                    <option value="illness">illness</option>
+                                </optgroup>
+                            </select>
+                            <small class="form-text text-muted">Select from your uploaded CSV files to skip the upload step.</small>
                         </div>
                         <div class="col-md-6">
                             <label for="dataset-path" class="form-label">Dataset Path</label>
@@ -879,8 +900,8 @@
             
             // Dataset configuration
             data.data = {};
-            if (formData.get('data-path')) data.data.path = formData.get('data-path');
-            if (formData.get('dataset')) data.data.dataset = formData.get('dataset');
+            if (formData.get('dataset-path')) data.data.path = formData.get('dataset-path');
+            if (formData.get('dataset-name')) data.data.dataset = formData.get('dataset-name');
             
             // Scheduler configuration
             data.scheduler = {

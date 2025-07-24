@@ -14,6 +14,38 @@ import yaml
 from datetime import datetime
 from app import db
 
+def get_user_csv_files(user):
+    """Get list of CSV files uploaded by the user.
+    
+    Args:
+        user: Current user object
+        
+    Returns:
+        List of dictionaries containing CSV file information
+    """
+    csv_files = []
+    try:
+        safe_user = secure_filename(user.username)
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        user_data_dir = os.path.join(base_upload, safe_user, 'Data')
+        
+        if os.path.exists(user_data_dir):
+            for csv_dir in os.listdir(user_data_dir):
+                csv_path = os.path.join(user_data_dir, csv_dir)
+                if os.path.isdir(csv_path):
+                    for file in os.listdir(csv_path):
+                        if file.lower().endswith('.csv') and os.path.isfile(os.path.join(csv_path, file)):
+                            csv_files.append({
+                                'name': file,
+                                'display_name': f"{csv_dir}/{file}",
+                                'path': os.path.join(csv_dir, file),
+                                'full_path': os.path.join(csv_path, file)
+                            })
+    except Exception as e:
+        current_app.logger.error(f"Error getting user CSV files: {str(e)}")
+    
+    return csv_files
+
 def generate_config_template(experiment_name):
     """Generate a template configuration file for the experiment.
     
@@ -470,7 +502,7 @@ def template_optimizer_form():
         config_data = {
             'dataset': {
                 'dataset': request.form.get('dataset', 'electricity'),
-                'path': request.form.get('dataset_path', '/home/agobbi/Projects/ExpTS/data')
+                'path': '/home/agobbi/Projects/ExpTS/data'  # Default path since dataset_path field was removed
             },
             'scheduler_config': {
                 'gamma': float(request.form.get('scheduler_gamma', 0.75)),
@@ -546,14 +578,41 @@ def template_optimizer_form():
         session['config_bytes'] = config_yaml.encode('utf-8')
         session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
         
+        # Check if user selected a dataset from their uploaded files
+        dataset_selected = False
+        dataset_value = config_data['dataset'].get('dataset', '')
+        if dataset_value and dataset_value != '' and '/' in dataset_value:
+            # User selected an uploaded CSV file (format: "folder/filename.csv")
+            dataset_selected = True
+            # Set up CSV data from the selected file
+            user_csv_files = get_user_csv_files(current_user)
+            for csv_file in user_csv_files:
+                if csv_file['path'] == dataset_value:
+                    session['csv_filename'] = csv_file['name']
+                    # Read the CSV file content
+                    with open(csv_file['full_path'], 'rb') as f:
+                        session['csv_bytes'] = f.read()
+                    break
+        
         flash('Configuration generated successfully!')
-        return redirect(url_for('routes.upload_csv'))
+        
+        # Conditional routing: skip CSV upload if dataset selected, otherwise go to CSV upload
+        if dataset_selected:
+            current_app.logger.info(f"Template Optimizer: Dataset selected from user files, skipping CSV upload step")
+            return redirect(url_for('routes.upload_archs'))
+        else:
+            current_app.logger.info(f"Template Optimizer: No dataset selected, proceeding to CSV upload step")
+            return redirect(url_for('routes.upload_csv'))
+    
+    # Get user's uploaded CSV files for dataset selection
+    user_csv_files = get_user_csv_files(current_user)
     
     current_date_str = datetime.now().strftime('%Y-%m-%d')
     return render_template('template_optimizer_form.html', 
                            experiment_name=session['experiment_name'], 
                            username=current_user.username, 
-                           current_date=current_date_str)
+                           current_date=current_date_str,
+                           user_csv_files=user_csv_files)
 
 @web.route('/preview_template_yaml', methods=['POST'])
 @login_required
@@ -564,7 +623,7 @@ def preview_template_yaml():
         config_data = {
             'dataset': {
                 'dataset': request.form.get('dataset', 'electricity'),
-                'path': request.form.get('dataset_path', '/home/agobbi/Projects/ExpTS/data')
+                'path': '/home/agobbi/Projects/ExpTS/data'  # Default path since dataset_path field was removed
             },
             'scheduler_config': {
                 'gamma': float(request.form.get('scheduler_gamma', 0.75)),
@@ -680,9 +739,13 @@ def config_form():
         session['config_bytes'] = config_yaml.encode('utf-8')
         session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
     
+    # Get user's uploaded CSV files for dataset selection
+    user_csv_files = get_user_csv_files(current_user)
+    
     current_date_str = datetime.now().strftime('%Y-%m-%d')
     return render_template('form_config.html', experiment_name=session['experiment_name'], 
-                           username=current_user.username, current_date=current_date_str)
+                           username=current_user.username, current_date=current_date_str,
+                           user_csv_files=user_csv_files)
 
 @web.route('/advanced_config_form', methods=['GET'])
 @login_required
@@ -700,11 +763,15 @@ def advanced_config_form():
         session['config_bytes'] = config_yaml.encode('utf-8')
         session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
     
+    # Get user's uploaded CSV files for dataset selection
+    user_csv_files = get_user_csv_files(current_user)
+    
     current_date_str = datetime.now().strftime('%Y-%m-%d')
     return render_template('advanced_form_config.html', 
                            experiment_name=session['experiment_name'], 
                            username=current_user.username, 
-                           current_date=current_date_str)
+                           current_date=current_date_str,
+                           user_csv_files=user_csv_files)
 
 @web.route('/save_form_config', methods=['POST'])
 @login_required
@@ -724,10 +791,40 @@ def save_form_config():
         config_data = yaml.safe_load(yaml_data)
         session['config_data'] = config_data
         session['config_bytes'] = yaml_data.encode('utf-8')
+        
+        # Check if user selected a dataset from their uploaded files
+        dataset_selected = False
+        if 'experiment' in config_data and 'data' in config_data['experiment']:
+            dataset_value = config_data['experiment']['data'].get('dataset', '')
+            if dataset_value and dataset_value != '' and '/' in dataset_value:
+                # User selected an uploaded CSV file (format: "folder/filename.csv")
+                dataset_selected = True
+                # Set up CSV data from the selected file
+                user_csv_files = get_user_csv_files(current_user)
+                for csv_file in user_csv_files:
+                    if csv_file['path'] == dataset_value:
+                        session['csv_filename'] = csv_file['name']
+                        # Read the CSV file content
+                        with open(csv_file['full_path'], 'rb') as f:
+                            session['csv_bytes'] = f.read()
+                        break
+        
         flash('Configuration saved successfully!')
-        return redirect(url_for('routes.upload_csv'))
+        
+        # Conditional routing: skip CSV upload if dataset selected, otherwise go to CSV upload
+        if dataset_selected:
+            current_app.logger.info(f"Dataset selected from user files, skipping CSV upload step")
+            return redirect(url_for('routes.upload_archs'))
+        else:
+            current_app.logger.info(f"No dataset selected, proceeding to CSV upload step")
+            return redirect(url_for('routes.upload_csv'))
+            
     except yaml.YAMLError as e:
         flash(f'Invalid YAML format: {str(e)}')
+        return redirect(url_for('routes.config_form'))
+    except Exception as e:
+        current_app.logger.error(f"Error in save_form_config: {str(e)}")
+        flash('An error occurred while processing the configuration.')
         return redirect(url_for('routes.config_form'))
         
 @web.route('/save_advanced_form_config', methods=['POST'])
@@ -748,10 +845,40 @@ def save_advanced_form_config():
         config_data = yaml.safe_load(yaml_data)
         session['config_data'] = config_data
         session['config_bytes'] = yaml_data.encode('utf-8')
+        
+        # Check if user selected a dataset from their uploaded files
+        dataset_selected = False
+        if 'data' in config_data and 'dataset' in config_data['data']:
+            dataset_value = config_data['data'].get('dataset', '')
+            if dataset_value and dataset_value != '' and '/' in dataset_value:
+                # User selected an uploaded CSV file (format: "folder/filename.csv")
+                dataset_selected = True
+                # Set up CSV data from the selected file
+                user_csv_files = get_user_csv_files(current_user)
+                for csv_file in user_csv_files:
+                    if csv_file['path'] == dataset_value:
+                        session['csv_filename'] = csv_file['name']
+                        # Read the CSV file content
+                        with open(csv_file['full_path'], 'rb') as f:
+                            session['csv_bytes'] = f.read()
+                        break
+        
         flash('Advanced configuration saved successfully!')
-        return redirect(url_for('routes.upload_csv'))
+        
+        # Conditional routing: skip CSV upload if dataset selected, otherwise go to CSV upload
+        if dataset_selected:
+            current_app.logger.info(f"Dataset selected from user files, skipping CSV upload step")
+            return redirect(url_for('routes.upload_archs'))
+        else:
+            current_app.logger.info(f"No dataset selected, proceeding to CSV upload step")
+            return redirect(url_for('routes.upload_csv'))
+            
     except yaml.YAMLError as e:
         flash(f'Invalid YAML format: {str(e)}')
+        return redirect(url_for('routes.advanced_config_form'))
+    except Exception as e:
+        current_app.logger.error(f"Error in save_advanced_form_config: {str(e)}")
+        flash('An error occurred while processing the configuration.')
         return redirect(url_for('routes.advanced_config_form'))
 
 # Error handlers

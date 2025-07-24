@@ -83,15 +83,30 @@
                 <div class="card-body">
                     <!-- Dataset Configuration -->
                     <h5>Dataset Configuration</h5>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label for="dataset" class="form-label">Dataset</label>
-                            <input type="text" class="form-control" id="dataset" name="dataset" value="electricity" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="dataset_path" class="form-label">Dataset Path</label>
-                            <input type="text" class="form-control" id="dataset_path" name="dataset_path" value="/home/agobbi/Projects/ExpTS/data" required>
-                        </div>
+                    <div class="mb-3">
+                        <label for="dataset" class="form-label">Dataset</label>
+                        <select class="form-select" id="dataset" name="dataset" required>
+                            <option value="" selected>Select a dataset (or upload new CSV file in next step)</option>
+                            {% if user_csv_files %}
+                                <optgroup label="Your Uploaded CSV Files">
+                                    {% for csv_file in user_csv_files %}
+                                        <option value="{{ csv_file.path }}">{{ csv_file.display_name }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endif %}
+                            <optgroup label="Default Datasets">
+                                <option value="electricity">electricity</option>
+                                <option value="traffic">traffic</option>
+                                <option value="weather">weather</option>
+                                <option value="etth1">etth1</option>
+                                <option value="etth2">etth2</option>
+                                <option value="ettm1">ettm1</option>
+                                <option value="ettm2">ettm2</option>
+                                <option value="exchange_rate">exchange_rate</option>
+                                <option value="illness">illness</option>
+                            </optgroup>
+                        </select>
+                        <small class="form-text text-muted">Select from your uploaded CSV files to skip the upload step, or choose a default dataset/leave empty to upload a new CSV file.</small>
                     </div>
                     
                     <!-- Scheduler Configuration -->
