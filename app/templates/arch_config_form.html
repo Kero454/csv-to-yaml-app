@@ -9,8 +9,13 @@
     
     <!-- Progress indicator -->
     <div class="progress mb-4" style="height: 8px;">
-        <div class="progress-bar bg-success" role="progressbar" style="width: {{ (current_file / total_files * 100)|round(1) }}%"></div>
+        <div class="progress-bar bg-success" role="progressbar" id="progress-bar"></div>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('progress-bar').style.width = '{{ ((current_file / total_files) * 100)|round(1) }}%';
+        });
+    </script>
     <p class="text-center text-muted mb-4">File {{ current_file }} of {{ total_files }}</p>
     
     <div class="card mb-4 shadow-sm">
