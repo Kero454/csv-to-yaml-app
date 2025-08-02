@@ -1,7 +1,13 @@
 architecture_files:
-- name.yaml
+- description: YAML training configuration for lstm
+  filename: lstm_config_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration for lstm
+  filename: lstm_config_2.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
 csv_file: name.csv
 experiment: kfa
-experiment_config_file: name.yaml
-timestamp: '2025-07-17T14:59:02.341669'
+experiment_config_file: kfa_config.yaml
+timestamp: '2025-08-02T14:16:09.729631'
 user: ker#

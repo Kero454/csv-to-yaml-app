@@ -19,20 +19,7 @@
                 <input type="hidden" name="current_file" value="{{ current_file }}">
                 <input type="hidden" name="total_files" value="{{ total_files }}">
                 
-                <div class="mb-3">
-                    <label for="filename" class="form-label">Architecture File Name</label>
-                    <input type="text" class="form-control" id="filename" name="filename" 
-                           value="{{ filename if filename else '' }}" 
-                           placeholder="e.g., model_architecture.py" required>
-                    <small class="form-text text-muted">Enter the name for this architecture file (include file extension).</small>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="description" class="form-label">Description</label>
-                    <textarea class="form-control" id="description" name="description" rows="3" 
-                              placeholder="Describe what this architecture file does...">{{ description if description else '' }}</textarea>
-                    <small class="form-text text-muted">Optional: Describe the purpose of this architecture file.</small>
-                </div>
+
                 
                 <div class="mb-3">
                     <label for="file_content" class="form-label">Architecture File Content</label>

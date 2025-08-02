@@ -17,34 +17,7 @@
         <input type="hidden" name="current_file" value="{{ current_file }}">
         <input type="hidden" name="total_files" value="{{ total_files }}">
         
-        <!-- File Information -->
-        <div class="card mb-4 shadow-sm">
-            <div class="card-header bg-light">
-                <h5 class="mb-0">File Information</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label for="filename" class="form-label">YAML File Name</label>
-                            <input type="text" class="form-control" id="filename" name="filename" 
-                                   value="{{ filename if filename else '' }}" 
-                                   placeholder="e.g., model_config.yaml" required>
-                            <small class="form-text text-muted">Enter the name for this YAML training file.</small>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label for="description" class="form-label">Description</label>
-                            <input type="text" class="form-control" id="description" name="description" 
-                                   value="{{ description if description else '' }}" 
-                                   placeholder="Describe this training configuration...">
-                            <small class="form-text text-muted">Optional: Brief description of this configuration.</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+
         
         <!-- Model Configuration -->
         <div class="card mb-4 shadow-sm">
@@ -88,12 +61,10 @@
                     <div class="col-md-4">
                         <div class="mb-3">
                             <label for="ts_name" class="form-label">TS Name</label>
-                            <select class="form-select" id="ts_name" name="ts_name" required>
-                                <option value="lstm" {{ 'selected' if ts_name == 'lstm' else '' }}>LSTM</option>
-                                <option value="gru" {{ 'selected' if ts_name == 'gru' else '' }}>GRU</option>
-                                <option value="rnn" {{ 'selected' if ts_name == 'rnn' else '' }}>RNN</option>
-                                <option value="transformer" {{ 'selected' if ts_name == 'transformer' else '' }}>Transformer</option>
-                            </select>
+                            <input type="text" class="form-control" id="ts_name" name="ts_name" 
+                                   value="{{ ts_name if ts_name else '' }}" 
+                                   placeholder="e.g., lstm, transformer, custom_model" required>
+                            <small class="form-text text-muted">Enter the time series model name (will also be used as model name).</small>
                         </div>
                     </div>
                     <div class="col-md-4">

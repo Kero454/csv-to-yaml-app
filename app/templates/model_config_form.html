@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .model-config-section {
+        display: none;
+    }
+    .model-config-section.active {
+        display: block;
+    }
+    .config-card {
+        border-left: 4px solid #007bff;
+    }
+    .model-type-badge {
+        font-size: 0.9em;
+        padding: 0.5rem 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h2 class="mb-4">Model Configuration - File {{ current_file }} of {{ total_files }}</h2>
+            <p class="text-muted mb-4">Configure the model parameters for: <strong>{{ ts_name }}</strong></p>
+            
+            <form method="post" action="{{ url_for('routes.model_config_form') }}">
+                <input type="hidden" name="current_file" value="{{ current_file }}">
+                <input type="hidden" name="total_files" value="{{ total_files }}">
+                <input type="hidden" name="ts_name" value="{{ ts_name }}">
+                <input type="hidden" name="model_type" value="{{ model_type }}">
+                
+                <!-- Model Type Selection -->
+                <div class="mb-4">
+                    <label for="model_type" class="form-label">
+                        <i class="fas fa-brain me-2"></i>Model Type
+                    </label>
+                    <select class="form-select" id="model_type" name="model_type" onchange="updateModelConfig()" required>
+                        <option value="autoformer" {{ 'selected' if model_type == 'autoformer' else '' }}>Autoformer</option>
+                        <option value="crossformer" {{ 'selected' if model_type == 'crossformer' else '' }}>Crossformer</option>
+                        <option value="linear" {{ 'selected' if model_type == 'linear' else '' }}>Linear</option>
+                        <option value="rnn" {{ 'selected' if model_type == 'rnn' else '' }}>RNN (LSTM/GRU)</option>
+                    </select>
+                </div>
+
+                <!-- Autoformer Configuration -->
+                <div id="autoformer-config" class="model-config-section {{ 'active' if model_type == 'autoformer' else '' }}">
+                    <div class="card border-success mb-4">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0"><i class="fas fa-robot me-2"></i>Autoformer Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">D Model</label>
+                                        <input type="number" class="form-control" name="d_model" value="64" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Kernel Size</label>
+                                        <input type="number" class="form-control" name="kernel_size" value="3" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">N Layer Encoder</label>
+                                        <input type="number" class="form-control" name="n_layer_encoder" value="4" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">N Layer Decoder</label>
+                                        <input type="number" class="form-control" name="n_layer_decoder" value="4" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Label Length</label>
+                                        <input type="number" class="form-control" name="label_len" value="4" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">N Head</label>
+                                        <input type="number" class="form-control" name="n_head" value="4" min="1">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Dropout Rate</label>
+                                        <input type="number" class="form-control" name="dropout_rate" value="0.5" min="0" max="1" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Factor</label>
+                                        <input type="number" class="form-control" name="factor" value="5" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Hidden Size</label>
+                                        <input type="number" class="form-control" name="hidden_size" value="64" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Persistence Weight</label>
+                                        <input type="number" class="form-control" name="persistence_weight" value="0.010" min="0" step="0.001">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Optimizer</label>
+                                        <select class="form-select" name="optim">
+                                            <option value="torch.optim.Adam">Adam</option>
+                                            <option value="torch.optim.SGD">SGD</option>
+                                            <option value="torch.optim.RMSprop">RMSprop</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Activation</label>
+                                        <select class="form-select" name="activation">
+                                            <option value="torch.nn.PReLU">PReLU</option>
+                                            <option value="torch.nn.ReLU">ReLU</option>
+                                            <option value="torch.nn.LeakyReLU">LeakyReLU</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Loss Type</label>
+                                <select class="form-select" name="loss_type">
+                                    <option value="l1">L1</option>
+                                    <option value="l2">L2</option>
+                                    <option value="mse">MSE</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Crossformer Configuration -->
+                <div id="crossformer-config" class="model-config-section {{ 'active' if model_type == 'crossformer' else '' }}">
+                    <div class="card border-warning mb-4">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Crossformer Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">D Model</label>
+                                        <input type="number" class="form-control" name="d_model" value="64" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Hidden Size</label>
+                                        <input type="number" class="form-control" name="hidden_size" value="64" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">N Layer Encoder</label>
+                                        <input type="number" class="form-control" name="n_layer_encoder" value="4" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">N Head</label>
+                                        <input type="number" class="form-control" name="n_head" value="4" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Persistence Weight</label>
+                                        <input type="number" class="form-control" name="persistence_weight" value="0.010" min="0" step="0.001">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Dropout Rate</label>
+                                        <input type="number" class="form-control" name="dropout_rate" value="0.5" min="0" max="1" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Window Size</label>
+                                        <input type="number" class="form-control" name="win_size" value="4" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Segment Length</label>
+                                        <input type="number" class="form-control" name="seg_len" value="3" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Factor</label>
+                                        <input type="number" class="form-control" name="factor" value="1" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Optimizer</label>
+                                        <select class="form-select" name="optim">
+                                            <option value="torch.optim.Adam">Adam</option>
+                                            <option value="torch.optim.SGD">SGD</option>
+                                            <option value="torch.optim.RMSprop">RMSprop</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Loss Type</label>
+                                <select class="form-select" name="loss_type">
+                                    <option value="l1">L1</option>
+                                    <option value="l2">L2</option>
+                                    <option value="mse">MSE</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Linear Configuration -->
+                <div id="linear-config" class="model-config-section {{ 'active' if model_type == 'linear' else '' }}">
+                    <div class="card border-info mb-4">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Linear Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Category Embedding Dimension</label>
+                                        <input type="number" class="form-control" name="cat_emb_dim" value="64" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Kernel Size</label>
+                                        <input type="number" class="form-control" name="kernel_size" value="3" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Hidden Size</label>
+                                        <input type="number" class="form-control" name="hidden_size" value="128" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Kind</label>
+                                        <select class="form-select" name="kind">
+                                            <option value="dlinear">DLinear</option>
+                                            <option value="nlinear">NLinear</option>
+                                            <option value="linear">Linear</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Optimizer</label>
+                                        <select class="form-select" name="optim">
+                                            <option value="torch.optim.SGD">SGD</option>
+                                            <option value="torch.optim.Adam">Adam</option>
+                                            <option value="torch.optim.RMSprop">RMSprop</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Activation</label>
+                                        <select class="form-select" name="activation">
+                                            <option value="torch.nn.LeakyReLU">LeakyReLU</option>
+                                            <option value="torch.nn.ReLU">ReLU</option>
+                                            <option value="torch.nn.PReLU">PReLU</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Loss Type</label>
+                                        <select class="form-select" name="loss_type">
+                                            <option value="l1">L1</option>
+                                            <option value="l2">L2</option>
+                                            <option value="mse">MSE</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="sum_emb" id="sum_emb" checked>
+                                            <label class="form-check-label" for="sum_emb">Sum Embeddings</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="simple" id="simple" checked>
+                                            <label class="form-check-label" for="simple">Simple</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RNN Configuration -->
+                <div id="rnn-config" class="model-config-section {{ 'active' if model_type == 'rnn' else '' }}">
+                    <div class="card border-primary mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="fas fa-network-wired me-2"></i>RNN Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Category Embedding Dimension</label>
+                                        <input type="number" class="form-control" name="cat_emb_dim" value="128" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Hidden RNN</label>
+                                        <input type="number" class="form-control" name="hidden_RNN" value="64" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Number of RNN Layers</label>
+                                        <input type="number" class="form-control" name="num_layers_RNN" value="2" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Kernel Size</label>
+                                        <input type="number" class="form-control" name="kernel_size" value="3" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Kind</label>
+                                        <select class="form-select" name="kind">
+                                            <option value="lstm">LSTM</option>
+                                            <option value="gru">GRU</option>
+                                            <option value="rnn">RNN</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Persistence Weight</label>
+                                        <input type="number" class="form-control" name="persistence_weight" value="0.010" min="0" step="0.001">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Optimizer</label>
+                                        <select class="form-select" name="optim">
+                                            <option value="torch.optim.SGD">SGD</option>
+                                            <option value="torch.optim.Adam">Adam</option>
+                                            <option value="torch.optim.RMSprop">RMSprop</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Activation</label>
+                                        <select class="form-select" name="activation">
+                                            <option value="torch.nn.ReLU">ReLU</option>
+                                            <option value="torch.nn.LeakyReLU">LeakyReLU</option>
+                                            <option value="torch.nn.PReLU">PReLU</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Dropout Rate</label>
+                                        <input type="number" class="form-control" name="dropout_rate" value="0.2" min="0" max="1" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Loss Type</label>
+                                        <select class="form-select" name="loss_type">
+                                            <option value="l1">L1</option>
+                                            <option value="l2">L2</option>
+                                            <option value="mse">MSE</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="sum_emb" id="sum_emb_rnn" checked>
+                                            <label class="form-check-label" for="sum_emb_rnn">Sum Embeddings</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="use_bn" id="use_bn" checked>
+                                            <label class="form-check-label" for="use_bn">Use Batch Normalization</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="remove_last" id="remove_last" checked>
+                                            <label class="form-check-label" for="remove_last">Remove Last</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Training Configuration (Common for all models) -->
+                <div class="card border-secondary mb-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="fas fa-dumbbell me-2"></i>Training Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Batch Size</label>
+                                    <input type="number" class="form-control" name="batch_size" value="64" min="1">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Max Epochs</label>
+                                    <input type="number" class="form-control" name="max_epochs" value="100" min="1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Buttons -->
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{{ url_for('routes.yaml_arch_form', file_num=current_file) }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Back to File Content
+                    </a>
+                    <div>
+                        {% if current_file < total_files %}
+                            <button type="submit" name="action" value="next" class="btn btn-primary">
+                                Next File <i class="fas fa-arrow-right ms-2"></i>
+                            </button>
+                        {% else %}
+                            <button type="submit" name="action" value="complete" class="btn btn-success">
+                                <i class="fas fa-check me-2"></i>Complete Configuration
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Dynamic model configuration display
+document.addEventListener('DOMContentLoaded', function() {
+    const modelType = '{{ model_type }}';
+    const sections = document.querySelectorAll('.model-config-section');
+    
+    // Hide all sections first
+    sections.forEach(section => section.classList.remove('active'));
+    
+    // Show the appropriate section based on model type
+    let targetSection;
+    if (['autoformer', 'crossformer', 'linear', 'rnn'].includes(modelType)) {
+        targetSection = document.getElementById(modelType + '-config');
+    }
+    
+    if (targetSection) {
+        targetSection.classList.add('active');
+    }
+});
+</script>
+{% endblock %}

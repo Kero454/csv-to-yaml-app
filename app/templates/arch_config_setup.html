@@ -14,20 +14,8 @@
             <form method="post" action="{{ url_for('routes.arch_config_setup') }}">
                 <div class="mb-3">
                     <label for="num_files" class="form-label">Number of Architecture Files</label>
-                    <select class="form-select" id="num_files" name="num_files" required>
-                        <option value="">Select number of files</option>
-                        <option value="1">1 file</option>
-                        <option value="2">2 files</option>
-                        <option value="3">3 files</option>
-                        <option value="4">4 files</option>
-                        <option value="5">5 files</option>
-                        <option value="6">6 files</option>
-                        <option value="7">7 files</option>
-                        <option value="8">8 files</option>
-                        <option value="9">9 files</option>
-                        <option value="10">10 files</option>
-                    </select>
-                    <small class="form-text text-muted">Choose how many architecture files you want to configure. You'll configure each file individually in the next steps.</small>
+                    <input type="number" class="form-control" id="num_files" name="num_files" min="1" max="100" value="1" required>
+                    <small class="form-text text-muted">Enter how many architecture files you want to configure (1-100). You'll configure each file individually in the next steps.</small>
                 </div>
                 
                 <div class="d-flex justify-content-between mt-4">

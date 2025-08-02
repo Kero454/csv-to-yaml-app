@@ -263,8 +263,8 @@ def arch_config_setup():
     
     if request.method == 'POST':
         num_files = int(request.form.get('num_files', 1))
-        if num_files < 1 or num_files > 10:
-            flash('Please select a valid number of files (1-10).')
+        if num_files < 1 or num_files > 100:
+            flash('Please enter a valid number of files (1-100).')
             return redirect(request.url)
         
         # Initialize architecture configuration session data
@@ -403,7 +403,6 @@ def process_configured_arch_files():
         
         for file_num, file_config in arch_config['files'].items():
             filename = secure_filename(file_config['filename'])
-            content = file_config['content']
             
             # Add appropriate file extension if not present
             if file_config['type'] == 'python' and not filename.endswith('.py'):
@@ -417,7 +416,7 @@ def process_configured_arch_files():
             
             arch_path = os.path.join(arch_dir, filename)
             with open(arch_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+                f.write(file_config['content'])
             
             arch_saved.append({
                 'filename': filename,
@@ -465,8 +464,8 @@ def yaml_arch_setup():
     
     if request.method == 'POST':
         num_yaml_files = int(request.form.get('num_yaml_files', 1))
-        if num_yaml_files < 1 or num_yaml_files > 10:
-            flash('Please select a valid number of YAML files (1-10).')
+        if num_yaml_files < 1 or num_yaml_files > 100:
+            flash('Please enter a valid number of YAML files (1-100).')
             return redirect(request.url)
         
         # Initialize YAML architecture configuration session data
@@ -480,8 +479,8 @@ def yaml_arch_setup():
     
     return render_template('yaml_arch_setup.html')
 
-@web.route('/yaml_arch_form')
-@web.route('/yaml_arch_form/<int:file_num>')
+@web.route('/yaml_arch_form', methods=['GET', 'POST'])
+@web.route('/yaml_arch_form/<int:file_num>', methods=['GET', 'POST'])
 @login_required
 def yaml_arch_form(file_num=1):
     """Display Google Form-style configuration for individual YAML architecture file."""
@@ -496,6 +495,57 @@ def yaml_arch_form(file_num=1):
         flash(f'Invalid file number. Please select a file between 1 and {total_files}.')
         return redirect(url_for('routes.yaml_arch_form', file_num=1))
     
+    if request.method == 'POST':
+        # Handle form submission - collect all form data
+        current_file = int(request.form.get('current_file', file_num))
+        total_files = int(request.form.get('total_files', total_files))
+        
+        # Collect form data
+        file_config = {
+            # Model config
+            'model_type': request.form.get('model_type', 'rnn'),
+            'model_retrain': request.form.get('model_retrain', 'true'),
+            # TS config
+            'ts_name': request.form.get('ts_name', 'lstm'),
+            'ts_version': request.form.get('ts_version', '1'),
+            'ts_enrich': request.form.get('ts_enrich', ''),
+            'use_covariates': request.form.get('use_covariates', 'true'),
+            'past_variables': request.form.get('past_variables', '[1]'),
+            'use_future_covariates': request.form.get('use_future_covariates', 'false'),
+            'future_variables': request.form.get('future_variables', 'null'),
+            'interpolate': request.form.get('interpolate', 'true'),
+            # Model configs
+            'cat_emb_dim': request.form.get('cat_emb_dim', '128'),
+            'hidden_rnn': request.form.get('hidden_rnn', '64'),
+            'num_layers_rnn': request.form.get('num_layers_rnn', '2'),
+            'kernel_size': request.form.get('kernel_size', '3'),
+            'kind': request.form.get('kind', 'lstm'),
+            'sum_emb': request.form.get('sum_emb', 'true'),
+            'use_bn': request.form.get('use_bn', 'true'),
+            'optim': request.form.get('optim', 'torch.optim.SGD'),
+            'activation': request.form.get('activation', 'torch.nn.ReLU'),
+            'dropout_rate': request.form.get('dropout_rate', '0.2'),
+            'persistence_weight': request.form.get('persistence_weight', '0.010'),
+            'loss_type': request.form.get('loss_type', 'l1'),
+            'remove_last': request.form.get('remove_last', 'true'),
+            # Training config
+            'batch_size': request.form.get('batch_size', '128'),
+            'max_epochs': request.form.get('max_epochs', '20')
+        }
+        
+        # Save current file configuration
+        yaml_config['files'][str(current_file)] = file_config
+        session['yaml_arch_config'] = yaml_config
+        
+        # Determine next action based on file progression
+        if current_file < total_files:
+            # Go to next file configuration
+            return redirect(url_for('routes.yaml_arch_form', file_num=current_file + 1))
+        else:
+            # All files configured, process and save them
+            return process_configured_yaml_arch_files()
+    
+    # GET request - display the form
     # Get existing configuration for this file if it exists
     file_config = yaml_config['files'].get(str(file_num), {})
     
@@ -592,13 +642,23 @@ def save_yaml_arch_config():
     yaml_config['files'][str(current_file)] = file_config
     session['yaml_arch_config'] = yaml_config
     
-    # Determine next action
-    if current_file < total_files:
+    # Determine next action based on form submission
+    action = request.form.get('action', 'next')
+    
+    if action == 'next' and current_file < total_files:
         # Go to next file
         return redirect(url_for('routes.yaml_arch_form', file_num=current_file + 1))
     else:
-        # All files configured, process and save them
+        # Complete configuration and process all files
         return process_configured_yaml_arch_files()
+    
+    # GET request - render the model configuration form
+    return render_template('model_config_form.html',
+                         current_file=current_file,
+                         total_files=total_files,
+                         ts_name=ts_name,
+                         model_type=model_type,
+                         **file_config.get('model_configs', {}))
 
 def process_configured_yaml_arch_files():
     """Process all configured YAML architecture files and complete the experiment."""
@@ -633,7 +693,10 @@ def process_configured_yaml_arch_files():
         arch_saved = []
         
         for file_num, file_config in yaml_config['files'].items():
-            filename = secure_filename(file_config['filename'])
+            # Generate filename based on main config file name and file number
+            config_base = secure_filename(session['experiment_name'])
+            filename = f"{config_base}_arch_{file_num}.yaml"
+            filename = secure_filename(filename)
             
             # Ensure .yaml extension
             if not filename.endswith(('.yaml', '.yml')):
@@ -648,7 +711,7 @@ def process_configured_yaml_arch_files():
             
             arch_saved.append({
                 'filename': filename,
-                'description': file_config.get('description', ''),
+                'description': f"YAML training configuration {file_num} for {config_base}",
                 'type': 'yaml_training_config'
             })
                 
@@ -686,7 +749,7 @@ def generate_yaml_training_config(config):
     """Generate YAML training configuration content from form data."""
     # Parse list values
     def parse_list_or_null(value):
-        if value.lower() == 'null' or not value.strip():
+        if not value or value.strip().lower() in ['null', 'none', '']:
             return None
         try:
             # Handle list format like [1, 2, 3] or [1]
@@ -705,7 +768,7 @@ def generate_yaml_training_config(config):
     # Build the configuration dictionary
     yaml_config = {
         'model': {
-            'type': config['model_type'],
+            'type': config['ts_name'],  # Model name = TS name as requested
             'retrain': config['model_retrain'] == 'true'
         },
         'ts': {
@@ -745,6 +808,87 @@ def generate_yaml_training_config(config):
     
     return yaml_content
 
+@web.route('/model_config_form/<int:file_num>', methods=['GET', 'POST'])
+@login_required
+def model_config_form(file_num=1):
+    """Dynamic model configuration form that changes based on model type."""
+    if 'experiment_name' not in session or 'yaml_arch_config' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    yaml_config = session['yaml_arch_config']
+    current_file = file_num
+    total_files = yaml_config['total_files']
+    
+    # Get the file configuration to determine model type
+    file_config = yaml_config['files'].get(str(current_file), {})
+    ts_name = file_config.get('ts_name', 'custom')
+    model_type = ts_name.lower()  # Model type is same as TS name
+    
+    if request.method == 'POST':
+        # Collect model-specific configuration based on model type
+        model_config = {}
+        
+        if model_type == 'lstm':
+            model_config = {
+                'hidden_size': int(request.form.get('lstm_hidden_size', 128)),
+                'num_layers': int(request.form.get('lstm_num_layers', 2)),
+                'dropout': float(request.form.get('lstm_dropout', 0.2)),
+                'bidirectional': request.form.get('lstm_bidirectional') == 'true'
+            }
+        elif model_type == 'gru':
+            model_config = {
+                'hidden_size': int(request.form.get('gru_hidden_size', 128)),
+                'num_layers': int(request.form.get('gru_num_layers', 2)),
+                'dropout': float(request.form.get('gru_dropout', 0.2)),
+                'bidirectional': request.form.get('gru_bidirectional') == 'true'
+            }
+        elif model_type == 'transformer':
+            model_config = {
+                'd_model': int(request.form.get('transformer_d_model', 512)),
+                'nhead': int(request.form.get('transformer_nhead', 8)),
+                'num_layers': int(request.form.get('transformer_num_layers', 6)),
+                'dim_feedforward': int(request.form.get('transformer_dim_feedforward', 2048)),
+                'dropout': float(request.form.get('transformer_dropout', 0.1))
+            }
+        elif model_type == 'cnn':
+            model_config = {
+                'num_filters': int(request.form.get('cnn_num_filters', 64)),
+                'kernel_size': int(request.form.get('cnn_kernel_size', 3)),
+                'num_layers': int(request.form.get('cnn_num_layers', 3)),
+                'dropout': float(request.form.get('cnn_dropout', 0.2))
+            }
+        else:
+            # Generic/custom model configuration
+            model_config = {
+                'param1': request.form.get('custom_param1', ''),
+                'param2': request.form.get('custom_param2', ''),
+                'config_json': request.form.get('custom_config_json', '{}')
+            }
+        
+        # Add model configuration to the file config
+        file_config['model_configs'] = model_config
+        yaml_config['files'][str(current_file)] = file_config
+        session['yaml_arch_config'] = yaml_config
+        
+        # Determine next action based on form submission
+        action = request.form.get('action', 'next')
+        
+        if action == 'next' and current_file < total_files:
+            # Go to next file
+            return redirect(url_for('routes.yaml_arch_form', file_num=current_file + 1))
+        else:
+            # Complete configuration and process all files
+            return process_configured_yaml_arch_files()
+    
+    # GET request - render the model configuration form
+    return render_template('model_config_form.html',
+                         current_file=current_file,
+                         total_files=total_files,
+                         ts_name=ts_name,
+                         model_type=model_type,
+                         **file_config.get('model_configs', {}))
+
 @web.route('/done')
 @login_required
 def done():
@@ -753,33 +897,47 @@ def done():
 @web.route('/files')
 @login_required
 def list_files():
+    """List files for the current user only (privacy-protected)."""
     upload_folder = current_app.config['UPLOAD_FOLDER']
     base_path = os.path.join(upload_folder, 'Users')
     
-    if not os.path.exists(base_path):
+    # Get current user's sanitized username
+    sanitized_username = secure_filename(current_user.username)
+    user_path = os.path.join(base_path, sanitized_username)
+    
+    if not os.path.exists(user_path):
         return render_template('files.html', files_by_user={})
 
-    files_by_user = {}
-    for user in sorted(os.listdir(base_path)):
-        user_path = os.path.join(base_path, user)
-        if os.path.isdir(user_path):
-            files_by_user[user] = []
-            for dirpath, _, filenames in os.walk(user_path):
-                for filename in sorted(filenames):
-                    relative_dir = os.path.relpath(dirpath, base_path)
-                    files_by_user[user].append(os.path.join(relative_dir, filename).replace('\\', '/'))
+    # Only show current user's files for privacy
+    files_by_user = {sanitized_username: []}
     
+    for dirpath, _, filenames in os.walk(user_path):
+        for filename in sorted(filenames):
+            relative_dir = os.path.relpath(dirpath, base_path)
+            files_by_user[sanitized_username].append(os.path.join(relative_dir, filename).replace('\\', '/'))
+    
+    current_app.logger.info(f"User {current_user.username} accessing their files only")
     return render_template('files.html', files_by_user=files_by_user)
 
 @web.route('/uploads/<path:filepath>')
 @login_required
 def serve_upload(filepath):
+    """Serve uploaded files for the current user only (privacy-protected)."""
     base_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
     file_abs_path = os.path.abspath(os.path.join(base_path, filepath))
     
+    # Security check 1: Prevent directory traversal
     if not file_abs_path.startswith(os.path.abspath(base_path)):
+        current_app.logger.warning(f"Directory traversal attempt by user {current_user.id} for path {filepath}")
+        return "Forbidden", 403
+    
+    # Security check 2: Ensure user can only access their own files
+    sanitized_username = secure_filename(current_user.username)
+    if not filepath.startswith(sanitized_username + '/'):
+        current_app.logger.warning(f"User {current_user.id} ({current_user.username}) attempting to access other user's file at {filepath}")
         return "Forbidden", 403
         
+    current_app.logger.info(f"User {current_user.username} accessing their own file: {filepath}")
     return send_file(file_abs_path)
 
 
@@ -1070,21 +1228,25 @@ def template_optimizer_form():
         session['config_bytes'] = config_yaml.encode('utf-8')
         session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
         
-        # Check if user selected a dataset from their uploaded files
+        # Check if user selected a dataset (either uploaded file or default dataset)
         dataset_selected = False
         dataset_value = config_data['dataset'].get('dataset', '')
-        if dataset_value and dataset_value != '' and '/' in dataset_value:
-            # User selected an uploaded CSV file (format: "folder/filename.csv")
+        
+        if dataset_value and dataset_value != '' and dataset_value != 'no_dataset':
+            # User selected some dataset (either uploaded file or default dataset)
             dataset_selected = True
-            # Set up CSV data from the selected file
-            user_csv_files = get_user_csv_files(current_user)
-            for csv_file in user_csv_files:
-                if csv_file['path'] == dataset_value:
-                    session['csv_filename'] = csv_file['name']
-                    # Read the CSV file content
-                    with open(csv_file['full_path'], 'rb') as f:
-                        session['csv_bytes'] = f.read()
-                    break
+            
+            # If it's an uploaded CSV file (contains '/'), set up CSV data
+            if '/' in dataset_value:
+                user_csv_files = get_user_csv_files(current_user)
+                for csv_file in user_csv_files:
+                    if csv_file['path'] == dataset_value:
+                        session['csv_filename'] = csv_file['name']
+                        # Read the CSV file content
+                        with open(csv_file['full_path'], 'rb') as f:
+                            session['csv_bytes'] = f.read()
+                        break
+            # For default datasets (electricity, traffic, etc.), no CSV setup needed
         
         flash('Configuration generated successfully!')
         
