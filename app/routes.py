@@ -1388,24 +1388,43 @@ def readiness_check():
 @login_required
 def experiment_explorer():
     """Display all experiments and associated files for the current user."""
+    from flask import flash
+    flash(f'Debug: Experiment explorer called for user {current_user.username}', 'info')
     upload_folder = current_app.config['UPLOAD_FOLDER']
     base_path = os.path.join(upload_folder, 'Users')
     user_path = os.path.join(base_path, secure_filename(current_user.username))
     
+    current_app.logger.info(f"Experiment explorer: current_user.username = {current_user.username}")
+    current_app.logger.info(f"Experiment explorer: secure_filename(username) = {secure_filename(current_user.username)}")
+    current_app.logger.info(f"Experiment explorer: upload_folder = {upload_folder}")
+    current_app.logger.info(f"Experiment explorer: user_path = {user_path}")
+    current_app.logger.info(f"Experiment explorer: user_path exists = {os.path.exists(user_path)}")
+    
     if not os.path.exists(user_path):
+        current_app.logger.info("User path does not exist, returning empty experiments")
         return render_template('experiment_explorer.html', experiments=[])
     
     experiments = []
     
     # Find all experiment directories for this user
-    for experiment_name in os.listdir(user_path):
+    current_app.logger.info(f"Scanning user directory: {user_path}")
+    user_dirs = os.listdir(user_path)
+    current_app.logger.info(f"Found directories: {user_dirs}")
+    
+    for experiment_name in user_dirs:
         exp_path = os.path.join(user_path, experiment_name)
+        current_app.logger.info(f"Processing: {experiment_name}, is_dir: {os.path.isdir(exp_path)}")
         if os.path.isdir(exp_path) and experiment_name != 'Data':  # Skip the Data directory
             try:
-                # Try to read experiment metadata
+                # Try to read experiment metadata - check both naming patterns
                 config_path = os.path.join(exp_path, f"config_{experiment_name}.yaml")
+                current_app.logger.info(f"Looking for config file: {config_path}")
+                if not os.path.exists(config_path):
+                    config_path = os.path.join(exp_path, f"{experiment_name}_config.yaml")
+                    current_app.logger.info(f"Trying alternative config file: {config_path}")
                 timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')  # Default timestamp
                 
+                current_app.logger.info(f"Config file exists: {os.path.exists(config_path)}")
                 if os.path.exists(config_path):
                     with open(config_path, 'r') as f:
                         config_data = yaml.safe_load(f)
@@ -1473,7 +1492,7 @@ def experiment_explorer():
                         'type': 'train',
                         'version': 1,
                         'data': {
-                            'dataset': dataset if dataset else 'default',
+                            'dataset': 'default',
                             'path': '/DSIPTS-P/data/',
                         }
                     }
@@ -1486,11 +1505,15 @@ def experiment_explorer():
                     'arch_files': arch_files,
                     'data_files': data_files
                 })
+                current_app.logger.info(f"Successfully processed experiment: {experiment_name}")
             except Exception as e:
                 current_app.logger.error(f"Error processing experiment {experiment_name}: {str(e)}")
     
     # Sort experiments by timestamp (newest first)
     experiments.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    current_app.logger.info(f"Total experiments found: {len(experiments)}")
+    current_app.logger.info(f"Experiment names: {[exp['name'] for exp in experiments]}")
     
     return render_template('experiment_explorer.html', experiments=experiments)
 
