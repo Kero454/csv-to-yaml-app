@@ -37,8 +37,8 @@ def get_user_csv_files(user):
                         if file.lower().endswith('.csv') and os.path.isfile(os.path.join(csv_path, file)):
                             csv_files.append({
                                 'name': file,
-                                'display_name': f"{csv_dir}/{file}",
-                                'path': os.path.join(csv_dir, file),
+                                'display_name': file,  # Show only filename, not path
+                                'path': file,  # Use only filename as identifier
                                 'full_path': os.path.join(csv_path, file)
                             })
     except Exception as e:
@@ -165,8 +165,15 @@ def upload_config():
                                       config_content=config_content,
                                       experiment_name=session['experiment_name'])
             
+            # Debug session keys
+            current_app.logger.info(f"Session keys before redirect: {list(session.keys())}")
+            current_app.logger.info(f"experiment_name in session: {'experiment_name' in session}")
+            
             # Store in session
             session['config_bytes'] = config_content.encode('utf-8')
+            session.modified = True  # Ensure session is saved
+            
+            current_app.logger.info(f"Session keys after setting config_bytes: {list(session.keys())}")
             return redirect(url_for('routes.upload_csv'))
     
     return render_template('upload_config.html')
@@ -174,7 +181,11 @@ def upload_config():
 @web.route('/upload_csv', methods=['GET', 'POST'])
 @login_required
 def upload_csv():
+    # Debug session keys
+    current_app.logger.info(f"upload_csv: Session keys on entry: {list(session.keys())}")
+    
     if 'experiment_name' not in session or 'config_bytes' not in session:
+        current_app.logger.info(f"upload_csv: Missing keys - experiment_name: {'experiment_name' in session}, config_bytes: {'config_bytes' in session}")
         flash('Experiment session expired. Please start again.')
         return redirect(url_for('routes.experiment'))
     if request.method == 'POST':
@@ -475,15 +486,15 @@ def yaml_arch_setup():
             'files': {}  # Will store configuration for each YAML file
         }
         
-        return redirect(url_for('routes.yaml_arch_form', file_num=1))
+        return redirect(url_for('routes.yaml_arch_step1', file_num=1))
     
     return render_template('yaml_arch_setup.html')
 
-@web.route('/yaml_arch_form', methods=['GET', 'POST'])
-@web.route('/yaml_arch_form/<int:file_num>', methods=['GET', 'POST'])
+@web.route('/yaml_arch_step1', methods=['GET', 'POST'])
+@web.route('/yaml_arch_step1/<int:file_num>', methods=['GET', 'POST'])
 @login_required
-def yaml_arch_form(file_num=1):
-    """Display Google Form-style configuration for individual YAML architecture file."""
+def yaml_arch_step1(file_num=1):
+    """Step 1: Configure everything except model_configs for YAML architecture file."""
     if 'experiment_name' not in session or 'yaml_arch_config' not in session:
         flash('YAML architecture configuration session expired. Please start again.')
         return redirect(url_for('routes.yaml_arch_setup'))
@@ -493,97 +504,407 @@ def yaml_arch_form(file_num=1):
     
     if file_num < 1 or file_num > total_files:
         flash(f'Invalid file number. Please select a file between 1 and {total_files}.')
-        return redirect(url_for('routes.yaml_arch_form', file_num=1))
+        return redirect(url_for('routes.yaml_arch_step1', file_num=1))
     
     if request.method == 'POST':
-        # Handle form submission - collect all form data
+        # Handle Step 1 form submission - collect basic configuration
         current_file = int(request.form.get('current_file', file_num))
         total_files = int(request.form.get('total_files', total_files))
         
-        # Collect form data
-        file_config = {
-            # Model config
-            'model_type': request.form.get('model_type', 'rnn'),
+        # Collect Step 1 form data (everything except model_configs)
+        step1_config = {
+            'model_type': request.form.get('model_type', 'autoformer'),
             'model_retrain': request.form.get('model_retrain', 'true'),
             # TS config
-            'ts_name': request.form.get('ts_name', 'lstm'),
+            'ts_name': request.form.get('ts_name', 'model'),
             'ts_version': request.form.get('ts_version', '1'),
             'ts_enrich': request.form.get('ts_enrich', ''),
             'use_covariates': request.form.get('use_covariates', 'true'),
-            'past_variables': request.form.get('past_variables', '[1]'),
-            'use_future_covariates': request.form.get('use_future_covariates', 'false'),
-            'future_variables': request.form.get('future_variables', 'null'),
-            'interpolate': request.form.get('interpolate', 'true'),
-            # Model configs
-            'cat_emb_dim': request.form.get('cat_emb_dim', '128'),
-            'hidden_rnn': request.form.get('hidden_rnn', '64'),
-            'num_layers_rnn': request.form.get('num_layers_rnn', '2'),
-            'kernel_size': request.form.get('kernel_size', '3'),
-            'kind': request.form.get('kind', 'lstm'),
-            'sum_emb': request.form.get('sum_emb', 'true'),
-            'use_bn': request.form.get('use_bn', 'true'),
-            'optim': request.form.get('optim', 'torch.optim.SGD'),
-            'activation': request.form.get('activation', 'torch.nn.ReLU'),
-            'dropout_rate': request.form.get('dropout_rate', '0.2'),
-            'persistence_weight': request.form.get('persistence_weight', '0.010'),
-            'loss_type': request.form.get('loss_type', 'l1'),
-            'remove_last': request.form.get('remove_last', 'true'),
+            'past_variables': request.form.get('past_variables', ''),
+            'future_variables': request.form.get('future_variables', ''),
+            'static_variables': request.form.get('static_variables', ''),
             # Training config
-            'batch_size': request.form.get('batch_size', '128'),
-            'max_epochs': request.form.get('max_epochs', '20')
+            'batch_size': request.form.get('batch_size', '32'),
+            'max_epochs': request.form.get('max_epochs', '50')
         }
         
-        # Save current file configuration
-        yaml_config['files'][str(current_file)] = file_config
-        session['yaml_arch_config'] = yaml_config
+        # Save Step 1 configuration
+        if 'files' not in yaml_config:
+            yaml_config['files'] = {}
+        if str(current_file) not in yaml_config['files']:
+            yaml_config['files'][str(current_file)] = {}
         
-        # Determine next action based on file progression
-        if current_file < total_files:
-            # Go to next file configuration
-            return redirect(url_for('routes.yaml_arch_form', file_num=current_file + 1))
-        else:
-            # All files configured, process and save them
-            return process_configured_yaml_arch_files()
+        yaml_config['files'][str(current_file)].update(step1_config)
+        session['yaml_arch_config'] = yaml_config
+        session['current_yaml_file'] = current_file
+        session.modified = True
+        
+        # Go to Step 2 for model_configs
+        return redirect(url_for('routes.yaml_arch_step2', file_num=current_file))
     
-    # GET request - display the form
+    # GET request - display Step 1 form
     # Get existing configuration for this file if it exists
     file_config = yaml_config['files'].get(str(file_num), {})
     
-    return render_template('yaml_arch_form.html',
+    return render_template('yaml_arch_step1.html',
                          current_file=file_num,
                          total_files=total_files,
-                         # File info
-                         filename=file_config.get('filename', ''),
-                         description=file_config.get('description', ''),
                          # Model config
-                         model_type=file_config.get('model_type', 'rnn'),
+                         model_type=file_config.get('model_type', 'autotransformer'),
                          model_retrain=file_config.get('model_retrain', 'true'),
                          # TS config
-                         ts_name=file_config.get('ts_name', 'lstm'),
+                         ts_name=file_config.get('ts_name', 'model'),
                          ts_version=file_config.get('ts_version', '1'),
                          ts_enrich=file_config.get('ts_enrich', ''),
                          use_covariates=file_config.get('use_covariates', 'true'),
-                         past_variables=file_config.get('past_variables', '[1]'),
-                         use_future_covariates=file_config.get('use_future_covariates', 'false'),
-                         future_variables=file_config.get('future_variables', 'null'),
-                         interpolate=file_config.get('interpolate', 'true'),
-                         # Model configs
-                         cat_emb_dim=file_config.get('cat_emb_dim', '128'),
-                         hidden_rnn=file_config.get('hidden_rnn', '64'),
-                         num_layers_rnn=file_config.get('num_layers_rnn', '2'),
-                         kernel_size=file_config.get('kernel_size', '3'),
-                         kind=file_config.get('kind', 'lstm'),
-                         sum_emb=file_config.get('sum_emb', 'true'),
-                         use_bn=file_config.get('use_bn', 'true'),
-                         optim=file_config.get('optim', 'torch.optim.SGD'),
-                         activation=file_config.get('activation', 'torch.nn.ReLU'),
-                         dropout_rate=file_config.get('dropout_rate', '0.2'),
-                         persistence_weight=file_config.get('persistence_weight', '0.010'),
-                         loss_type=file_config.get('loss_type', 'l1'),
-                         remove_last=file_config.get('remove_last', 'true'),
+                         past_variables=file_config.get('past_variables', ''),
+                         future_variables=file_config.get('future_variables', ''),
+                         static_variables=file_config.get('static_variables', ''),
                          # Training config
-                         batch_size=file_config.get('batch_size', '128'),
+                         batch_size=file_config.get('batch_size', '32'),
                          max_epochs=file_config.get('max_epochs', '20'))
+
+@web.route('/yaml_arch_step2', methods=['GET', 'POST'])
+@web.route('/yaml_arch_step2/<int:file_num>', methods=['GET', 'POST'])
+@login_required
+def yaml_arch_step2(file_num=1):
+    """Step 2: Configure dynamic model_configs based on selected model type."""
+    if 'experiment_name' not in session or 'yaml_arch_config' not in session:
+        flash('YAML architecture configuration session expired. Please start again.')
+        return redirect(url_for('routes.yaml_arch_setup'))
+    
+    yaml_config = session['yaml_arch_config']
+    total_files = yaml_config['total_files']
+    current_file = session.get('current_yaml_file', file_num)
+    
+    if current_file < 1 or current_file > total_files:
+        flash(f'Invalid file number. Please select a file between 1 and {total_files}.')
+        return redirect(url_for('routes.yaml_arch_step1', file_num=1))
+    
+    # Get Step 1 configuration to determine model type
+    file_config = yaml_config['files'].get(str(current_file), {})
+    model_type = file_config.get('model_type', 'autoformer')
+    
+    if request.method == 'POST':
+        # Handle Step 2 form submission - collect model_configs
+        current_app.logger.info(f"Step 2 POST request received for file {current_file}")
+        current_app.logger.info(f"Form data: {dict(request.form)}")
+        model_configs = {}
+        
+        if model_type == 'autoformer':
+            model_configs = {
+                'd_model': int(request.form.get('d_model', 4)),
+                'kernel_size': int(request.form.get('kernel_size', 3)),
+                'n_layer_encoder': int(request.form.get('n_layer_encoder', 2)),
+                'n_layer_decoder': int(request.form.get('n_layer_decoder', 2)),
+                'label_len': int(request.form.get('label_len', 4)),
+                'n_head': int(request.form.get('n_head', 2)),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.5)),
+                'factor': int(request.form.get('factor', 5)),
+                'hidden_size': int(request.form.get('hidden_size', 12)),
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'activation': request.form.get('activation', 'torch.nn.PReLU'),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1')
+            }
+        elif model_type == 'lstm':
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 16)),
+                'hidden_RNN': int(request.form.get('hidden_RNN', 12)),
+                'num_layers_RNN': int(request.form.get('num_layers_RNN', 3)),
+                'kernel_size': int(request.form.get('kernel_size', 5)),
+                'kind': request.form.get('kind', 'lstm'),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'optim': request.form.get('optim', 'torch.optim.SGD'),
+                'activation': request.form.get('activation', 'torch.nn.SELU')
+            }
+        elif model_type == 'crossformer':
+            model_configs = {
+                'd_model': int(request.form.get('d_model', 4)),
+                'hidden_size': int(request.form.get('hidden_size', 12)),
+                'n_layer_encoder': int(request.form.get('n_layer_encoder', 2)),
+                'n_head': int(request.form.get('n_head', 2)),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.5)),
+                'win_size': int(request.form.get('win_size', 2)),
+                'seg_len': int(request.form.get('seg_len', 6)),
+                'factor': int(request.form.get('factor', 10)),
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1')
+            }
+        elif model_type == 'd3vae':
+            model_configs = {
+                'embedding_dimension': int(request.form.get('embedding_dimension', 2)),
+                'scale': float(request.form.get('scale', 0.1)),
+                'hidden_size': int(request.form.get('hidden_size', 2)),
+                'num_layers': int(request.form.get('num_layers', 1)),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.1)),
+                'diff_steps': int(request.form.get('diff_steps', 1)),
+                'loss_type': request.form.get('loss_type', 'kl'),
+                'beta_end': float(request.form.get('beta_end', 0.01)),
+                'beta_schedule': request.form.get('beta_schedule', 'linear'),
+                'channel_mult': int(request.form.get('channel_mult', 1)),
+                'mult': int(request.form.get('mult', 4)),
+                'num_preprocess_blocks': int(request.form.get('num_preprocess_blocks', 1)),
+                'num_preprocess_cells': int(request.form.get('num_preprocess_cells', 1)),
+                'num_channels_enc': int(request.form.get('num_channels_enc', 1)),
+                'arch_instance': request.form.get('arch_instance', 'res_mbconv'),
+                'num_latent_per_group': int(request.form.get('num_latent_per_group', 1)),
+                'num_channels_dec': int(request.form.get('num_channels_dec', 1)),
+                'groups_per_scale': int(request.form.get('groups_per_scale', 1)),
+                'num_postprocess_blocks': int(request.form.get('num_postprocess_blocks', 1)),
+                'num_postprocess_cells': int(request.form.get('num_postprocess_cells', 1)),
+                'beta_start': float(request.form.get('beta_start', 0)),
+                'optim': request.form.get('optim', 'torch.optim.SGD')
+            }
+        elif model_type == 'diffusion':
+            model_configs = {
+                'd_model': int(request.form.get('d_model', 12)),
+                'learn_var': request.form.get('learn_var', 'true') == 'true',
+                'cosine_alpha': request.form.get('cosine_alpha', 'true') == 'true',
+                'diffusion_steps': int(request.form.get('diffusion_steps', 100)),
+                'beta': float(request.form.get('beta', 0.03)),
+                'gamma': float(request.form.get('gamma', 0.01)),
+                'n_layers_RNN': int(request.form.get('n_layers_RNN', 4)),
+                'd_head': int(request.form.get('d_head', 64)),
+                'n_head': int(request.form.get('n_head', 8)),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.0)),
+                'activation': request.form.get('activation', 'torch.nn.GELU'),
+                'subnet': int(request.form.get('subnet', 1)),
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'perc_subnet_learning_for_step': float(request.form.get('perc_subnet_learning_for_step', 0.1)),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1')
+            }
+        elif model_type == 'dilated_conv':
+            quantiles_str = request.form.get('quantiles', '0.1,0.5,0.9')
+            quantiles = [float(q.strip()) for q in quantiles_str.split(',') if q.strip()]
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 4)),
+                'hidden_RNN': int(request.form.get('hidden_RNN', 16)),
+                'num_layers_RNN': int(request.form.get('num_layers_RNN', 1)),
+                'kernel_size': int(request.form.get('kernel_size', 3)),
+                'kind': request.form.get('kind', 'gru'),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'persistence_weight': float(request.form.get('persistence_weight', 1.0)),
+                'use_bn': request.form.get('use_bn', 'false') == 'true',
+                'use_glu': request.form.get('use_glu', 'true') == 'true',
+                'glu_percentage': float(request.form.get('glu_percentage', 0.2)),
+                'quantiles': quantiles,
+                'optim': request.form.get('optim', 'torch.optim.SGD'),
+                'activation': request.form.get('activation', 'torch.nn.SELU'),
+                'loss_type': request.form.get('loss_type', 'linear_penalization')
+            }
+        elif model_type == 'dilated_conv_ed':
+            quantiles_str = request.form.get('quantiles', '0.1,0.5,0.9')
+            quantiles = [float(q.strip()) for q in quantiles_str.split(',') if q.strip()]
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 4)),
+                'hidden_RNN': int(request.form.get('hidden_RNN', 16)),
+                'num_layers_RNN': int(request.form.get('num_layers_RNN', 1)),
+                'kernel_size': int(request.form.get('kernel_size', 3)),
+                'kind': request.form.get('kind', 'gru'),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'persistence_weight': float(request.form.get('persistence_weight', 1.0)),
+                'use_bn': request.form.get('use_bn', 'false') == 'true',
+                'quantiles': quantiles,
+                'optim': request.form.get('optim', 'torch.optim.SGD'),
+                'activation': request.form.get('activation', 'torch.nn.SELU'),
+                'loss_type': request.form.get('loss_type', 'linear_penalization')
+            }
+        elif model_type == 'dlinear':
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 4)),
+                'kernel_size': int(request.form.get('kernel_size', 3)),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'hidden_size': int(request.form.get('hidden_size', 12)),
+                'kind': request.form.get('kind', 'dlinear'),
+                'optim': request.form.get('optim', 'torch.optim.SGD'),
+                'activation': request.form.get('activation', 'torch.nn.LeakyReLU'),
+                'simple': request.form.get('simple', 'true') == 'true'
+            }
+        elif model_type == 'rnn':
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 16)),
+                'hidden_RNN': int(request.form.get('hidden_RNN', 12)),
+                'num_layers_RNN': int(request.form.get('num_layers_RNN', 3)),
+                'kernel_size': int(request.form.get('kernel_size', 5)),
+                'kind': request.form.get('kind', 'gru'),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true'
+            }
+        elif model_type == 'informer':
+            model_configs = {
+                'd_model': int(request.form.get('d_model', 4)),
+                'hidden_size': int(request.form.get('hidden_size', 4)),
+                'n_layer_encoder': int(request.form.get('n_layer_encoder', 2)),
+                'n_layer_decoder': int(request.form.get('n_layer_decoder', 2)),
+                'n_head': int(request.form.get('n_head', 2)),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.5)),
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'activation': request.form.get('activation', 'torch.nn.PReLU'),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1'),
+                'remove_last': request.form.get('remove_last', 'true') == 'true'
+            }
+        elif model_type == 'linear':
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 16)),
+                'kernel_size': int(request.form.get('kernel_size', 5)),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'hidden_size': int(request.form.get('hidden_size', 8)),
+                'kind': request.form.get('kind', 'linear'),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.1)),
+                'use_bn': request.form.get('use_bn', 'false') == 'true',
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'activation': request.form.get('activation', 'torch.nn.PReLU'),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1'),
+                'simple': request.form.get('simple', 'false') == 'true'
+            }
+        elif model_type == 'nlinear':
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 16)),
+                'kernel_size': int(request.form.get('kernel_size', 5)),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'hidden_size': int(request.form.get('hidden_size', 24)),
+                'kind': request.form.get('kind', 'nlinear')
+            }
+        elif model_type == 'patchtst':
+            model_configs = {
+                'd_model': int(request.form.get('d_model', 4)),
+                'kernel_size': int(request.form.get('kernel_size', 3)),
+                'decomposition': request.form.get('decomposition', 'true') == 'true',
+                'n_layer': int(request.form.get('n_layer', 2)),
+                'patch_len': int(request.form.get('patch_len', 4)),
+                'n_head': int(request.form.get('n_head', 2)),
+                'stride': int(request.form.get('stride', 4)),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.5)),
+                'hidden_size': int(request.form.get('hidden_size', 12)),
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'activation': request.form.get('activation', 'torch.nn.PReLU'),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1'),
+                'remove_last': request.form.get('remove_last', 'true') == 'true'
+            }
+        elif model_type == 'persistent':
+            # Persistent model has no model_configs
+            model_configs = {}
+        elif model_type == 'tft':
+            model_configs = {
+                'd_model': int(request.form.get('d_model', 4)),
+                'd_head': int(request.form.get('d_head', 4)),
+                'n_head': int(request.form.get('n_head', 4)),
+                'num_layers_RNN': int(request.form.get('num_layers_RNN', 8)),
+                'optim': request.form.get('optim', 'torch.optim.Adam'),
+                'dropout_rate': float(request.form.get('dropout_rate', 0.5)),
+                'persistence_weight': float(request.form.get('persistence_weight', 0.010)),
+                'loss_type': request.form.get('loss_type', 'l1')
+            }
+        elif model_type == 'xlstm':
+            model_configs = {
+                'cat_emb_dim': int(request.form.get('cat_emb_dim', 16)),
+                'hidden_RNN': int(request.form.get('hidden_RNN', 12)),
+                'num_layers_RNN': int(request.form.get('num_layers_RNN', 3)),
+                'kernel_size': int(request.form.get('kernel_size', 5)),
+                'kind': request.form.get('kind', 'xlstm'),
+                'sum_emb': request.form.get('sum_emb', 'true') == 'true',
+                'num_blocks': int(request.form.get('num_blocks', 2)),
+                'bidirectional': request.form.get('bidirectional', 'true') == 'true',
+                'lstm_type': request.form.get('lstm_type', 'slstm')
+            }
+        
+        # Save model_configs to session
+        yaml_config['files'][str(current_file)]['model_configs'] = model_configs
+        session['yaml_arch_config'] = yaml_config
+        session.modified = True
+        
+        current_app.logger.info(f"Saved model_configs for file {current_file}: {model_configs}")
+        current_app.logger.info(f"Current file: {current_file}, Total files: {total_files}")
+        
+        if current_file < total_files:
+            # Go to next file Step 1
+            current_app.logger.info(f"Redirecting to next file: {current_file + 1}")
+            return redirect(url_for('routes.yaml_arch_step1', file_num=current_file + 1))
+        else:
+            # All files configured, process and save them
+            current_app.logger.info("All files configured, calling process_configured_yaml_arch_files()")
+            return process_configured_yaml_arch_files()
+    
+    # GET request - display Step 2 form with model-specific fields
+    # Get existing model_configs if they exist
+    existing_model_configs = file_config.get('model_configs', {})
+    
+    return render_template('yaml_arch_step2.html',
+                         current_file=current_file,
+                         total_files=total_files,
+                         model_type=model_type,
+                         # Common fields
+                         d_model=existing_model_configs.get('d_model', 4),
+                         kernel_size=existing_model_configs.get('kernel_size', 3),
+                         n_layer_encoder=existing_model_configs.get('n_layer_encoder', 2),
+                         n_layer_decoder=existing_model_configs.get('n_layer_decoder', 2),
+                         label_len=existing_model_configs.get('label_len', 4),
+                         n_head=existing_model_configs.get('n_head', 2),
+                         dropout_rate=existing_model_configs.get('dropout_rate', 0.5),
+                         factor=existing_model_configs.get('factor', 5),
+                         hidden_size=existing_model_configs.get('hidden_size', 12),
+                         optim=existing_model_configs.get('optim', 'torch.optim.Adam'),
+                         activation=existing_model_configs.get('activation', 'torch.nn.PReLU'),
+                         persistence_weight=existing_model_configs.get('persistence_weight', 0.010),
+                         loss_type=existing_model_configs.get('loss_type', 'l1'),
+                         # LSTM/RNN fields
+                         cat_emb_dim=existing_model_configs.get('cat_emb_dim', 16),
+                         hidden_RNN=existing_model_configs.get('hidden_RNN', 12),
+                         num_layers_RNN=existing_model_configs.get('num_layers_RNN', 3),
+                         kind=existing_model_configs.get('kind', 'lstm'),
+                         sum_emb=existing_model_configs.get('sum_emb', True),
+                         # Crossformer fields
+                         win_size=existing_model_configs.get('win_size', 2),
+                         seg_len=existing_model_configs.get('seg_len', 6),
+                         # D3VAE fields
+                         embedding_dimension=existing_model_configs.get('embedding_dimension', 2),
+                         scale=existing_model_configs.get('scale', 0.1),
+                         num_layers=existing_model_configs.get('num_layers', 1),
+                         diff_steps=existing_model_configs.get('diff_steps', 1),
+                         beta_end=existing_model_configs.get('beta_end', 0.01),
+                         beta_schedule=existing_model_configs.get('beta_schedule', 'linear'),
+                         channel_mult=existing_model_configs.get('channel_mult', 1),
+                         mult=existing_model_configs.get('mult', 4),
+                         num_preprocess_blocks=existing_model_configs.get('num_preprocess_blocks', 1),
+                         num_preprocess_cells=existing_model_configs.get('num_preprocess_cells', 1),
+                         num_channels_enc=existing_model_configs.get('num_channels_enc', 1),
+                         arch_instance=existing_model_configs.get('arch_instance', 'res_mbconv'),
+                         num_latent_per_group=existing_model_configs.get('num_latent_per_group', 1),
+                         num_channels_dec=existing_model_configs.get('num_channels_dec', 1),
+                         groups_per_scale=existing_model_configs.get('groups_per_scale', 1),
+                         num_postprocess_blocks=existing_model_configs.get('num_postprocess_blocks', 1),
+                         num_postprocess_cells=existing_model_configs.get('num_postprocess_cells', 1),
+                         beta_start=existing_model_configs.get('beta_start', 0),
+                         # Diffusion fields
+                         learn_var=existing_model_configs.get('learn_var', 'true'),
+                         cosine_alpha=existing_model_configs.get('cosine_alpha', 'true'),
+                         diffusion_steps=existing_model_configs.get('diffusion_steps', 100),
+                         beta=existing_model_configs.get('beta', 0.03),
+                         gamma=existing_model_configs.get('gamma', 0.01),
+                         n_layers_RNN=existing_model_configs.get('n_layers_RNN', 4),
+                         d_head=existing_model_configs.get('d_head', 64),
+                         subnet=existing_model_configs.get('subnet', 1),
+                         perc_subnet_learning_for_step=existing_model_configs.get('perc_subnet_learning_for_step', 0.1),
+                         # Dilated Conv fields
+                         use_bn=existing_model_configs.get('use_bn', 'false'),
+                         use_glu=existing_model_configs.get('use_glu', 'true'),
+                         glu_percentage=existing_model_configs.get('glu_percentage', 0.2),
+                         quantiles=','.join(map(str, existing_model_configs.get('quantiles', [0.1, 0.5, 0.9]))),
+                         # New model type fields
+                         simple=existing_model_configs.get('simple', 'true'),
+                         remove_last=existing_model_configs.get('remove_last', 'true'),
+                         decomposition=existing_model_configs.get('decomposition', 'true'),
+                         n_layer=existing_model_configs.get('n_layer', 2),
+                         patch_len=existing_model_configs.get('patch_len', 4),
+                         stride=existing_model_configs.get('stride', 4),
+                         num_blocks=existing_model_configs.get('num_blocks', 2),
+                         bidirectional=existing_model_configs.get('bidirectional', 'true'),
+                         lstm_type=existing_model_configs.get('lstm_type', 'slstm'))
 
 @web.route('/yaml_arch_form', methods=['POST'])
 @login_required
@@ -646,8 +967,8 @@ def save_yaml_arch_config():
     action = request.form.get('action', 'next')
     
     if action == 'next' and current_file < total_files:
-        # Go to next file
-        return redirect(url_for('routes.yaml_arch_form', file_num=current_file + 1))
+        # Redirect to the first YAML architecture file configuration (Step 1)
+        return redirect(url_for('routes.yaml_arch_step1', file_num=1))
     else:
         # Complete configuration and process all files
         return process_configured_yaml_arch_files()
@@ -663,36 +984,52 @@ def save_yaml_arch_config():
 def process_configured_yaml_arch_files():
     """Process all configured YAML architecture files and complete the experiment."""
     try:
+        current_app.logger.info("Starting YAML architecture files processing")
+        current_app.logger.info(f"Session keys: {list(session.keys())}")
+        
         safe_user = secure_filename(current_user.username)
         safe_exp = secure_filename(session['experiment_name'])
-        csv_filename = session['csv_filename']
-        config_filename = session['config_filename']
-        csv_base = os.path.splitext(csv_filename)[0]
+        current_app.logger.info(f"Processing for user: {safe_user}, experiment: {safe_exp}")
+        
+        # Handle optional CSV and config files (may not exist in YAML-only workflow)
+        csv_filename = session.get('csv_filename')
+        config_filename = session.get('config_filename')
+        csv_bytes = session.get('csv_bytes')
+        config_bytes = session.get('config_bytes')
         
         base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
         user_dir = os.path.join(base_upload, safe_user)
-        data_dir = os.path.join(user_dir, 'Data', csv_base)
         exp_dir = os.path.join(user_dir, safe_exp)
         arch_dir = os.path.join(exp_dir, 'Architecture')
         
-        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(exp_dir, exist_ok=True)
         os.makedirs(arch_dir, exist_ok=True)
 
-        # Save experiment config file
-        exp_config_path = os.path.join(exp_dir, config_filename)
-        with open(exp_config_path, 'wb') as f:
-            f.write(session['config_bytes'])
+        # Save experiment config file if it exists
+        if config_filename and config_bytes:
+            exp_config_path = os.path.join(exp_dir, config_filename)
+            with open(exp_config_path, 'wb') as f:
+                f.write(config_bytes)
 
-        # Save CSV file
-        csv_path = os.path.join(data_dir, csv_filename)
-        with open(csv_path, 'wb') as f:
-            f.write(session['csv_bytes'])
+        # Save CSV file if it exists
+        if csv_filename and csv_bytes:
+            csv_base = os.path.splitext(csv_filename)[0]
+            data_dir = os.path.join(user_dir, 'Data', csv_base)
+            os.makedirs(data_dir, exist_ok=True)
+            csv_path = os.path.join(data_dir, csv_filename)
+            with open(csv_path, 'wb') as f:
+                f.write(csv_bytes)
             
         # Generate and save all configured YAML architecture files
+        current_app.logger.info("Getting YAML config from session")
         yaml_config = session['yaml_arch_config']
+        current_app.logger.info(f"YAML config: {yaml_config}")
         arch_saved = []
         
+        current_app.logger.info(f"Processing {len(yaml_config['files'])} YAML files")
         for file_num, file_config in yaml_config['files'].items():
+            current_app.logger.info(f"Processing file {file_num}: {file_config}")
+            
             # Generate filename based on main config file name and file number
             config_base = secure_filename(session['experiment_name'])
             filename = f"{config_base}_arch_{file_num}.yaml"
@@ -702,10 +1039,13 @@ def process_configured_yaml_arch_files():
             if not filename.endswith(('.yaml', '.yml')):
                 filename += '.yaml'
             
+            current_app.logger.info(f"Generating YAML content for file: {filename}")
             # Generate YAML content
             yaml_content = generate_yaml_training_config(file_config)
+            current_app.logger.info(f"Generated YAML content length: {len(yaml_content)}")
             
             arch_path = os.path.join(arch_dir, filename)
+            current_app.logger.info(f"Saving YAML file to: {arch_path}")
             with open(arch_path, 'w', encoding='utf-8') as f:
                 f.write(yaml_content)
             
@@ -714,18 +1054,23 @@ def process_configured_yaml_arch_files():
                 'description': f"YAML training configuration {file_num} for {config_base}",
                 'type': 'yaml_training_config'
             })
+            current_app.logger.info(f"Successfully saved file {file_num}")
                 
         # Create experiment summary config
         config_path = os.path.join(exp_dir, f"config_{safe_exp}.yaml")
         config_data = {
             'user': current_user.username,
             'experiment': session['experiment_name'],
-            'experiment_config_file': config_filename,
-            'csv_file': csv_filename,
             'architecture_files': arch_saved,
             'configuration_method': 'yaml_training_configured',
             'timestamp': datetime.utcnow().isoformat()
         }
+        
+        # Add optional files if they exist
+        if config_filename:
+            config_data['experiment_config_file'] = config_filename
+        if csv_filename:
+            config_data['csv_file'] = csv_filename
         with open(config_path, 'w') as f:
             yaml.dump(config_data, f, default_flow_style=False)
             
@@ -737,11 +1082,14 @@ def process_configured_yaml_arch_files():
         session.pop('yaml_arch_config', None)
         session.pop('experiment_name', None)
         
+        current_app.logger.info(f"Successfully completed processing {len(arch_saved)} YAML files")
         flash(f'Your experiment with {len(arch_saved)} configured YAML training files has been created successfully!')
         return redirect(url_for('routes.done'))
         
     except Exception as e:
+        import traceback
         current_app.logger.error(f"Error processing configured YAML architecture files: {e}")
+        current_app.logger.error(f"Full traceback: {traceback.format_exc()}")
         flash('An error occurred while processing your YAML architecture files. Please try again.')
         return redirect(url_for('routes.yaml_arch_setup'))
 
@@ -749,58 +1097,54 @@ def generate_yaml_training_config(config):
     """Generate YAML training configuration content from form data."""
     # Parse list values
     def parse_list_or_null(value):
-        if not value or value.strip().lower() in ['null', 'none', '']:
+        if not value or str(value).strip().lower() in ['null', 'none', '']:
             return None
         try:
             # Handle list format like [1, 2, 3] or [1]
-            if value.strip().startswith('[') and value.strip().endswith(']'):
-                return eval(value.strip())
+            if str(value).strip().startswith('[') and str(value).strip().endswith(']'):
+                return eval(str(value).strip())
             else:
-                return value.strip()
+                return str(value).strip()
         except:
-            return value.strip()
+            return str(value).strip()
     
     def parse_enrich_list(value):
-        if not value.strip():
+        if not value or not str(value).strip():
             return []
-        return [item.strip() for item in value.split(',') if item.strip()]
+        return [item.strip() for item in str(value).split(',') if item.strip()]
+    
+    def parse_variables_list(value):
+        if not value or not str(value).strip():
+            return []
+        return [item.strip() for item in str(value).split(',') if item.strip()]
     
     # Build the configuration dictionary
     yaml_config = {
         'model': {
-            'type': config['ts_name'],  # Model name = TS name as requested
-            'retrain': config['model_retrain'] == 'true'
+            'type': config.get('model_type', 'autotransformer'),
+            'retrain': config.get('model_retrain', 'true') == 'true'
         },
         'ts': {
-            'name': config['ts_name'],
-            'version': int(config['ts_version']),
-            'enrich': parse_enrich_list(config['ts_enrich']),
-            'use_covariates': config['use_covariates'] == 'true',
-            'past_variables': parse_list_or_null(config['past_variables']),
-            'use_future_covariates': config['use_future_covariates'] == 'true',
-            'future_variables': parse_list_or_null(config['future_variables']),
-            'interpolate': config['interpolate'] == 'true'
-        },
-        'model_configs': {
-            'cat_emb_dim': int(config['cat_emb_dim']),
-            'hidden_RNN': int(config['hidden_rnn']),
-            'num_layers_RNN': int(config['num_layers_rnn']),
-            'kernel_size': int(config['kernel_size']),
-            'kind': config['kind'],
-            'sum_emb': config['sum_emb'] == 'true',
-            'use_bn': config['use_bn'] == 'true',
-            'optim': config['optim'],
-            'activation': config['activation'],
-            'dropout_rate': float(config['dropout_rate']),
-            'persistence_weight': float(config['persistence_weight']),
-            'loss_type': config['loss_type'],
-            'remove_last': config['remove_last'] == 'true'
+            'name': config.get('ts_name', 'model'),
+            'version': int(config.get('ts_version', 1)),
+            'enrich': parse_enrich_list(config.get('ts_enrich', '')),
+            'use_covariates': config.get('use_covariates', 'true') == 'true',
+            'past_variables': parse_variables_list(config.get('past_variables', '')),
+            'future_variables': parse_variables_list(config.get('future_variables', '')),
+            'static_variables': parse_variables_list(config.get('static_variables', ''))
         },
         'train_config': {
-            'batch_size': int(config['batch_size']),
-            'max_epochs': int(config['max_epochs'])
+            'batch_size': int(config.get('batch_size', 32)),
+            'max_epochs': int(config.get('max_epochs', 50))
         }
     }
+    
+    # Add model_configs from the 2-step workflow
+    if 'model_configs' in config:
+        yaml_config['model_configs'] = config['model_configs']
+    else:
+        # Fallback for old structure (shouldn't happen in new workflow)
+        yaml_config['model_configs'] = {}
     
     # Generate YAML content with header
     yaml_content = "# @package _global_\n\n"
@@ -1123,6 +1467,17 @@ def experiment_explorer():
                                         'size': f"{file_size / 1024:.1f} KB"
                                     })
                 
+                config_data = {
+                    'experiment': {
+                        'exp_id': experiment_name,
+                        'type': 'train',
+                        'version': 1,
+                        'data': {
+                            'dataset': dataset if dataset else 'default',
+                            'path': '/DSIPTS-P/data/',
+                        }
+                    }
+                }
                 experiments.append({
                     'name': experiment_name,
                     'path': exp_path,
@@ -1152,7 +1507,7 @@ def template_optimizer_form():
         config_data = {
             'dataset': {
                 'dataset': request.form.get('dataset', 'electricity'),
-                'path': '/home/agobbi/Projects/ExpTS/data'  # Default path since dataset_path field was removed
+                'path': '/DSIPTS-P/data/'  # Default path since dataset_path field was removed
             },
             'scheduler_config': {
                 'gamma': float(request.form.get('scheduler_gamma', 0.75)),
@@ -1186,14 +1541,14 @@ def template_optimizer_form():
                 'future_steps': 'model_configs@future_steps'
             },
             'train_config': {
-                'dirpath': request.form.get('train_dirpath', '/home/agobbi/Projects/ExpTS/electricity'),
+                'dirpath': request.form.get('train_dirpath', '/DSIPTS-P/data/'),
                 'num_workers': int(request.form.get('train_num_workers', 0)),
                 'auto_lr_find': request.form.get('train_auto_lr_find') == 'on',
                 'devices': _parse_devices(request.form.get('train_devices', '0')),
                 'seed': int(request.form.get('train_seed', 42))
             },
             'inference': {
-                'output_path': request.form.get('inference_output_path', '/home/agobbi/Projects/ExpTS/electricity'),
+                'output_path': request.form.get('inference_output_path', '/DSIPTS-P/output/'),
                 'load_last': request.form.get('inference_load_last') == 'on',
                 'batch_size': int(request.form.get('inference_batch_size', 200)),
                 'num_workers': int(request.form.get('inference_num_workers', 4)),
@@ -1236,16 +1591,19 @@ def template_optimizer_form():
             # User selected some dataset (either uploaded file or default dataset)
             dataset_selected = True
             
-            # If it's an uploaded CSV file (contains '/'), set up CSV data
-            if '/' in dataset_value:
+            # Check if it's an uploaded CSV file (ends with .csv)
+            if dataset_value.endswith('.csv'):
                 user_csv_files = get_user_csv_files(current_user)
                 for csv_file in user_csv_files:
-                    if csv_file['path'] == dataset_value:
+                    if csv_file['path'] == dataset_value or csv_file['name'] == dataset_value:
                         session['csv_filename'] = csv_file['name']
                         # Read the CSV file content
                         with open(csv_file['full_path'], 'rb') as f:
                             session['csv_bytes'] = f.read()
+                        current_app.logger.info(f"Template Optimizer: Set csv_bytes for file {csv_file['name']}")
                         break
+                else:
+                    current_app.logger.error(f"Template Optimizer: Could not find CSV file {dataset_value}")
             # For default datasets (electricity, traffic, etc.), no CSV setup needed
         
         flash('Configuration generated successfully!')
@@ -1253,6 +1611,16 @@ def template_optimizer_form():
         # Conditional routing: skip CSV upload if dataset selected, otherwise go to CSV upload
         if dataset_selected:
             current_app.logger.info(f"Template Optimizer: Dataset selected from user files, skipping CSV upload step")
+            
+            # Debug session keys before redirect
+            current_app.logger.info(f"Template Optimizer: Session keys before redirect: {list(session.keys())}")
+            current_app.logger.info(f"Template Optimizer: experiment_name in session: {'experiment_name' in session}")
+            current_app.logger.info(f"Template Optimizer: config_bytes in session: {'config_bytes' in session}")
+            current_app.logger.info(f"Template Optimizer: csv_bytes in session: {'csv_bytes' in session}")
+            
+            # Ensure session is saved before redirect
+            session.modified = True
+            
             return redirect(url_for('routes.upload_archs'))
         else:
             current_app.logger.info(f"Template Optimizer: No dataset selected, proceeding to CSV upload step")
@@ -1277,7 +1645,7 @@ def preview_template_yaml():
         config_data = {
             'dataset': {
                 'dataset': request.form.get('dataset', 'electricity'),
-                'path': '/home/agobbi/Projects/ExpTS/data'  # Default path since dataset_path field was removed
+                'path': '/DSIPTS-P/data/'  # Default path since dataset_path field was removed
             },
             'scheduler_config': {
                 'gamma': float(request.form.get('scheduler_gamma', 0.75)),
@@ -1311,14 +1679,14 @@ def preview_template_yaml():
                 'future_steps': 'model_configs@future_steps'
             },
             'train_config': {
-                'dirpath': request.form.get('train_dirpath', '/home/agobbi/Projects/ExpTS/electricity'),
+                'dirpath': request.form.get('train_dirpath', '/DSIPTS-P/data/'),
                 'num_workers': int(request.form.get('train_num_workers', 0)),
                 'auto_lr_find': request.form.get('train_auto_lr_find') == 'on',
                 'devices': _parse_devices(request.form.get('train_devices', '0')),
                 'seed': int(request.form.get('train_seed', 42))
             },
             'inference': {
-                'output_path': request.form.get('inference_output_path', '/home/agobbi/Projects/ExpTS/electricity'),
+                'output_path': request.form.get('inference_output_path', '/DSIPTS-P/output/'),
                 'load_last': request.form.get('inference_load_last') == 'on',
                 'batch_size': int(request.form.get('inference_batch_size', 200)),
                 'num_workers': int(request.form.get('inference_num_workers', 4)),
@@ -1450,18 +1818,21 @@ def save_form_config():
         dataset_selected = False
         if 'experiment' in config_data and 'data' in config_data['experiment']:
             dataset_value = config_data['experiment']['data'].get('dataset', '')
-            if dataset_value and dataset_value != '' and '/' in dataset_value:
-                # User selected an uploaded CSV file (format: "folder/filename.csv")
+            if dataset_value and dataset_value != '' and dataset_value.endswith('.csv'):
+                # User selected an uploaded CSV file
                 dataset_selected = True
                 # Set up CSV data from the selected file
                 user_csv_files = get_user_csv_files(current_user)
                 for csv_file in user_csv_files:
-                    if csv_file['path'] == dataset_value:
+                    if csv_file['path'] == dataset_value or csv_file['name'] == dataset_value:
                         session['csv_filename'] = csv_file['name']
                         # Read the CSV file content
                         with open(csv_file['full_path'], 'rb') as f:
                             session['csv_bytes'] = f.read()
+                        current_app.logger.info(f"Form Config: Set csv_bytes for file {csv_file['name']}")
                         break
+                else:
+                    current_app.logger.error(f"Form Config: Could not find CSV file {dataset_value}")
         
         flash('Configuration saved successfully!')
         
@@ -1504,18 +1875,21 @@ def save_advanced_form_config():
         dataset_selected = False
         if 'data' in config_data and 'dataset' in config_data['data']:
             dataset_value = config_data['data'].get('dataset', '')
-            if dataset_value and dataset_value != '' and '/' in dataset_value:
-                # User selected an uploaded CSV file (format: "folder/filename.csv")
+            if dataset_value and dataset_value != '' and dataset_value.endswith('.csv'):
+                # User selected an uploaded CSV file
                 dataset_selected = True
                 # Set up CSV data from the selected file
                 user_csv_files = get_user_csv_files(current_user)
                 for csv_file in user_csv_files:
-                    if csv_file['path'] == dataset_value:
+                    if csv_file['path'] == dataset_value or csv_file['name'] == dataset_value:
                         session['csv_filename'] = csv_file['name']
                         # Read the CSV file content
                         with open(csv_file['full_path'], 'rb') as f:
                             session['csv_bytes'] = f.read()
+                        current_app.logger.info(f"Advanced Config: Set csv_bytes for file {csv_file['name']}")
                         break
+                else:
+                    current_app.logger.error(f"Advanced Config: Could not find CSV file {dataset_value}")
         
         flash('Advanced configuration saved successfully!')
         
@@ -1536,6 +1910,7 @@ def save_advanced_form_config():
         return redirect(url_for('routes.advanced_config_form'))
 
 # Error handlers
+
 @web.errorhandler(404)
 def not_found_error(error):
     return render_template('error.html', error='Page not found', code=404), 404

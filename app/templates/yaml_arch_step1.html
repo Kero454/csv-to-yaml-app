@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Configure YAML Training Model {{ current_file }} of {{ total_files }} - Step 1</h2>
+        <a href="{{ url_for('routes.yaml_arch_setup') }}" class="btn btn-outline-secondary btn-sm">Back to Setup</a>
+    </div>
+    
+    <!-- Progress indicator -->
+    <div class="progress mb-4" style="height: 8px;">
+        <div class="progress-bar bg-warning" role="progressbar" id="progress-bar"></div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var currentFile = parseInt('{{ current_file|default(1) }}');
+            var totalFiles = parseInt('{{ total_files|default(1) }}');
+            var fileProgress = currentFile / totalFiles;
+            var stepProgress = fileProgress * 0.5; // Step 1 is 50% of file progress
+            document.getElementById('progress-bar').style.width = (stepProgress * 100).toFixed(1) + '%';
+        });
+    </script>
+    <p class="text-center text-muted mb-4">YAML File {{ current_file }} of {{ total_files }} - Step 1: Basic Configuration</p>
+    
+    <form method="post" action="{{ url_for('routes.yaml_arch_step1') }}">
+        <input type="hidden" name="current_file" value="{{ current_file }}">
+        <input type="hidden" name="total_files" value="{{ total_files }}">
+        
+        <!-- Model Configuration -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Model Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="model_type" class="form-label">Model Type</label>
+                            <select class="form-select" id="model_type" name="model_type" required>
+                                <option value="autoformer" {{ 'selected' if model_type == 'autoformer' else '' }}>Autoformer</option>
+                                <option value="crossformer" {{ 'selected' if model_type == 'crossformer' else '' }}>Crossformer</option>
+                                <option value="d3vae" {{ 'selected' if model_type == 'd3vae' else '' }}>D3VAE</option>
+                                <option value="diffusion" {{ 'selected' if model_type == 'diffusion' else '' }}>Diffusion</option>
+                                <option value="dilated_conv" {{ 'selected' if model_type == 'dilated_conv' else '' }}>Dilated Conv</option>
+                                <option value="dilated_conv_ed" {{ 'selected' if model_type == 'dilated_conv_ed' else '' }}>Dilated Conv ED</option>
+                                <option value="dlinear" {{ 'selected' if model_type == 'dlinear' else '' }}>DLinear</option>
+                                <option value="informer" {{ 'selected' if model_type == 'informer' else '' }}>Informer</option>
+                                <option value="linear" {{ 'selected' if model_type == 'linear' else '' }}>Linear</option>
+                                <option value="lstm" {{ 'selected' if model_type == 'lstm' else '' }}>LSTM</option>
+                                <option value="nlinear" {{ 'selected' if model_type == 'nlinear' else '' }}>NLinear</option>
+                                <option value="patchtst" {{ 'selected' if model_type == 'patchtst' else '' }}>PatchTST</option>
+                                <option value="persistent" {{ 'selected' if model_type == 'persistent' else '' }}>Persistent</option>
+                                <option value="rnn" {{ 'selected' if model_type == 'rnn' else '' }}>RNN</option>
+                                <option value="tft" {{ 'selected' if model_type == 'tft' else '' }}>TFT</option>
+                                <option value="xlstm" {{ 'selected' if model_type == 'xlstm' else '' }}>xLSTM</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="model_retrain" class="form-label">Retrain Model</label>
+                            <select class="form-select" id="model_retrain" name="model_retrain" required>
+                                <option value="true" {{ 'selected' if model_retrain == 'true' else '' }}>True</option>
+                                <option value="false" {{ 'selected' if model_retrain == 'false' else '' }}>False</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Time Series Configuration -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Time Series Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="ts_name" class="form-label">TS Name</label>
+                            <input type="text" class="form-control" id="ts_name" name="ts_name" 
+                                   value="{{ ts_name if ts_name else '' }}" 
+                                   placeholder="e.g., lstm, transformer, custom_model" required>
+                            <small class="form-text text-muted">Enter the time series model name (will also be used as model name).</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="ts_version" class="form-label">Version</label>
+                            <input type="number" class="form-control" id="ts_version" name="ts_version" 
+                                   value="{{ ts_version if ts_version else '1' }}" min="1" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="ts_enrich" class="form-label">Enrich (comma-separated)</label>
+                            <input type="text" class="form-control" id="ts_enrich" name="ts_enrich" 
+                                   value="{{ ts_enrich if ts_enrich else '' }}" 
+                                   placeholder="e.g., feature1, feature2">
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label for="use_covariates" class="form-label">Use Covariates</label>
+                            <select class="form-select" id="use_covariates" name="use_covariates" required>
+                                <option value="true" {{ 'selected' if use_covariates == 'true' else '' }}>True</option>
+                                <option value="false" {{ 'selected' if use_covariates == 'false' else '' }}>False</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label for="past_variables" class="form-label">Past Variables (comma-separated)</label>
+                            <input type="text" class="form-control" id="past_variables" name="past_variables" 
+                                   value="{{ past_variables if past_variables else '' }}" 
+                                   placeholder="e.g., var1, var2">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label for="future_variables" class="form-label">Future Variables (comma-separated)</label>
+                            <input type="text" class="form-control" id="future_variables" name="future_variables" 
+                                   value="{{ future_variables if future_variables else '' }}" 
+                                   placeholder="e.g., var1, var2">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label for="static_variables" class="form-label">Static Variables (comma-separated)</label>
+                            <input type="text" class="form-control" id="static_variables" name="static_variables" 
+                                   value="{{ static_variables if static_variables else '' }}" 
+                                   placeholder="e.g., var1, var2">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Training Configuration -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Training Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="batch_size" class="form-label">Batch Size</label>
+                            <input type="number" class="form-control" id="batch_size" name="batch_size" 
+                                   value="{{ batch_size if batch_size else '32' }}" min="1" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="max_epochs" class="form-label">Max Epochs</label>
+                            <input type="number" class="form-control" id="max_epochs" name="max_epochs" 
+                                   value="{{ max_epochs if max_epochs else '50' }}" min="1" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="d-flex justify-content-between mt-4">
+            <a href="{{ url_for('routes.yaml_arch_setup') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Setup
+            </a>
+            <button type="submit" class="btn btn-primary">
+                Next: Configure Model Parameters <i class="fas fa-arrow-right ms-2"></i>
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

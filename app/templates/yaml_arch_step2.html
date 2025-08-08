@@ -1,0 +1,1735 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .model-config-section {
+        display: none;
+    }
+    .model-config-section.active {
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Configure YAML Training Model {{ current_file }} of {{ total_files }} - Step 2</h2>
+        <a href="{{ url_for('routes.yaml_arch_step1') }}" class="btn btn-outline-secondary btn-sm">Back to Step 1</a>
+    </div>
+    
+    <!-- Progress indicator -->
+    <div class="progress mb-4" style="height: 8px;">
+        <div class="progress-bar bg-warning" role="progressbar" id="progress-bar"></div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var currentFile = parseInt('{{ current_file|default(1) }}');
+            var totalFiles = parseInt('{{ total_files|default(1) }}');
+            var fileProgress = currentFile / totalFiles;
+            var stepProgress = fileProgress * 0.5 + 0.5; // Step 2 is 50-100% of file progress
+            document.getElementById('progress-bar').style.width = (stepProgress * 100).toFixed(1) + '%';
+        });
+    </script>
+    <p class="text-center text-muted mb-4">YAML File {{ current_file }} of {{ total_files }} - Step 2: Model Configurations for {{ model_type|title }}</p>
+    
+    <form method="post" action="{{ url_for('routes.yaml_arch_step2', file_num=current_file) }}">
+        <input type="hidden" name="current_file" value="{{ current_file }}">
+        <input type="hidden" name="total_files" value="{{ total_files }}">
+        <input type="hidden" name="model_type" value="{{ model_type }}">
+        
+        <!-- Autoformer Configuration -->
+        <div id="autoformer-config" class="model-config-section {{ 'active' if model_type == 'autoformer' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Autoformer Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_model" class="form-label">D Model</label>
+                                <input type="number" class="form-control" id="d_model" name="d_model" 
+                                       value="{{ d_model if d_model else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layer_encoder" class="form-label">N Layer Encoder</label>
+                                <input type="number" class="form-control" id="n_layer_encoder" name="n_layer_encoder" 
+                                       value="{{ n_layer_encoder if n_layer_encoder else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layer_decoder" class="form-label">N Layer Decoder</label>
+                                <input type="number" class="form-control" id="n_layer_decoder" name="n_layer_decoder" 
+                                       value="{{ n_layer_decoder if n_layer_decoder else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="label_len" class="form-label">Label Length</label>
+                                <input type="number" class="form-control" id="label_len" name="label_len" 
+                                       value="{{ label_len if label_len else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_head" class="form-label">N Head</label>
+                                <input type="number" class="form-control" id="n_head" name="n_head" 
+                                       value="{{ n_head if n_head else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="factor" class="form-label">Factor</label>
+                                <input type="number" class="form-control" id="factor" name="factor" 
+                                       value="{{ factor if factor else '5' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation" class="form-label">Activation</label>
+                                <select class="form-select" id="activation" name="activation" required>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.GELU" {{ 'selected' if activation == 'torch.nn.GELU' else '' }}>torch.nn.GELU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LSTM Configuration -->
+        <div id="lstm-config" class="model-config-section {{ 'active' if model_type == 'lstm' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">LSTM Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_RNN" class="form-label">Hidden RNN</label>
+                                <input type="number" class="form-control" id="hidden_RNN" name="hidden_RNN" 
+                                       value="{{ hidden_RNN if hidden_RNN else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers_RNN" class="form-label">Number of RNN Layers</label>
+                                <input type="number" class="form-control" id="num_layers_RNN" name="num_layers_RNN" 
+                                       value="{{ num_layers_RNN if num_layers_RNN else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_lstm" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_lstm" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '5' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind" class="form-label">Kind</label>
+                                <select class="form-select" id="kind" name="kind" required>
+                                    <option value="lstm" {{ 'selected' if kind == 'lstm' else '' }}>lstm</option>
+                                    <option value="gru" {{ 'selected' if kind == 'gru' else '' }}>gru</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_lstm" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_lstm" name="optim" required>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_lstm" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_lstm" name="activation" required>
+                                    <option value="torch.nn.SELU" {{ 'selected' if activation == 'torch.nn.SELU' else '' }}>torch.nn.SELU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Crossformer Configuration -->
+        <div id="crossformer-config" class="model-config-section {{ 'active' if model_type == 'crossformer' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Crossformer Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_model_cf" class="form-label">D Model</label>
+                                <input type="number" class="form-control" id="d_model_cf" name="d_model" 
+                                       value="{{ d_model if d_model else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_cf" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_cf" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layer_encoder_cf" class="form-label">N Layer Encoder</label>
+                                <input type="number" class="form-control" id="n_layer_encoder_cf" name="n_layer_encoder" 
+                                       value="{{ n_layer_encoder if n_layer_encoder else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_head_cf" class="form-label">N Head</label>
+                                <input type="number" class="form-control" id="n_head_cf" name="n_head" 
+                                       value="{{ n_head if n_head else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_cf" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_cf" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="win_size" class="form-label">Win Size</label>
+                                <input type="number" class="form-control" id="win_size" name="win_size" 
+                                       value="{{ win_size if win_size else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="seg_len" class="form-label">Seg Length</label>
+                                <input type="number" class="form-control" id="seg_len" name="seg_len" 
+                                       value="{{ seg_len if seg_len else '6' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="factor_cf" class="form-label">Factor</label>
+                                <input type="number" class="form-control" id="factor_cf" name="factor" 
+                                       value="{{ factor if factor else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_cf" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_cf" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_cf" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_cf" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_cf" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_cf" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- D3VAE Configuration -->
+        <div id="d3vae-config" class="model-config-section {{ 'active' if model_type == 'd3vae' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">D3VAE Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="embedding_dimension" class="form-label">Embedding Dimension</label>
+                                <input type="number" class="form-control" id="embedding_dimension" name="embedding_dimension" 
+                                       value="{{ embedding_dimension if embedding_dimension else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="scale" class="form-label">Scale</label>
+                                <input type="number" class="form-control" id="scale" name="scale" 
+                                       value="{{ scale if scale else '0.1' }}" step="0.01" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_d3vae" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_d3vae" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers" class="form-label">Number of Layers</label>
+                                <input type="number" class="form-control" id="num_layers" name="num_layers" 
+                                       value="{{ num_layers if num_layers else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_d3vae" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_d3vae" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.1' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="diff_steps" class="form-label">Diff Steps</label>
+                                <input type="number" class="form-control" id="diff_steps" name="diff_steps" 
+                                       value="{{ diff_steps if diff_steps else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_d3vae" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_d3vae" name="loss_type" required>
+                                    <option value="kl" {{ 'selected' if loss_type == 'kl' else '' }}>kl</option>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="beta_end" class="form-label">Beta End</label>
+                                <input type="number" class="form-control" id="beta_end" name="beta_end" 
+                                       value="{{ beta_end if beta_end else '0.01' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="beta_schedule" class="form-label">Beta Schedule</label>
+                                <select class="form-select" id="beta_schedule" name="beta_schedule" required>
+                                    <option value="linear" {{ 'selected' if beta_schedule == 'linear' else '' }}>linear</option>
+                                    <option value="cosine" {{ 'selected' if beta_schedule == 'cosine' else '' }}>cosine</option>
+                                    <option value="exponential" {{ 'selected' if beta_schedule == 'exponential' else '' }}>exponential</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="channel_mult" class="form-label">Channel Mult</label>
+                                <input type="number" class="form-control" id="channel_mult" name="channel_mult" 
+                                       value="{{ channel_mult if channel_mult else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="mult" class="form-label">Mult</label>
+                                <input type="number" class="form-control" id="mult" name="mult" 
+                                       value="{{ mult if mult else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_preprocess_blocks" class="form-label">Num Preprocess Blocks</label>
+                                <input type="number" class="form-control" id="num_preprocess_blocks" name="num_preprocess_blocks" 
+                                       value="{{ num_preprocess_blocks if num_preprocess_blocks else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_preprocess_cells" class="form-label">Num Preprocess Cells</label>
+                                <input type="number" class="form-control" id="num_preprocess_cells" name="num_preprocess_cells" 
+                                       value="{{ num_preprocess_cells if num_preprocess_cells else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_channels_enc" class="form-label">Num Channels Enc</label>
+                                <input type="number" class="form-control" id="num_channels_enc" name="num_channels_enc" 
+                                       value="{{ num_channels_enc if num_channels_enc else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="arch_instance" class="form-label">Arch Instance</label>
+                                <select class="form-select" id="arch_instance" name="arch_instance" required>
+                                    <option value="res_mbconv" {{ 'selected' if arch_instance == 'res_mbconv' else '' }}>res_mbconv</option>
+                                    <option value="res_conv" {{ 'selected' if arch_instance == 'res_conv' else '' }}>res_conv</option>
+                                    <option value="mbconv" {{ 'selected' if arch_instance == 'mbconv' else '' }}>mbconv</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_latent_per_group" class="form-label">Num Latent Per Group</label>
+                                <input type="number" class="form-control" id="num_latent_per_group" name="num_latent_per_group" 
+                                       value="{{ num_latent_per_group if num_latent_per_group else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_channels_dec" class="form-label">Num Channels Dec</label>
+                                <input type="number" class="form-control" id="num_channels_dec" name="num_channels_dec" 
+                                       value="{{ num_channels_dec if num_channels_dec else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="groups_per_scale" class="form-label">Groups Per Scale</label>
+                                <input type="number" class="form-control" id="groups_per_scale" name="groups_per_scale" 
+                                       value="{{ groups_per_scale if groups_per_scale else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_postprocess_blocks" class="form-label">Num Postprocess Blocks</label>
+                                <input type="number" class="form-control" id="num_postprocess_blocks" name="num_postprocess_blocks" 
+                                       value="{{ num_postprocess_blocks if num_postprocess_blocks else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_postprocess_cells" class="form-label">Num Postprocess Cells</label>
+                                <input type="number" class="form-control" id="num_postprocess_cells" name="num_postprocess_cells" 
+                                       value="{{ num_postprocess_cells if num_postprocess_cells else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="beta_start" class="form-label">Beta Start</label>
+                                <input type="number" class="form-control" id="beta_start" name="beta_start" 
+                                       value="{{ beta_start if beta_start else '0' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_d3vae" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_d3vae" name="optim" required>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Diffusion Configuration -->
+        <div id="diffusion-config" class="model-config-section {{ 'active' if model_type == 'diffusion' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">Diffusion Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_model_diff" class="form-label">D Model</label>
+                                <input type="number" class="form-control" id="d_model_diff" name="d_model" 
+                                       value="{{ d_model if d_model else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="learn_var" class="form-label">Learn Var</label>
+                                <select class="form-select" id="learn_var" name="learn_var" required>
+                                    <option value="true" {{ 'selected' if learn_var == 'true' else '' }}>True</option>
+                                    <option value="false" {{ 'selected' if learn_var == 'false' else '' }}>False</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cosine_alpha" class="form-label">Cosine Alpha</label>
+                                <select class="form-select" id="cosine_alpha" name="cosine_alpha" required>
+                                    <option value="true" {{ 'selected' if cosine_alpha == 'true' else '' }}>True</option>
+                                    <option value="false" {{ 'selected' if cosine_alpha == 'false' else '' }}>False</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="diffusion_steps" class="form-label">Diffusion Steps</label>
+                                <input type="number" class="form-control" id="diffusion_steps" name="diffusion_steps" 
+                                       value="{{ diffusion_steps if diffusion_steps else '100' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="beta" class="form-label">Beta</label>
+                                <input type="number" class="form-control" id="beta" name="beta" 
+                                       value="{{ beta if beta else '0.03' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="gamma" class="form-label">Gamma</label>
+                                <input type="number" class="form-control" id="gamma" name="gamma" 
+                                       value="{{ gamma if gamma else '0.01' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layers_RNN" class="form-label">N Layers RNN</label>
+                                <input type="number" class="form-control" id="n_layers_RNN" name="n_layers_RNN" 
+                                       value="{{ n_layers_RNN if n_layers_RNN else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_head" class="form-label">D Head</label>
+                                <input type="number" class="form-control" id="d_head" name="d_head" 
+                                       value="{{ d_head if d_head else '64' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_head_diff" class="form-label">N Head</label>
+                                <input type="number" class="form-control" id="n_head_diff" name="n_head" 
+                                       value="{{ n_head if n_head else '8' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_diff" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_diff" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.0' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_diff" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_diff" name="activation" required>
+                                    <option value="torch.nn.GELU" {{ 'selected' if activation == 'torch.nn.GELU' else '' }}>torch.nn.GELU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="subnet" class="form-label">Subnet</label>
+                                <input type="number" class="form-control" id="subnet" name="subnet" 
+                                       value="{{ subnet if subnet else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_diff" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_diff" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="perc_subnet_learning_for_step" class="form-label">Perc Subnet Learning For Step</label>
+                                <input type="number" class="form-control" id="perc_subnet_learning_for_step" name="perc_subnet_learning_for_step" 
+                                       value="{{ perc_subnet_learning_for_step if perc_subnet_learning_for_step else '0.1' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_diff" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_diff" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_diff" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_diff" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dilated Conv Configuration -->
+        <div id="dilated_conv-config" class="model-config-section {{ 'active' if model_type == 'dilated_conv' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Dilated Conv Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_dc" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_dc" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_RNN_dc" class="form-label">Hidden RNN</label>
+                                <input type="number" class="form-control" id="hidden_RNN_dc" name="hidden_RNN" 
+                                       value="{{ hidden_RNN if hidden_RNN else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers_RNN_dc" class="form-label">Number of RNN Layers</label>
+                                <input type="number" class="form-control" id="num_layers_RNN_dc" name="num_layers_RNN" 
+                                       value="{{ num_layers_RNN if num_layers_RNN else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_dc" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_dc" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_dc" class="form-label">Kind</label>
+                                <select class="form-select" id="kind_dc" name="kind" required>
+                                    <option value="gru" {{ 'selected' if kind == 'gru' else '' }}>gru</option>
+                                    <option value="lstm" {{ 'selected' if kind == 'lstm' else '' }}>lstm</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_dc" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_dc" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_dc" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_dc" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '1.0' }}" step="0.1" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="use_bn_dc" class="form-label">Use Batch Normalization</label>
+                                <select class="form-select" id="use_bn_dc" name="use_bn" required>
+                                    <option value="false" {{ 'selected' if use_bn == 'false' else '' }}>false</option>
+                                    <option value="true" {{ 'selected' if use_bn == 'true' else '' }}>true</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="use_glu" class="form-label">Use GLU</label>
+                                <select class="form-select" id="use_glu" name="use_glu" required>
+                                    <option value="true" {{ 'selected' if use_glu == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if use_glu == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="glu_percentage" class="form-label">GLU Percentage</label>
+                                <input type="number" class="form-control" id="glu_percentage" name="glu_percentage" 
+                                       value="{{ glu_percentage if glu_percentage else '0.2' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="quantiles_dc" class="form-label">Quantiles (comma-separated)</label>
+                                <input type="text" class="form-control" id="quantiles_dc" name="quantiles" 
+                                       value="{{ quantiles if quantiles else '0.1,0.5,0.9' }}" placeholder="0.1,0.5,0.9" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_dc" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_dc" name="optim" required>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_dc" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_dc" name="activation" required>
+                                    <option value="torch.nn.SELU" {{ 'selected' if activation == 'torch.nn.SELU' else '' }}>torch.nn.SELU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_dc" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_dc" name="loss_type" required>
+                                    <option value="linear_penalization" {{ 'selected' if loss_type == 'linear_penalization' else '' }}>linear_penalization</option>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dilated Conv ED Configuration -->
+        <div id="dilated_conv_ed-config" class="model-config-section {{ 'active' if model_type == 'dilated_conv_ed' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0">Dilated Conv ED Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_dced" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_dced" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_RNN_dced" class="form-label">Hidden RNN</label>
+                                <input type="number" class="form-control" id="hidden_RNN_dced" name="hidden_RNN" 
+                                       value="{{ hidden_RNN if hidden_RNN else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers_RNN_dced" class="form-label">Number of RNN Layers</label>
+                                <input type="number" class="form-control" id="num_layers_RNN_dced" name="num_layers_RNN" 
+                                       value="{{ num_layers_RNN if num_layers_RNN else '1' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_dced" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_dced" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_dced" class="form-label">Kind</label>
+                                <select class="form-select" id="kind_dced" name="kind" required>
+                                    <option value="gru" {{ 'selected' if kind == 'gru' else '' }}>gru</option>
+                                    <option value="lstm" {{ 'selected' if kind == 'lstm' else '' }}>lstm</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_dced" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_dced" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_dced" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_dced" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '1.0' }}" step="0.1" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="use_bn_dced" class="form-label">Use Batch Normalization</label>
+                                <select class="form-select" id="use_bn_dced" name="use_bn" required>
+                                    <option value="false" {{ 'selected' if use_bn == 'false' else '' }}>false</option>
+                                    <option value="true" {{ 'selected' if use_bn == 'true' else '' }}>true</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="quantiles_dced" class="form-label">Quantiles (comma-separated)</label>
+                                <input type="text" class="form-control" id="quantiles_dced" name="quantiles" 
+                                       value="{{ quantiles if quantiles else '0.1,0.5,0.9' }}" placeholder="0.1,0.5,0.9" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_dced" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_dced" name="optim" required>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_dced" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_dced" name="activation" required>
+                                    <option value="torch.nn.SELU" {{ 'selected' if activation == 'torch.nn.SELU' else '' }}>torch.nn.SELU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_dced" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_dced" name="loss_type" required>
+                                    <option value="linear_penalization" {{ 'selected' if loss_type == 'linear_penalization' else '' }}>linear_penalization</option>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DLinear Configuration -->
+        <div id="dlinear-config" class="model-config-section {{ 'active' if model_type == 'dlinear' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">DLinear Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_dlinear" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_dlinear" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_dlinear" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_dlinear" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_dlinear" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_dlinear" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_dlinear" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_dlinear" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_dlinear" class="form-label">Kind</label>
+                                <input type="text" class="form-control" id="kind_dlinear" name="kind" 
+                                       value="{{ kind if kind else 'dlinear' }}" readonly>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_dlinear" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_dlinear" name="optim" required>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_dlinear" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_dlinear" name="activation" required>
+                                    <option value="torch.nn.LeakyReLU" {{ 'selected' if activation == 'torch.nn.LeakyReLU' else '' }}>torch.nn.LeakyReLU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="simple_dlinear" class="form-label">Simple</label>
+                                <select class="form-select" id="simple_dlinear" name="simple" required>
+                                    <option value="true" {{ 'selected' if simple == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if simple == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RNN Configuration -->
+        <div id="rnn-config" class="model-config-section {{ 'active' if model_type == 'rnn' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">RNN Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_rnn" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_rnn" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_RNN_rnn" class="form-label">Hidden RNN</label>
+                                <input type="number" class="form-control" id="hidden_RNN_rnn" name="hidden_RNN" 
+                                       value="{{ hidden_RNN if hidden_RNN else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers_RNN_rnn" class="form-label">Number of RNN Layers</label>
+                                <input type="number" class="form-control" id="num_layers_RNN_rnn" name="num_layers_RNN" 
+                                       value="{{ num_layers_RNN if num_layers_RNN else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_rnn" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_rnn" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '5' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_rnn" class="form-label">Kind</label>
+                                <select class="form-select" id="kind_rnn" name="kind" required>
+                                    <option value="gru" {{ 'selected' if kind == 'gru' else '' }}>gru</option>
+                                    <option value="lstm" {{ 'selected' if kind == 'lstm' else '' }}>lstm</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_rnn" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_rnn" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Informer Configuration -->
+        <div id="informer-config" class="model-config-section {{ 'active' if model_type == 'informer' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">Informer Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_model_informer" class="form-label">D Model</label>
+                                <input type="number" class="form-control" id="d_model_informer" name="d_model" 
+                                       value="{{ d_model if d_model else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_informer" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_informer" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layer_encoder_informer" class="form-label">N Layer Encoder</label>
+                                <input type="number" class="form-control" id="n_layer_encoder_informer" name="n_layer_encoder" 
+                                       value="{{ n_layer_encoder if n_layer_encoder else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layer_decoder_informer" class="form-label">N Layer Decoder</label>
+                                <input type="number" class="form-control" id="n_layer_decoder_informer" name="n_layer_decoder" 
+                                       value="{{ n_layer_decoder if n_layer_decoder else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_head_informer" class="form-label">N Head</label>
+                                <input type="number" class="form-control" id="n_head_informer" name="n_head" 
+                                       value="{{ n_head if n_head else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_informer" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_informer" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_informer" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_informer" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_informer" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_informer" name="activation" required>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.LeakyReLU" {{ 'selected' if activation == 'torch.nn.LeakyReLU' else '' }}>torch.nn.LeakyReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_informer" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_informer" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_informer" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_informer" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="remove_last_informer" class="form-label">Remove Last</label>
+                                <select class="form-select" id="remove_last_informer" name="remove_last" required>
+                                    <option value="true" {{ 'selected' if remove_last == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if remove_last == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Linear Configuration -->
+        <div id="linear-config" class="model-config-section {{ 'active' if model_type == 'linear' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Linear Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_linear" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_linear" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_linear" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_linear" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '5' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_linear" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_linear" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_linear" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_linear" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '8' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_linear" class="form-label">Kind</label>
+                                <input type="text" class="form-control" id="kind_linear" name="kind" 
+                                       value="{{ kind if kind else 'linear' }}" readonly>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_linear" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_linear" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.1' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="use_bn_linear" class="form-label">Use Batch Normalization</label>
+                                <select class="form-select" id="use_bn_linear" name="use_bn" required>
+                                    <option value="false" {{ 'selected' if use_bn == 'false' else '' }}>false</option>
+                                    <option value="true" {{ 'selected' if use_bn == 'true' else '' }}>true</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_linear" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_linear" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_linear" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_linear" name="activation" required>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.LeakyReLU" {{ 'selected' if activation == 'torch.nn.LeakyReLU' else '' }}>torch.nn.LeakyReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_linear" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_linear" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_linear" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_linear" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="simple_linear" class="form-label">Simple</label>
+                                <select class="form-select" id="simple_linear" name="simple" required>
+                                    <option value="false" {{ 'selected' if simple == 'false' else '' }}>false</option>
+                                    <option value="true" {{ 'selected' if simple == 'true' else '' }}>true</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NLinear Configuration -->
+        <div id="nlinear-config" class="model-config-section {{ 'active' if model_type == 'nlinear' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">NLinear Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_nlinear" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_nlinear" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_nlinear" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_nlinear" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '5' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_nlinear" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_nlinear" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_nlinear" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_nlinear" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '24' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_nlinear" class="form-label">Kind</label>
+                                <input type="text" class="form-control" id="kind_nlinear" name="kind" 
+                                       value="{{ kind if kind else 'nlinear' }}" readonly>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PatchTST Configuration -->
+        <div id="patchtst-config" class="model-config-section {{ 'active' if model_type == 'patchtst' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0">PatchTST Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_model_patchtst" class="form-label">D Model</label>
+                                <input type="number" class="form-control" id="d_model_patchtst" name="d_model" 
+                                       value="{{ d_model if d_model else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_patchtst" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_patchtst" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="decomposition" class="form-label">Decomposition</label>
+                                <select class="form-select" id="decomposition" name="decomposition" required>
+                                    <option value="true" {{ 'selected' if decomposition == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if decomposition == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_layer_patchtst" class="form-label">N Layer</label>
+                                <input type="number" class="form-control" id="n_layer_patchtst" name="n_layer" 
+                                       value="{{ n_layer if n_layer else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="patch_len" class="form-label">Patch Length</label>
+                                <input type="number" class="form-control" id="patch_len" name="patch_len" 
+                                       value="{{ patch_len if patch_len else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_head_patchtst" class="form-label">N Head</label>
+                                <input type="number" class="form-control" id="n_head_patchtst" name="n_head" 
+                                       value="{{ n_head if n_head else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="stride" class="form-label">Stride</label>
+                                <input type="number" class="form-control" id="stride" name="stride" 
+                                       value="{{ stride if stride else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_patchtst" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_patchtst" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_size_patchtst" class="form-label">Hidden Size</label>
+                                <input type="number" class="form-control" id="hidden_size_patchtst" name="hidden_size" 
+                                       value="{{ hidden_size if hidden_size else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_patchtst" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_patchtst" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="activation_patchtst" class="form-label">Activation</label>
+                                <select class="form-select" id="activation_patchtst" name="activation" required>
+                                    <option value="torch.nn.PReLU" {{ 'selected' if activation == 'torch.nn.PReLU' else '' }}>torch.nn.PReLU</option>
+                                    <option value="torch.nn.ReLU" {{ 'selected' if activation == 'torch.nn.ReLU' else '' }}>torch.nn.ReLU</option>
+                                    <option value="torch.nn.LeakyReLU" {{ 'selected' if activation == 'torch.nn.LeakyReLU' else '' }}>torch.nn.LeakyReLU</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_patchtst" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_patchtst" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_patchtst" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_patchtst" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="remove_last_patchtst" class="form-label">Remove Last</label>
+                                <select class="form-select" id="remove_last_patchtst" name="remove_last" required>
+                                    <option value="true" {{ 'selected' if remove_last == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if remove_last == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Persistent Configuration (No model_configs) -->
+        <div id="persistent-config" class="model-config-section {{ 'active' if model_type == 'persistent' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-light text-dark">
+                    <h5 class="mb-0">Persistent Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        The Persistent model does not require any additional model configurations.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TFT Configuration -->
+        <div id="tft-config" class="model-config-section {{ 'active' if model_type == 'tft' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">TFT Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_model_tft" class="form-label">D Model</label>
+                                <input type="number" class="form-control" id="d_model_tft" name="d_model" 
+                                       value="{{ d_model if d_model else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="d_head_tft" class="form-label">D Head</label>
+                                <input type="number" class="form-control" id="d_head_tft" name="d_head" 
+                                       value="{{ d_head if d_head else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="n_head_tft" class="form-label">N Head</label>
+                                <input type="number" class="form-control" id="n_head_tft" name="n_head" 
+                                       value="{{ n_head if n_head else '4' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers_RNN_tft" class="form-label">Number of RNN Layers</label>
+                                <input type="number" class="form-control" id="num_layers_RNN_tft" name="num_layers_RNN" 
+                                       value="{{ num_layers_RNN if num_layers_RNN else '8' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="optim_tft" class="form-label">Optimizer</label>
+                                <select class="form-select" id="optim_tft" name="optim" required>
+                                    <option value="torch.optim.Adam" {{ 'selected' if optim == 'torch.optim.Adam' else '' }}>torch.optim.Adam</option>
+                                    <option value="torch.optim.SGD" {{ 'selected' if optim == 'torch.optim.SGD' else '' }}>torch.optim.SGD</option>
+                                    <option value="torch.optim.RMSprop" {{ 'selected' if optim == 'torch.optim.RMSprop' else '' }}>torch.optim.RMSprop</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="dropout_rate_tft" class="form-label">Dropout Rate</label>
+                                <input type="number" class="form-control" id="dropout_rate_tft" name="dropout_rate" 
+                                       value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="persistence_weight_tft" class="form-label">Persistence Weight</label>
+                                <input type="number" class="form-control" id="persistence_weight_tft" name="persistence_weight" 
+                                       value="{{ persistence_weight if persistence_weight else '0.010' }}" step="0.001" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="loss_type_tft" class="form-label">Loss Type</label>
+                                <select class="form-select" id="loss_type_tft" name="loss_type" required>
+                                    <option value="l1" {{ 'selected' if loss_type == 'l1' else '' }}>l1</option>
+                                    <option value="l2" {{ 'selected' if loss_type == 'l2' else '' }}>l2</option>
+                                    <option value="mse" {{ 'selected' if loss_type == 'mse' else '' }}>mse</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- xLSTM Configuration -->
+        <div id="xlstm-config" class="model-config-section {{ 'active' if model_type == 'xlstm' else '' }}">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">xLSTM Model Configurations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cat_emb_dim_xlstm" class="form-label">Cat Embedding Dimension</label>
+                                <input type="number" class="form-control" id="cat_emb_dim_xlstm" name="cat_emb_dim" 
+                                       value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="hidden_RNN_xlstm" class="form-label">Hidden RNN</label>
+                                <input type="number" class="form-control" id="hidden_RNN_xlstm" name="hidden_RNN" 
+                                       value="{{ hidden_RNN if hidden_RNN else '12' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_layers_RNN_xlstm" class="form-label">Number of RNN Layers</label>
+                                <input type="number" class="form-control" id="num_layers_RNN_xlstm" name="num_layers_RNN" 
+                                       value="{{ num_layers_RNN if num_layers_RNN else '3' }}" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kernel_size_xlstm" class="form-label">Kernel Size</label>
+                                <input type="number" class="form-control" id="kernel_size_xlstm" name="kernel_size" 
+                                       value="{{ kernel_size if kernel_size else '5' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kind_xlstm" class="form-label">Kind</label>
+                                <input type="text" class="form-control" id="kind_xlstm" name="kind" 
+                                       value="{{ kind if kind else 'xlstm' }}" readonly>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="sum_emb_xlstm" class="form-label">Sum Embedding</label>
+                                <select class="form-select" id="sum_emb_xlstm" name="sum_emb" required>
+                                    <option value="true" {{ 'selected' if sum_emb == 'true' else '' }}>true</option>
+                                    <option value="false" {{ 'selected' if sum_emb == 'false' else '' }}>false</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="num_blocks" class="form-label">Number of Blocks</label>
+                                <input type="number" class="form-control" id="num_blocks" name="num_blocks" 
+                                       value="{{ num_blocks if num_blocks else '2' }}" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="bidirectional" class="form-label">Bidirectional</label>
+                                <select class="form-select" id="bidirectional" name="bidirectional" required>
+                                    <option value="true" {{ 'selected' if bidirectional == 'true' else '' }}>True</option>
+                                    <option value="false" {{ 'selected' if bidirectional == 'false' else '' }}>False</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="lstm_type" class="form-label">LSTM Type</label>
+                                <select class="form-select" id="lstm_type" name="lstm_type" required>
+                                    <option value="slstm" {{ 'selected' if lstm_type == 'slstm' else '' }}>slstm</option>
+                                    <option value="mlstm" {{ 'selected' if lstm_type == 'mlstm' else '' }}>mlstm</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Other model types can be added here similarly -->
+        
+        <div class="d-flex justify-content-between mt-4">
+            <a href="{{ url_for('routes.yaml_arch_step1') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Step 1
+            </a>
+            <button type="submit" class="btn btn-success">
+                {% if current_file < total_files %}
+                    Save & Next File <i class="fas fa-arrow-right ms-2"></i>
+                {% else %}
+                    Complete Configuration <i class="fas fa-check ms-2"></i>
+                {% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+        function showModelConfig(modelType) {
+            // Hide all model config sections and disable validation on hidden fields
+            const sections = document.querySelectorAll('.model-config-section');
+            sections.forEach(section => {
+                section.classList.remove('active');
+                section.style.display = 'none';
+                
+                // Disable validation on hidden form fields
+                const inputs = section.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => {
+                    input.disabled = true;
+                });
+            });
+            
+            // Show the selected model config section and enable validation
+            const selectedSection = document.getElementById(modelType + '-config');
+            if (selectedSection) {
+                selectedSection.classList.add('active');
+                selectedSection.style.display = 'block';
+                
+                // Enable validation on visible form fields
+                const inputs = selectedSection.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => {
+                    input.disabled = false;
+                });
+            }
+        }
+        
+        // Show the correct model config on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const modelType = '{{ model_type }}';
+            showModelConfig(modelType);
+            
+            // Handle model type changes (if needed for editing)
+            const modelTypeSelect = document.querySelector('select[name="model_type"]');
+            if (modelTypeSelect) {
+                modelTypeSelect.addEventListener('change', function() {
+                    showModelConfig(this.value);
+                });
+            }
+        });
+    </script>
+{% endblock %}

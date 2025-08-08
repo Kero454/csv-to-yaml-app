@@ -1,6 +1,6 @@
 dataset:
-  dataset: no_dataset
-  path: /home/agobbi/Projects/ExpTS/data
+  dataset: name.csv
+  path: /DSIPTS-P/data/
 defaults:
 - _self_
 - architecture: null
@@ -20,7 +20,7 @@ inference:
   batch_size: 200
   load_last: true
   num_workers: 4
-  output_path: /home/agobbi/Projects/ExpTS/electricity
+  output_path: /DSIPTS-P/output/
   rescaling: true
   set: test
 model_configs:
@@ -54,6 +54,6 @@ train_config:
   auto_lr_find: true
   devices:
   - 0
-  dirpath: /home/agobbi/Projects/ExpTS/electricity
+  dirpath: /DSIPTS-P/data/
   num_workers: 0
   seed: 42
