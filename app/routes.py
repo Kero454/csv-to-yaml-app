@@ -55,49 +55,80 @@ def generate_config_template(experiment_name):
     Returns:
         Dict containing the template configuration
     """
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    
-    # Create a template with common configuration options
+    # New default structured template matching requested format
     template = {
-        "experiment": {
-            "name": experiment_name,
-            "date": current_date,
-            "created_by": current_user.username,
-            "description": "Enter experiment description here"
+        'dataset': {
+            'dataset': 'electricity',
+            'path': '/DSIPTS-P/data/'
         },
-        "data": {
-            "csv_file": "Will be set from uploaded CSV",
-            "input_columns": ["column1", "column2"],  # Replace with actual columns from CSV
-            "output_columns": ["target"],  # Replace with actual target column
-            "preprocessing": {
-                "normalize": True,
-                "handle_missing": "mean"  # Options: mean, median, zero, none
-            }
+        'scheduler_config': {
+            'gamma': 0.75,
+            'step_size': 2500
         },
-        "model": {
-            "architecture": "Will be set from uploaded architecture files",
-            "hyperparameters": {
-                "learning_rate": 0.001,
-                "batch_size": 32,
-                "epochs": 100,
-                "early_stopping": True,
-                "patience": 10
+        'optim_config': {
+            'lr': 0.00005,
+            'weight_decay': 0.0001
+        },
+        'model_configs': {
+            'past_steps': 64,
+            'future_steps': 64,
+            'quantiles': [],
+            'past_channels': None,
+            'future_channels': None,
+            'embs': None,
+            'out_channels': None,
+            'loss_type': None,
+            'persistence_weight': 1.0
+        },
+        'split_params': {
+            'perc_train': 0.6,
+            'perc_valid': 0.2,
+            'range_train': None,
+            'range_validation': None,
+            'range_test': None,
+            'shift': 0,
+            'starting_point': None,
+            'skip_step': 1,
+            'past_steps': 'model_configs@past_steps',
+            'future_steps': 'model_configs@future_steps'
+        },
+        'train_config': {
+            'dirpath': '/DSIPTS-P/data/',
+            'num_workers': 0,
+            'auto_lr_find': True,
+            'devices': [0],
+            'seed': 42
+        },
+        'inference': {
+            'output_path': '/DSIPTS-P/output/',
+            'load_last': True,
+            'batch_size': 200,
+            'num_workers': 4,
+            'set': 'test',
+            'rescaling': True
+        },
+        'defaults': [
+            '_self_',
+            {'architecture': None},
+            {'override hydra/launcher': 'joblib'}
+        ],
+        'hydra': {
+            'launcher': {
+                'n_jobs': 4,
+                'verbose': 1,
+                'pre_dispatch': 4,
+                'batch_size': 4,
+                '_target_': 'hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher'
             },
-            "evaluation": {
-                "metrics": ["accuracy", "precision", "recall", "f1"],
-                "test_split": 0.2,
-                "validation_split": 0.1,
-                "cross_validation": False,
-                "cv_folds": 5
+            'output_subdir': None,
+            'sweeper': {
+                'params': {
+                    'architecture': 'glob(*)'
+                }
             }
-        },
-        "output": {
-            "save_predictions": True,
-            "save_model": True,
-            "visualization": ["confusion_matrix", "roc_curve"]
         }
     }
-    
+
     return template
 
 # Create a blueprint for web routes
@@ -133,7 +164,7 @@ def upload_config():
             config_yaml = yaml.dump(config_data, default_flow_style=False)
             
             # Store in session
-            session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+            session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
             session['config_bytes'] = config_yaml.encode('utf-8')
             
             # Return the template for editing
@@ -241,17 +272,19 @@ def upload_archs():
                 arch_file.save(arch_path)
                 arch_saved.append(arch_filename)
                 
-        config_path = os.path.join(exp_dir, f"config_{safe_exp}.yaml")
-        config_data = {
+        # Write experiment description file with metadata
+        describe_path = os.path.join(exp_dir, f"{safe_exp}_describe.yaml")
+        describe_data = {
             'user': current_user.username,
             'experiment': session['experiment_name'],
             'experiment_config_file': config_filename,
             'csv_file': csv_filename,
             'architecture_files': arch_saved,
+            'configuration_method': 'file_upload',
             'timestamp': datetime.utcnow().isoformat()
         }
-        with open(config_path, 'w') as f:
-            yaml.dump(config_data, f, default_flow_style=False)
+        with open(describe_path, 'w') as f:
+            yaml.dump(describe_data, f, default_flow_style=False)
             
         session.pop('csv_bytes', None)
         session.pop('csv_filename', None)
@@ -1030,10 +1063,9 @@ def process_configured_yaml_arch_files():
         for file_num, file_config in yaml_config['files'].items():
             current_app.logger.info(f"Processing file {file_num}: {file_config}")
             
-            # Generate filename based on main config file name and file number
-            config_base = secure_filename(session['experiment_name'])
-            filename = f"{config_base}_arch_{file_num}.yaml"
-            filename = secure_filename(filename)
+            # Generate filename based on user-provided TS name
+            ts_name = file_config.get('ts_name', 'lstm')
+            filename = f"{secure_filename(ts_name)}.yaml"
             
             # Ensure .yaml extension
             if not filename.endswith(('.yaml', '.yml')):
@@ -1056,9 +1088,9 @@ def process_configured_yaml_arch_files():
             })
             current_app.logger.info(f"Successfully saved file {file_num}")
                 
-        # Create experiment summary config
-        config_path = os.path.join(exp_dir, f"config_{safe_exp}.yaml")
-        config_data = {
+        # Create experiment description file with metadata
+        describe_path = os.path.join(exp_dir, f"{safe_exp}_describe.yaml")
+        describe_data = {
             'user': current_user.username,
             'experiment': session['experiment_name'],
             'architecture_files': arch_saved,
@@ -1068,11 +1100,11 @@ def process_configured_yaml_arch_files():
         
         # Add optional files if they exist
         if config_filename:
-            config_data['experiment_config_file'] = config_filename
+            describe_data['experiment_config_file'] = config_filename
         if csv_filename:
-            config_data['csv_file'] = csv_filename
-        with open(config_path, 'w') as f:
-            yaml.dump(config_data, f, default_flow_style=False)
+            describe_data['csv_file'] = csv_filename
+        with open(describe_path, 'w') as f:
+            yaml.dump(describe_data, f, default_flow_style=False)
             
         # Clean up session
         session.pop('csv_bytes', None)
@@ -1084,7 +1116,7 @@ def process_configured_yaml_arch_files():
         
         current_app.logger.info(f"Successfully completed processing {len(arch_saved)} YAML files")
         flash(f'Your experiment with {len(arch_saved)} configured YAML training files has been created successfully!')
-        return redirect(url_for('routes.done'))
+        return redirect(url_for('routes.sweeper_prompt'))
         
     except Exception as e:
         import traceback
@@ -1430,6 +1462,13 @@ def experiment_explorer():
                         config_data = yaml.safe_load(f)
                         if config_data and 'timestamp' in config_data:
                             timestamp = datetime.fromisoformat(config_data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+                # Fallback: check describe file for timestamp
+                describe_path = os.path.join(exp_path, f"{experiment_name}_describe.yaml")
+                if os.path.exists(describe_path):
+                    with open(describe_path, 'r') as f:
+                        describe_data = yaml.safe_load(f)
+                        if describe_data and 'timestamp' in describe_data:
+                            timestamp = datetime.fromisoformat(describe_data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
                 
                 # Get configuration files
                 config_files = []
@@ -1604,7 +1643,7 @@ def template_optimizer_form():
         session['config_data'] = config_data
         config_yaml = yaml.dump(config_data, default_flow_style=False)
         session['config_bytes'] = config_yaml.encode('utf-8')
-        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+        session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
         
         # Check if user selected a dataset (either uploaded file or default dataset)
         dataset_selected = False
@@ -1782,7 +1821,7 @@ def config_form():
         session['config_data'] = config_data
         config_yaml = yaml.dump(config_data, default_flow_style=False)
         session['config_bytes'] = config_yaml.encode('utf-8')
-        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+        session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
     
     # Get user's uploaded CSV files for dataset selection
     user_csv_files = get_user_csv_files(current_user)
@@ -1806,7 +1845,7 @@ def advanced_config_form():
         session['config_data'] = config_data
         config_yaml = yaml.dump(config_data, default_flow_style=False)
         session['config_bytes'] = config_yaml.encode('utf-8')
-        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
+        session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
     
     # Get user's uploaded CSV files for dataset selection
     user_csv_files = get_user_csv_files(current_user)
@@ -1931,6 +1970,211 @@ def save_advanced_form_config():
         current_app.logger.error(f"Error in save_advanced_form_config: {str(e)}")
         flash('An error occurred while processing the configuration.')
         return redirect(url_for('routes.advanced_config_form'))
+
+@web.route('/sweeper_prompt', methods=['GET', 'POST'])
+@login_required
+def sweeper_prompt():
+    """Prompt user if they want to add hyperparameter sweeper to their config files."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    if request.method == 'POST':
+        add_sweeper = request.form.get('add_sweeper') == 'yes'
+        
+        if add_sweeper:
+            return redirect(url_for('routes.sweeper_config_selection'))
+        else:
+            # User doesn't want sweeper, complete the experiment
+            session.pop('experiment_name', None)
+            flash('Your experiment has been completed successfully!')
+            return redirect(url_for('routes.done'))
+    
+    return render_template('sweeper_prompt.html', experiment_name=session['experiment_name'])
+
+@web.route('/sweeper_config_selection', methods=['GET', 'POST'])
+@login_required
+def sweeper_config_selection():
+    """Allow user to select which config file to add sweeper to."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    # Get user's config files for this experiment
+    safe_user = secure_filename(current_user.username)
+    safe_exp = secure_filename(session['experiment_name'])
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    user_dir = os.path.join(base_upload, safe_user)
+    exp_dir = os.path.join(user_dir, safe_exp)
+    
+    config_files = []
+    if os.path.exists(exp_dir):
+        for file in os.listdir(exp_dir):
+            if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_dir, file)):
+                # Skip architecture files and description files
+                if not file.endswith('_describe.yaml') and 'arch' not in file.lower():
+                    config_files.append({
+                        'name': file,
+                        'path': os.path.join(exp_dir, file)
+                    })
+    
+    if request.method == 'POST':
+        selected_config = request.form.get('selected_config')
+        if not selected_config:
+            flash('Please select a config file to add sweeper to.')
+            return redirect(request.url)
+        
+        # Store selected config in session
+        session['sweeper_config_file'] = selected_config
+        return redirect(url_for('routes.sweeper_form'))
+    
+    return render_template('sweeper_config_selection.html', 
+                         experiment_name=session['experiment_name'],
+                         config_files=config_files)
+
+@web.route('/sweeper_form', methods=['GET', 'POST'])
+@login_required
+def sweeper_form():
+    """Google Form-style hyperparameter sweeper configuration."""
+    if 'experiment_name' not in session or 'sweeper_config_file' not in session:
+        flash('Sweeper configuration session expired. Please start again.')
+        return redirect(url_for('routes.sweeper_prompt'))
+    
+    if request.method == 'POST':
+        # Process sweeper configuration
+        sweeper_config = {
+            'sweeper': {
+                'sampler': {
+                    '_target_': 'optuna.samplers.TPESampler',
+                    'seed': int(request.form.get('sampler_seed', 123)),
+                    'consider_prior': request.form.get('consider_prior') == 'on',
+                    'prior_weight': float(request.form.get('prior_weight', 1.0)),
+                    'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
+                    'consider_endpoints': request.form.get('consider_endpoints') == 'on',
+                    'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
+                    'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
+                    'multivariate': request.form.get('multivariate') == 'on',
+                    'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
+                },
+                '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
+                'direction': request.form.get('direction', 'minimize'),
+                'storage': request.form.get('storage', 'null'),
+                'study_name': request.form.get('study_name', session['experiment_name']),
+                'n_trials': int(request.form.get('n_trials', 4)),
+                'n_jobs': int(request.form.get('n_jobs', 2)),
+                'params': {}
+            }
+        }
+        
+        # Process dynamic parameters
+        param_keys = request.form.getlist('param_key[]')
+        param_values = request.form.getlist('param_value[]')
+        
+        for key, value in zip(param_keys, param_values):
+            if key and value:
+                sweeper_config['sweeper']['params'][key] = value
+        
+        # Store sweeper config in session for preview
+        session['sweeper_config'] = sweeper_config
+        return redirect(url_for('routes.sweeper_preview'))
+    
+    return render_template('sweeper_form.html', 
+                         experiment_name=session['experiment_name'],
+                         config_file=session['sweeper_config_file'])
+
+@web.route('/sweeper_preview', methods=['GET', 'POST'])
+@login_required
+def sweeper_preview():
+    """Preview and confirm sweeper configuration before applying."""
+    if 'experiment_name' not in session or 'sweeper_config_file' not in session or 'sweeper_config' not in session:
+        flash('Sweeper configuration session expired. Please start again.')
+        return redirect(url_for('routes.sweeper_prompt'))
+    
+    if request.method == 'POST':
+        # Apply sweeper configuration to selected config file
+        try:
+            safe_user = secure_filename(current_user.username)
+            safe_exp = secure_filename(session['experiment_name'])
+            base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+            user_dir = os.path.join(base_upload, safe_user)
+            exp_dir = os.path.join(user_dir, safe_exp)
+            config_path = os.path.join(exp_dir, session['sweeper_config_file'])
+            
+            # Read existing config
+            with open(config_path, 'r') as f:
+                existing_config = yaml.safe_load(f)
+            
+            # Add sweeper configuration
+            existing_config.update(session['sweeper_config'])
+            
+            # Write updated config back
+            with open(config_path, 'w') as f:
+                yaml.dump(existing_config, f, default_flow_style=False)
+            
+            # Clean up session
+            session.pop('sweeper_config_file', None)
+            session.pop('sweeper_config', None)
+            session.pop('experiment_name', None)
+            
+            flash('Hyperparameter sweeper has been added to your config file successfully!')
+            return redirect(url_for('routes.done'))
+            
+        except Exception as e:
+            current_app.logger.error(f"Error applying sweeper config: {e}")
+            flash('An error occurred while applying the sweeper configuration.')
+            return redirect(url_for('routes.sweeper_form'))
+    
+    # Generate YAML preview
+    sweeper_yaml = yaml.dump(session['sweeper_config'], default_flow_style=False)
+    
+    return render_template('sweeper_preview.html',
+                         experiment_name=session['experiment_name'],
+                         config_file=session['sweeper_config_file'],
+                         sweeper_yaml=sweeper_yaml)
+
+@web.route('/preview_sweeper_yaml', methods=['POST'])
+@login_required
+def preview_sweeper_yaml():
+    """Generate YAML preview from sweeper form data."""
+    try:
+        sweeper_config = {
+            'sweeper': {
+                'sampler': {
+                    '_target_': 'optuna.samplers.TPESampler',
+                    'seed': int(request.form.get('sampler_seed', 123)),
+                    'consider_prior': request.form.get('consider_prior') == 'on',
+                    'prior_weight': float(request.form.get('prior_weight', 1.0)),
+                    'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
+                    'consider_endpoints': request.form.get('consider_endpoints') == 'on',
+                    'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
+                    'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
+                    'multivariate': request.form.get('multivariate') == 'on',
+                    'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
+                },
+                '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
+                'direction': request.form.get('direction', 'minimize'),
+                'storage': request.form.get('storage', 'null'),
+                'study_name': request.form.get('study_name', 'experiment'),
+                'n_trials': int(request.form.get('n_trials', 4)),
+                'n_jobs': int(request.form.get('n_jobs', 2)),
+                'params': {}
+            }
+        }
+        
+        # Process dynamic parameters
+        param_keys = request.form.getlist('param_key[]')
+        param_values = request.form.getlist('param_value[]')
+        
+        for key, value in zip(param_keys, param_values):
+            if key and value:
+                sweeper_config['sweeper']['params'][key] = value
+        
+        yaml_data = yaml.dump(sweeper_config, default_flow_style=False, sort_keys=False)
+        return jsonify({'yaml_data': yaml_data})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error generating sweeper YAML preview: {str(e)}")
+        return jsonify({'error': 'Failed to generate preview. Check form data for errors.'}), 400
 
 # Error handlers
 

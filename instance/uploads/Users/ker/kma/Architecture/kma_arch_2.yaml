@@ -1,10 +1,10 @@
 # @package _global_
 
 model:
-  type: dlinear
+  type: lstm
   retrain: true
 ts:
-  name: kerm
+  name: model
   version: 1
   enrich: []
   use_covariates: true
@@ -17,9 +17,9 @@ train_config:
 model_configs:
   activation: torch.nn.PReLU
   cat_emb_dim: 16
-  hidden_size: 12
+  hidden_RNN: 12
   kernel_size: 3
   kind: lstm
+  num_layers_RNN: 3
   optim: torch.optim.Adam
-  simple: true
   sum_emb: true

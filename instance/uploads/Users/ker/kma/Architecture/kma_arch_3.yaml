@@ -1,0 +1,39 @@
+# @package _global_
+
+model:
+  type: d3vae
+  retrain: true
+ts:
+  name: model
+  version: 1
+  enrich: []
+  use_covariates: true
+  past_variables: []
+  future_variables: []
+  static_variables: []
+train_config:
+  batch_size: 32
+  max_epochs: 20
+model_configs:
+  embedding_dimension: 2
+  scale: 0.1
+  hidden_size: 12
+  num_layers: 1
+  dropout_rate: 0.5
+  diff_steps: 1
+  loss_type: l1
+  beta_end: 0.01
+  beta_schedule: linear
+  channel_mult: 1
+  mult: 4
+  num_preprocess_blocks: 1
+  num_preprocess_cells: 1
+  num_channels_enc: 1
+  arch_instance: res_mbconv
+  num_latent_per_group: 1
+  num_channels_dec: 1
+  groups_per_scale: 1
+  num_postprocess_blocks: 1
+  num_postprocess_cells: 1
+  beta_start: 0.0
+  optim: torch.optim.Adam
