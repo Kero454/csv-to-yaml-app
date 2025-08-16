@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Hyperparameter Sweeper Configuration - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-sliders-h me-2"></i>
+                        Hyperparameter Sweeper Configuration
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h5>Experiment: <span class="text-primary">{{ experiment_name }}</span></h5>
+                        <p class="text-muted">Config File: <strong>{{ config_file }}</strong></p>
+                    </div>
+
+                    <form method="post" id="sweeperForm">
+                        <!-- Sampler Configuration -->
+                        <div class="mb-5">
+                            <h5 class="text-primary mb-3">
+                                <i class="fas fa-cog me-2"></i>
+                                Sampler Configuration
+                            </h5>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="sampler_seed" class="form-label">Seed</label>
+                                    <input type="number" class="form-control" id="sampler_seed" name="sampler_seed" value="123">
+                                    <small class="form-text text-muted">Random seed for reproducibility</small>
+                                </div>
+                                
+                                <div class="col-md-6 mb-3">
+                                    <label for="prior_weight" class="form-label">Prior Weight</label>
+                                    <input type="number" class="form-control" id="prior_weight" name="prior_weight" value="1.0" step="0.1">
+                                    <small class="form-text text-muted">Weight of prior distribution</small>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="n_startup_trials" class="form-label">Startup Trials</label>
+                                    <input type="number" class="form-control" id="n_startup_trials" name="n_startup_trials" value="10">
+                                    <small class="form-text text-muted">Number of random trials before optimization</small>
+                                </div>
+                                
+                                <div class="col-md-6 mb-3">
+                                    <label for="n_ei_candidates" class="form-label">EI Candidates</label>
+                                    <input type="number" class="form-control" id="n_ei_candidates" name="n_ei_candidates" value="24">
+                                    <small class="form-text text-muted">Number of candidates for expected improvement</small>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-3 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="consider_prior" name="consider_prior" checked>
+                                        <label class="form-check-label" for="consider_prior">Consider Prior</label>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-3 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="consider_magic_clip" name="consider_magic_clip" checked>
+                                        <label class="form-check-label" for="consider_magic_clip">Magic Clip</label>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-3 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="consider_endpoints" name="consider_endpoints">
+                                        <label class="form-check-label" for="consider_endpoints">Consider Endpoints</label>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-3 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="multivariate" name="multivariate">
+                                        <label class="form-check-label" for="multivariate">Multivariate</label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="warn_independent_sampling" name="warn_independent_sampling" checked>
+                                <label class="form-check-label" for="warn_independent_sampling">Warn Independent Sampling</label>
+                            </div>
+                        </div>
+
+                        <!-- Study Configuration -->
+                        <div class="mb-5">
+                            <h5 class="text-primary mb-3">
+                                <i class="fas fa-flask me-2"></i>
+                                Study Configuration
+                            </h5>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="direction" class="form-label">Optimization Direction</label>
+                                    <select class="form-select" id="direction" name="direction">
+                                        <option value="minimize" selected>Minimize</option>
+                                        <option value="maximize">Maximize</option>
+                                    </select>
+                                    <small class="form-text text-muted">Whether to minimize or maximize the objective</small>
+                                </div>
+                                
+                                <div class="col-md-6 mb-3">
+                                    <label for="storage" class="form-label">Storage</label>
+                                    <input type="text" class="form-control" id="storage" name="storage" value="null" placeholder="null or sqlite:///study.db">
+                                    <small class="form-text text-muted">Storage backend (null for in-memory)</small>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label for="study_name" class="form-label">Study Name</label>
+                                    <input type="text" class="form-control" id="study_name" name="study_name" value="{{ experiment_name }}">
+                                    <small class="form-text text-muted">Name for the optimization study</small>
+                                </div>
+                                
+                                <div class="col-md-4 mb-3">
+                                    <label for="n_trials" class="form-label">Number of Trials</label>
+                                    <input type="number" class="form-control" id="n_trials" name="n_trials" value="4" min="1">
+                                    <small class="form-text text-muted">Maximum number of optimization trials</small>
+                                </div>
+                                
+                                <div class="col-md-4 mb-3">
+                                    <label for="n_jobs" class="form-label">Parallel Jobs</label>
+                                    <input type="number" class="form-control" id="n_jobs" name="n_jobs" value="2" min="1">
+                                    <small class="form-text text-muted">Number of parallel jobs</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Parameters Configuration -->
+                        <div class="mb-5">
+                            <h5 class="text-primary mb-3">
+                                <i class="fas fa-list me-2"></i>
+                                Parameters to Optimize
+                            </h5>
+                            
+                            <div id="parametersContainer">
+                                <div class="parameter-row mb-3">
+                                    <div class="row">
+                                        <div class="col-md-5">
+                                            <label class="form-label">Parameter Name</label>
+                                            <input type="text" class="form-control" name="param_key[]" placeholder="e.g., architecture">
+                                            <small class="form-text text-muted">Parameter path (e.g., model_configs.dropout_rate)</small>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label class="form-label">Parameter Value</label>
+                                            <input type="text" class="form-control" name="param_value[]" placeholder="e.g., choice(linear,rnn) or range(0.1,0.9,0.1)">
+                                            <small class="form-text text-muted">Value specification (choice, range, etc.)</small>
+                                        </div>
+                                        <div class="col-md-2 d-flex align-items-end">
+                                            <button type="button" class="btn btn-outline-danger remove-param" disabled>
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-outline-primary" id="addParameter">
+                                <i class="fas fa-plus me-2"></i>
+                                Add Parameter
+                            </button>
+                        </div>
+
+                        <!-- Preview Section -->
+                        <div class="mb-4">
+                            <h5 class="text-primary mb-3">
+                                <i class="fas fa-eye me-2"></i>
+                                YAML Preview
+                            </h5>
+                            <button type="button" class="btn btn-outline-info mb-3" id="previewBtn">
+                                <i class="fas fa-refresh me-2"></i>
+                                Generate Preview
+                            </button>
+                            <pre id="yamlPreview" class="bg-light p-3 border rounded" style="max-height: 400px; overflow-y: auto; display: none;"></pre>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-between">
+                            <a href="{{ url_for('routes.sweeper_config_selection') }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>
+                                Back
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-arrow-right me-2"></i>
+                                Preview Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let parameterCount = 1;
+    
+    // Add parameter functionality
+    document.getElementById('addParameter').addEventListener('click', function() {
+        parameterCount++;
+        const container = document.getElementById('parametersContainer');
+        const newRow = document.createElement('div');
+        newRow.className = 'parameter-row mb-3';
+        newRow.innerHTML = `
+            <div class="row">
+                <div class="col-md-5">
+                    <label class="form-label">Parameter Name</label>
+                    <input type="text" class="form-control" name="param_key[]" placeholder="e.g., model_configs.dropout_rate">
+                    <small class="form-text text-muted">Parameter path</small>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Parameter Value</label>
+                    <input type="text" class="form-control" name="param_value[]" placeholder="e.g., choice(0.1,0.2,0.3) or range(0.1,0.9,0.1)">
+                    <small class="form-text text-muted">Value specification</small>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="button" class="btn btn-outline-danger remove-param">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(newRow);
+        updateRemoveButtons();
+    });
+    
+    // Remove parameter functionality
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-param')) {
+            e.target.closest('.parameter-row').remove();
+            parameterCount--;
+            updateRemoveButtons();
+        }
+    });
+    
+    function updateRemoveButtons() {
+        const removeButtons = document.querySelectorAll('.remove-param');
+        removeButtons.forEach(button => {
+            button.disabled = removeButtons.length <= 1;
+        });
+    }
+    
+    // Preview functionality
+    document.getElementById('previewBtn').addEventListener('click', function() {
+        const formData = new FormData(document.getElementById('sweeperForm'));
+        
+        fetch('{{ url_for("routes.preview_sweeper_yaml") }}', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            const previewElement = document.getElementById('yamlPreview');
+            if (data.yaml_data) {
+                previewElement.textContent = data.yaml_data;
+                previewElement.style.display = 'block';
+            } else if (data.error) {
+                previewElement.textContent = 'Error: ' + data.error;
+                previewElement.style.display = 'block';
+                previewElement.className = 'bg-danger text-white p-3 border rounded';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            const previewElement = document.getElementById('yamlPreview');
+            previewElement.textContent = 'Error generating preview';
+            previewElement.style.display = 'block';
+            previewElement.className = 'bg-danger text-white p-3 border rounded';
+        });
+    });
+    
+    updateRemoveButtons();
+});
+</script>
+
+<style>
+.parameter-row {
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+}
+
+.parameter-row:hover {
+    border-color: #0d6efd;
+}
+
+#yamlPreview {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    white-space: pre-wrap;
+}
+</style>
+{% endblock %}

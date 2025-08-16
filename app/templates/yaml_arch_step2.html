@@ -94,9 +94,31 @@
                     <div class="row">
                         <div class="col-md-4">
                             <div class="mb-3">
-                                <label for="dropout_rate" class="form-label">Dropout Rate</label>
-                                <input type="number" class="form-control" id="dropout_rate" name="dropout_rate" 
-                                       value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                                <label for="dropout_rate_type_autoformer" class="form-label">Dropout Rate</label>
+                                <select class="form-select mb-2" id="dropout_rate_type_autoformer" name="dropout_rate_type" onchange="toggleDropoutRateInput('autoformer')">
+                                    <option value="fixed" selected>Fixed Value</option>
+                                    <option value="choice">Choice</option>
+                                    <option value="range">Range</option>
+                                </select>
+                                
+                                <div id="dropout_rate_fixed_autoformer" class="param-input">
+                                    <input type="number" class="form-control" name="dropout_rate_fixed" 
+                                           value="{{ dropout_rate if dropout_rate else '0.5' }}" step="0.01" min="0" max="1" required>
+                                </div>
+                                
+                                <div id="dropout_rate_choice_autoformer" class="param-input" style="display: none;">
+                                    <input type="text" class="form-control" name="dropout_rate_choice" 
+                                           placeholder="e.g., choice(0.1,0.3,0.5)" 
+                                           value="choice(0.1,0.3,0.5)">
+                                    <small class="form-text text-muted">Format: choice(value1,value2,value3,...)</small>
+                                </div>
+                                
+                                <div id="dropout_rate_range_autoformer" class="param-input" style="display: none;">
+                                    <input type="text" class="form-control" name="dropout_rate_range" 
+                                           placeholder="e.g., range(0.1,0.9,0.1)" 
+                                           value="range(0.1,0.9,0.1)">
+                                    <small class="form-text text-muted">Format: range(min,max,step)</small>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -1032,9 +1054,31 @@
                     <div class="row">
                         <div class="col-md-4">
                             <div class="mb-3">
-                                <label for="cat_emb_dim_rnn" class="form-label">Cat Embedding Dimension</label>
-                                <input type="number" class="form-control" id="cat_emb_dim_rnn" name="cat_emb_dim" 
-                                       value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                                <label for="cat_emb_dim_type_rnn" class="form-label">Cat Embedding Dimension</label>
+                                <select class="form-select mb-2" id="cat_emb_dim_type_rnn" name="cat_emb_dim_type" onchange="toggleCatEmbDimInput('rnn')">
+                                    <option value="fixed" selected>Fixed Value</option>
+                                    <option value="choice">Choice</option>
+                                    <option value="range">Range</option>
+                                </select>
+                                
+                                <div id="cat_emb_dim_fixed_rnn" class="param-input">
+                                    <input type="number" class="form-control" name="cat_emb_dim_fixed" 
+                                           value="{{ cat_emb_dim if cat_emb_dim else '16' }}" min="1" required>
+                                </div>
+                                
+                                <div id="cat_emb_dim_choice_rnn" class="param-input" style="display: none;">
+                                    <input type="text" class="form-control" name="cat_emb_dim_choice" 
+                                           placeholder="e.g., choice(2,4,16,32)" 
+                                           value="choice(2,4,16,32)">
+                                    <small class="form-text text-muted">Format: choice(value1,value2,value3,...)</small>
+                                </div>
+                                
+                                <div id="cat_emb_dim_range_rnn" class="param-input" style="display: none;">
+                                    <input type="text" class="form-control" name="cat_emb_dim_range" 
+                                           placeholder="e.g., range(2,32,2)" 
+                                           value="range(2,32,2)">
+                                    <small class="form-text text-muted">Format: range(min,max,step)</small>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -1716,6 +1760,48 @@
                     input.disabled = false;
                 });
             }
+        }
+        
+        // Toggle cat_emb_dim input types
+        function toggleCatEmbDimInput(modelType) {
+            const typeSelect = document.getElementById(`cat_emb_dim_type_${modelType}`);
+            const selectedType = typeSelect.value;
+            
+            // Hide all input types
+            document.getElementById(`cat_emb_dim_fixed_${modelType}`).style.display = 'none';
+            document.getElementById(`cat_emb_dim_choice_${modelType}`).style.display = 'none';
+            document.getElementById(`cat_emb_dim_range_${modelType}`).style.display = 'none';
+            
+            // Show selected input type
+            document.getElementById(`cat_emb_dim_${selectedType}_${modelType}`).style.display = 'block';
+            
+            // Update required attributes
+            const allInputs = document.querySelectorAll(`[id^="cat_emb_dim_"][id$="_${modelType}"] input`);
+            allInputs.forEach(input => input.required = false);
+            
+            const activeInput = document.querySelector(`#cat_emb_dim_${selectedType}_${modelType} input`);
+            if (activeInput) activeInput.required = true;
+        }
+        
+        // Toggle dropout_rate input types
+        function toggleDropoutRateInput(modelType) {
+            const typeSelect = document.getElementById(`dropout_rate_type_${modelType}`);
+            const selectedType = typeSelect.value;
+            
+            // Hide all input types
+            document.getElementById(`dropout_rate_fixed_${modelType}`).style.display = 'none';
+            document.getElementById(`dropout_rate_choice_${modelType}`).style.display = 'none';
+            document.getElementById(`dropout_rate_range_${modelType}`).style.display = 'none';
+            
+            // Show selected input type
+            document.getElementById(`dropout_rate_${selectedType}_${modelType}`).style.display = 'block';
+            
+            // Update required attributes
+            const allInputs = document.querySelectorAll(`[id^="dropout_rate_"][id$="_${modelType}"] input`);
+            allInputs.forEach(input => input.required = false);
+            
+            const activeInput = document.querySelector(`#dropout_rate_${selectedType}_${modelType} input`);
+            if (activeInput) activeInput.required = true;
         }
         
         // Show the correct model config on page load

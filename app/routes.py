@@ -972,8 +972,8 @@ def save_yaml_arch_config():
         'use_future_covariates': request.form.get('use_future_covariates', 'false'),
         'future_variables': request.form.get('future_variables', 'null'),
         'interpolate': request.form.get('interpolate', 'true'),
-        # Model configs
-        'cat_emb_dim': request.form.get('cat_emb_dim', '128'),
+        # Model configs with choice/range support
+        'cat_emb_dim': _process_param_value(request.form, 'cat_emb_dim', '128'),
         'hidden_rnn': request.form.get('hidden_rnn', '64'),
         'num_layers_rnn': request.form.get('num_layers_rnn', '2'),
         'kernel_size': request.form.get('kernel_size', '3'),
@@ -982,7 +982,7 @@ def save_yaml_arch_config():
         'use_bn': request.form.get('use_bn', 'true'),
         'optim': request.form.get('optim', 'torch.optim.SGD'),
         'activation': request.form.get('activation', 'torch.nn.ReLU'),
-        'dropout_rate': request.form.get('dropout_rate', '0.2'),
+        'dropout_rate': _process_param_value(request.form, 'dropout_rate', '0.2'),
         'persistence_weight': request.form.get('persistence_weight', '0.010'),
         'loss_type': request.form.get('loss_type', 'l1'),
         'remove_last': request.form.get('remove_last', 'true'),
@@ -1083,7 +1083,7 @@ def process_configured_yaml_arch_files():
             
             arch_saved.append({
                 'filename': filename,
-                'description': f"YAML training configuration {file_num} for {config_base}",
+                'description': f"YAML training configuration {file_num} for {safe_exp}",
                 'type': 'yaml_training_config'
             })
             current_app.logger.info(f"Successfully saved file {file_num}")
@@ -1806,6 +1806,17 @@ def _parse_devices(devices_str):
         return [int(d.strip()) for d in devices_str.split(',') if d.strip()]
     except ValueError:
         return [0]
+
+def _process_param_value(form_data, param_name, default_value):
+    """Process parameter value that can be fixed, choice, or range."""
+    param_type = form_data.get(f'{param_name}_type', 'fixed')
+    
+    if param_type == 'choice':
+        return form_data.get(f'{param_name}_choice', f'choice({default_value})')
+    elif param_type == 'range':
+        return form_data.get(f'{param_name}_range', f'range(1,{default_value},1)')
+    else:  # fixed
+        return form_data.get(f'{param_name}_fixed', default_value)
 
 @web.route('/config_form', methods=['GET'])
 @login_required
