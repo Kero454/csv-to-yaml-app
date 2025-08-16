@@ -1,5 +1,5 @@
 dataset:
-  dataset: name.csv
+  dataset: no_dataset
   path: /DSIPTS-P/data/
 defaults:
 - _self_

@@ -1106,13 +1106,13 @@ def process_configured_yaml_arch_files():
         with open(describe_path, 'w') as f:
             yaml.dump(describe_data, f, default_flow_style=False)
             
-        # Clean up session
+        # Clean up session (but keep experiment_name for sweeper workflow)
         session.pop('csv_bytes', None)
         session.pop('csv_filename', None)
         session.pop('config_bytes', None)
         session.pop('config_filename', None)
         session.pop('yaml_arch_config', None)
-        session.pop('experiment_name', None)
+        # Keep experiment_name for sweeper workflow - will be cleaned up in sweeper_prompt
         
         current_app.logger.info(f"Successfully completed processing {len(arch_saved)} YAML files")
         flash(f'Your experiment with {len(arch_saved)} configured YAML training files has been created successfully!')
