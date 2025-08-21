@@ -40,10 +40,10 @@
         <div class="col-md-4 mb-4">
             <div class="card h-100">
                 <div class="card-body text-center">
-                    <i class="bi bi-gear-fill text-warning" style="font-size: 3rem;"></i>
-                    <h5 class="card-title mt-3">Template Optimizer</h5>
-                    <p class="card-text">Use our advanced template optimizer to generate optimized YAML configurations.</p>
-                    <a href="{{ url_for('routes.experiment') }}" class="btn btn-warning">Optimize</a>
+                    <i class="bi bi-play-circle-fill text-warning" style="font-size: 3rem;"></i>
+                    <h5 class="card-title mt-3">Run Experiment</h5>
+                    <p class="card-text">Run hyperparameter optimization on your existing configuration files.</p>
+                    <a href="{{ url_for('routes.run_experiment') }}" class="btn btn-warning">Run Optimization</a>
                 </div>
             </div>
         </div>

@@ -50,6 +50,25 @@ split_params:
   shift: 0
   skip_step: 1
   starting_point: null
+sweeper:
+  _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+  direction: minimize
+  n_jobs: 2
+  n_trials: 4
+  params: {}
+  sampler:
+    _target_: optuna.samplers.TPESampler
+    consider_endpoints: false
+    consider_magic_clip: true
+    consider_prior: true
+    multivariate: false
+    n_ei_candidates: 24
+    n_startup_trials: 10
+    prior_weight: 1.0
+    seed: 123
+    warn_independent_sampling: true
+  storage: 'null'
+  study_name: kma
 train_config:
   auto_lr_find: true
   devices:

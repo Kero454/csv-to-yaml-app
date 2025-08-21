@@ -1,28 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Hyperparameter Sweeper Configuration - {{ config.APP_NAME }}{% endblock %}
+{% block title %}Step 6: Hyperparameter Optimization - {{ config.APP_NAME }}{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
     <div class="row justify-content-center">
         <div class="col-md-10">
             <div class="card">
-                <div class="card-header bg-primary text-white">
+                <div class="card-header bg-warning text-dark">
                     <h4 class="mb-0">
                         <i class="fas fa-sliders-h me-2"></i>
-                        Hyperparameter Sweeper Configuration
+                        Step 6: Hyperparameter Optimization Configuration
                     </h4>
                 </div>
                 <div class="card-body">
                     <div class="mb-4">
-                        <h5>Experiment: <span class="text-primary">{{ experiment_name }}</span></h5>
+                        <h5>Experiment: <span class="text-warning">{{ experiment_name }}</span></h5>
                         <p class="text-muted">Config File: <strong>{{ config_file }}</strong></p>
                     </div>
 
                     <form method="post" id="sweeperForm">
                         <!-- Sampler Configuration -->
                         <div class="mb-5">
-                            <h5 class="text-primary mb-3">
+                            <h5 class="text-warning mb-3">
                                 <i class="fas fa-cog me-2"></i>
                                 Sampler Configuration
                             </h5>
@@ -93,7 +93,7 @@
 
                         <!-- Study Configuration -->
                         <div class="mb-5">
-                            <h5 class="text-primary mb-3">
+                            <h5 class="text-warning mb-3">
                                 <i class="fas fa-flask me-2"></i>
                                 Study Configuration
                             </h5>
@@ -138,7 +138,7 @@
 
                         <!-- Parameters Configuration -->
                         <div class="mb-5">
-                            <h5 class="text-primary mb-3">
+                            <h5 class="text-warning mb-3">
                                 <i class="fas fa-list me-2"></i>
                                 Parameters to Optimize
                             </h5>
@@ -148,7 +148,7 @@
                                     <div class="row">
                                         <div class="col-md-5">
                                             <label class="form-label">Parameter Name</label>
-                                            <input type="text" class="form-control" name="param_key[]" placeholder="e.g., architecture">
+                                            <input type="text" class="form-control" name="param_key[]" placeholder="e.g., model_configs.cat_emb_dim">
                                             <small class="form-text text-muted">Parameter path (e.g., model_configs.dropout_rate)</small>
                                         </div>
                                         <div class="col-md-5">
@@ -165,7 +165,7 @@
                                 </div>
                             </div>
                             
-                            <button type="button" class="btn btn-outline-primary" id="addParameter">
+                            <button type="button" class="btn btn-outline-warning" id="addParameter">
                                 <i class="fas fa-plus me-2"></i>
                                 Add Parameter
                             </button>
@@ -173,7 +173,7 @@
 
                         <!-- Preview Section -->
                         <div class="mb-4">
-                            <h5 class="text-primary mb-3">
+                            <h5 class="text-warning mb-3">
                                 <i class="fas fa-eye me-2"></i>
                                 YAML Preview
                             </h5>
@@ -186,11 +186,11 @@
 
                         <!-- Submit Buttons -->
                         <div class="d-grid gap-2 d-md-flex justify-content-md-between">
-                            <a href="{{ url_for('routes.sweeper_config_selection') }}" class="btn btn-outline-secondary">
+                            <a href="{{ url_for('routes.run_experiment_config_selection') }}" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left me-2"></i>
                                 Back
                             </a>
-                            <button type="submit" class="btn btn-primary">
+                            <button type="submit" class="btn btn-warning">
                                 <i class="fas fa-arrow-right me-2"></i>
                                 Preview Configuration
                             </button>
@@ -289,11 +289,11 @@ document.addEventListener('DOMContentLoaded', function() {
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     padding: 1rem;
-    background-color: #f8f9fa;
+    background-color: #fff3cd;
 }
 
 .parameter-row:hover {
-    border-color: #0d6efd;
+    border-color: #ffc107;
 }
 
 #yamlPreview {

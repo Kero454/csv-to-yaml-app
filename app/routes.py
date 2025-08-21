@@ -2003,6 +2003,173 @@ def sweeper_prompt():
     
     return render_template('sweeper_prompt.html', experiment_name=session['experiment_name'])
 
+@web.route('/run_experiment', methods=['GET'])
+@login_required
+def run_experiment():
+    """Step 6: Run experiment with hyperparameter optimization on existing config files."""
+    return redirect(url_for('routes.run_experiment_config_selection'))
+
+@web.route('/run_experiment_config_selection', methods=['GET', 'POST'])
+@login_required
+def run_experiment_config_selection():
+    """Step 6: Allow user to select any config file from all their experiments for optimization."""
+    # Get all user's config files from all experiments
+    safe_user = secure_filename(current_user.username)
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    user_dir = os.path.join(base_upload, safe_user)
+    
+    config_files = []
+    if os.path.exists(user_dir):
+        for exp_folder in os.listdir(user_dir):
+            exp_path = os.path.join(user_dir, exp_folder)
+            if os.path.isdir(exp_path):
+                for file in os.listdir(exp_path):
+                    if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
+                        # Skip architecture files and description files
+                        if not file.endswith('_describe.yaml') and 'arch' not in file.lower():
+                            config_files.append({
+                                'name': file,
+                                'experiment': exp_folder,
+                                'path': os.path.join(exp_path, file),
+                                'full_path': f"{exp_folder}/{file}"
+                            })
+    
+    if request.method == 'POST':
+        selected_config = request.form.get('selected_config')
+        if not selected_config:
+            flash('Please select a config file to optimize.')
+            return redirect(request.url)
+        
+        # Parse experiment and filename from selection
+        exp_name, filename = selected_config.split('/', 1)
+        
+        # Store selected config in session for Step 6 workflow
+        session['sweeper_config_file'] = filename
+        session['sweeper_experiment_name'] = exp_name
+        session['sweeper_config_path'] = os.path.join(user_dir, exp_name, filename)
+        return redirect(url_for('routes.run_experiment_sweeper_form'))
+    
+    return render_template('run_experiment_config_selection.html', 
+                         config_files=config_files)
+
+@web.route('/run_experiment_sweeper_form', methods=['GET', 'POST'])
+@login_required
+def run_experiment_sweeper_form():
+    """Step 6: Google Form-style hyperparameter sweeper configuration for standalone run."""
+    if 'sweeper_config_file' not in session or 'sweeper_experiment_name' not in session:
+        flash('Sweeper configuration session expired. Please start again.')
+        return redirect(url_for('routes.run_experiment'))
+    
+    if request.method == 'POST':
+        # Process sweeper configuration with proper hydra nesting
+        sweeper_config = {
+            'hydra': {
+                'sweeper': {
+                    'sampler': {
+                        '_target_': 'optuna.samplers.TPESampler',
+                        'seed': int(request.form.get('sampler_seed', 123)),
+                        'consider_prior': request.form.get('consider_prior') == 'on',
+                        'prior_weight': float(request.form.get('prior_weight', 1.0)),
+                        'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
+                        'consider_endpoints': request.form.get('consider_endpoints') == 'on',
+                        'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
+                        'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
+                        'multivariate': request.form.get('multivariate') == 'on',
+                        'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
+                    },
+                    '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
+                    'direction': request.form.get('direction', 'minimize'),
+                    'storage': request.form.get('storage', 'null'),
+                    'study_name': request.form.get('study_name', session['sweeper_experiment_name']),
+                    'n_trials': int(request.form.get('n_trials', 4)),
+                    'n_jobs': int(request.form.get('n_jobs', 2)),
+                    'params': {}
+                }
+            }
+        }
+        
+        # Process dynamic parameters
+        param_keys = request.form.getlist('param_key[]')
+        param_values = request.form.getlist('param_value[]')
+        
+        for key, value in zip(param_keys, param_values):
+            if key and value:
+                sweeper_config['hydra']['sweeper']['params'][key] = value
+        
+        # Store sweeper config in session for preview
+        session['sweeper_config'] = sweeper_config
+        return redirect(url_for('routes.run_experiment_sweeper_preview'))
+    
+    return render_template('run_experiment_sweeper_form.html', 
+                         experiment_name=session['sweeper_experiment_name'],
+                         config_file=session['sweeper_config_file'])
+
+@web.route('/run_experiment_sweeper_preview', methods=['GET', 'POST'])
+@login_required
+def run_experiment_sweeper_preview():
+    """Step 6: Preview and confirm sweeper configuration before applying to standalone config."""
+    if ('sweeper_config_file' not in session or 'sweeper_experiment_name' not in session or 
+        'sweeper_config' not in session or 'sweeper_config_path' not in session):
+        flash('Sweeper configuration session expired. Please start again.')
+        return redirect(url_for('routes.run_experiment'))
+    
+    if request.method == 'POST':
+        # Apply sweeper configuration to selected config file
+        try:
+            config_path = session['sweeper_config_path']
+            
+            # Read existing config
+            with open(config_path, 'r') as f:
+                existing_config = yaml.safe_load(f)
+            
+            # Add sweeper configuration
+            existing_config.update(session['sweeper_config'])
+            
+            # Write updated config back
+            with open(config_path, 'w') as f:
+                yaml.dump(existing_config, f, default_flow_style=False)
+            
+            # Clean up session
+            session.pop('sweeper_config_file', None)
+            session.pop('sweeper_experiment_name', None)
+            session.pop('sweeper_config', None)
+            session.pop('sweeper_config_path', None)
+            
+            flash('Hyperparameter sweeper has been added to your config file successfully!')
+            return redirect(url_for('routes.deployment_config'))
+            
+        except Exception as e:
+            current_app.logger.error(f"Error applying sweeper config: {e}")
+            flash('An error occurred while applying the sweeper configuration.')
+            return redirect(url_for('routes.run_experiment_sweeper_form'))
+    
+    # Generate full file preview with merged configuration
+    try:
+        config_path = session['sweeper_config_path']
+        
+        # Read existing config
+        with open(config_path, 'r') as f:
+            existing_config = yaml.safe_load(f)
+        
+        # Create a copy and merge with sweeper config
+        merged_config = existing_config.copy()
+        merged_config.update(session['sweeper_config'])
+        
+        # Generate YAML for full merged file
+        full_file_yaml = yaml.dump(merged_config, default_flow_style=False, sort_keys=False)
+        sweeper_only_yaml = yaml.dump(session['sweeper_config'], default_flow_style=False, sort_keys=False)
+        
+    except Exception as e:
+        current_app.logger.error(f"Error generating preview: {e}")
+        flash('Error generating preview. Please try again.')
+        return redirect(url_for('routes.run_experiment_sweeper_form'))
+    
+    return render_template('run_experiment_sweeper_preview.html',
+                         experiment_name=session['sweeper_experiment_name'],
+                         config_file=session['sweeper_config_file'],
+                         sweeper_yaml=sweeper_only_yaml,
+                         full_file_yaml=full_file_yaml)
+
 @web.route('/sweeper_config_selection', methods=['GET', 'POST'])
 @login_required
 def sweeper_config_selection():
@@ -2052,28 +2219,30 @@ def sweeper_form():
         return redirect(url_for('routes.sweeper_prompt'))
     
     if request.method == 'POST':
-        # Process sweeper configuration
+        # Process sweeper configuration with proper hydra nesting
         sweeper_config = {
-            'sweeper': {
-                'sampler': {
-                    '_target_': 'optuna.samplers.TPESampler',
-                    'seed': int(request.form.get('sampler_seed', 123)),
-                    'consider_prior': request.form.get('consider_prior') == 'on',
-                    'prior_weight': float(request.form.get('prior_weight', 1.0)),
-                    'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
-                    'consider_endpoints': request.form.get('consider_endpoints') == 'on',
-                    'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
-                    'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
-                    'multivariate': request.form.get('multivariate') == 'on',
-                    'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
-                },
-                '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
-                'direction': request.form.get('direction', 'minimize'),
-                'storage': request.form.get('storage', 'null'),
-                'study_name': request.form.get('study_name', session['experiment_name']),
-                'n_trials': int(request.form.get('n_trials', 4)),
-                'n_jobs': int(request.form.get('n_jobs', 2)),
-                'params': {}
+            'hydra': {
+                'sweeper': {
+                    'sampler': {
+                        '_target_': 'optuna.samplers.TPESampler',
+                        'seed': int(request.form.get('sampler_seed', 123)),
+                        'consider_prior': request.form.get('consider_prior') == 'on',
+                        'prior_weight': float(request.form.get('prior_weight', 1.0)),
+                        'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
+                        'consider_endpoints': request.form.get('consider_endpoints') == 'on',
+                        'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
+                        'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
+                        'multivariate': request.form.get('multivariate') == 'on',
+                        'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
+                    },
+                    '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
+                    'direction': request.form.get('direction', 'minimize'),
+                    'storage': request.form.get('storage', 'null'),
+                    'study_name': request.form.get('study_name', session['experiment_name']),
+                    'n_trials': int(request.form.get('n_trials', 4)),
+                    'n_jobs': int(request.form.get('n_jobs', 2)),
+                    'params': {}
+                }
             }
         }
         
@@ -2083,7 +2252,7 @@ def sweeper_form():
         
         for key, value in zip(param_keys, param_values):
             if key and value:
-                sweeper_config['sweeper']['params'][key] = value
+                sweeper_config['hydra']['sweeper']['params'][key] = value
         
         # Store sweeper config in session for preview
         session['sweeper_config'] = sweeper_config
@@ -2128,20 +2297,44 @@ def sweeper_preview():
             session.pop('experiment_name', None)
             
             flash('Hyperparameter sweeper has been added to your config file successfully!')
-            return redirect(url_for('routes.done'))
+            return redirect(url_for('routes.deployment_config'))
             
         except Exception as e:
             current_app.logger.error(f"Error applying sweeper config: {e}")
             flash('An error occurred while applying the sweeper configuration.')
             return redirect(url_for('routes.sweeper_form'))
     
-    # Generate YAML preview
-    sweeper_yaml = yaml.dump(session['sweeper_config'], default_flow_style=False)
+    # Generate full file preview with merged configuration
+    try:
+        safe_user = secure_filename(current_user.username)
+        safe_exp = secure_filename(session['experiment_name'])
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        user_dir = os.path.join(base_upload, safe_user)
+        exp_dir = os.path.join(user_dir, safe_exp)
+        config_path = os.path.join(exp_dir, session['sweeper_config_file'])
+        
+        # Read existing config
+        with open(config_path, 'r') as f:
+            existing_config = yaml.safe_load(f)
+        
+        # Create a copy and merge with sweeper config
+        merged_config = existing_config.copy()
+        merged_config.update(session['sweeper_config'])
+        
+        # Generate YAML for full merged file
+        full_file_yaml = yaml.dump(merged_config, default_flow_style=False, sort_keys=False)
+        sweeper_only_yaml = yaml.dump(session['sweeper_config'], default_flow_style=False, sort_keys=False)
+        
+    except Exception as e:
+        current_app.logger.error(f"Error generating preview: {e}")
+        flash('Error generating preview. Please try again.')
+        return redirect(url_for('routes.sweeper_form'))
     
     return render_template('sweeper_preview.html',
                          experiment_name=session['experiment_name'],
                          config_file=session['sweeper_config_file'],
-                         sweeper_yaml=sweeper_yaml)
+                         sweeper_yaml=sweeper_only_yaml,
+                         full_file_yaml=full_file_yaml)
 
 @web.route('/preview_sweeper_yaml', methods=['POST'])
 @login_required
@@ -2149,26 +2342,28 @@ def preview_sweeper_yaml():
     """Generate YAML preview from sweeper form data."""
     try:
         sweeper_config = {
-            'sweeper': {
-                'sampler': {
-                    '_target_': 'optuna.samplers.TPESampler',
-                    'seed': int(request.form.get('sampler_seed', 123)),
-                    'consider_prior': request.form.get('consider_prior') == 'on',
-                    'prior_weight': float(request.form.get('prior_weight', 1.0)),
-                    'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
-                    'consider_endpoints': request.form.get('consider_endpoints') == 'on',
-                    'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
-                    'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
-                    'multivariate': request.form.get('multivariate') == 'on',
-                    'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
-                },
-                '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
-                'direction': request.form.get('direction', 'minimize'),
-                'storage': request.form.get('storage', 'null'),
-                'study_name': request.form.get('study_name', 'experiment'),
-                'n_trials': int(request.form.get('n_trials', 4)),
-                'n_jobs': int(request.form.get('n_jobs', 2)),
-                'params': {}
+            'hydra': {
+                'sweeper': {
+                    'sampler': {
+                        '_target_': 'optuna.samplers.TPESampler',
+                        'seed': int(request.form.get('sampler_seed', 123)),
+                        'consider_prior': request.form.get('consider_prior') == 'on',
+                        'prior_weight': float(request.form.get('prior_weight', 1.0)),
+                        'consider_magic_clip': request.form.get('consider_magic_clip') == 'on',
+                        'consider_endpoints': request.form.get('consider_endpoints') == 'on',
+                        'n_startup_trials': int(request.form.get('n_startup_trials', 10)),
+                        'n_ei_candidates': int(request.form.get('n_ei_candidates', 24)),
+                        'multivariate': request.form.get('multivariate') == 'on',
+                        'warn_independent_sampling': request.form.get('warn_independent_sampling') == 'on'
+                    },
+                    '_target_': 'hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper',
+                    'direction': request.form.get('direction', 'minimize'),
+                    'storage': request.form.get('storage', 'null'),
+                    'study_name': request.form.get('study_name', 'experiment'),
+                    'n_trials': int(request.form.get('n_trials', 4)),
+                    'n_jobs': int(request.form.get('n_jobs', 2)),
+                    'params': {}
+                }
             }
         }
         
@@ -2178,7 +2373,7 @@ def preview_sweeper_yaml():
         
         for key, value in zip(param_keys, param_values):
             if key and value:
-                sweeper_config['sweeper']['params'][key] = value
+                sweeper_config['hydra']['sweeper']['params'][key] = value
         
         yaml_data = yaml.dump(sweeper_config, default_flow_style=False, sort_keys=False)
         return jsonify({'yaml_data': yaml_data})
@@ -2186,6 +2381,185 @@ def preview_sweeper_yaml():
     except Exception as e:
         current_app.logger.error(f"Error generating sweeper YAML preview: {str(e)}")
         return jsonify({'error': 'Failed to generate preview. Check form data for errors.'}), 400
+
+@web.route('/deployment_config', methods=['GET', 'POST'])
+@login_required
+def deployment_config():
+    """Final step: Configure deployment settings for Kubernetes/Helm."""
+    # Get experiment name from session or use a default
+    experiment_name = session.get('sweeper_experiment_name') or session.get('experiment_name', 'default')
+    
+    if request.method == 'POST':
+        try:
+            # Extract form data
+            replica_count = int(request.form.get('replicaCount', 1))
+            models_to_train = request.form.get('modelsToTrain', '').strip()
+            
+            # Worker group replica counts
+            worker_groups = {
+                'a100-workers': {'replicaCount': int(request.form.get('a100_replicas', 1))},
+                'a1000-workers': {'replicaCount': int(request.form.get('a1000_replicas', 0))},
+                'gh200-workers': {'replicaCount': int(request.form.get('gh200_replicas', 0))},
+                'cpu-workers': {'replicaCount': int(request.form.get('cpu_replicas', 0))}
+            }
+            
+            # Create the deployment configuration based on the template lines you specified
+            deployment_config = {
+                'replicaCount': replica_count,
+                'dsipts_p': {
+                    'defaults': {
+                        'persistence': {
+                            'enabled': True,
+                            'volumes': [
+                                {
+                                    'name': 'nfs-ts-framework-pv',
+                                    'claimName': 'nfs-ts-framework-pvc',
+                                    'mounts': [
+                                        {'mountPath': '/DSIPTS-P/output', 'subPath': 'output'},
+                                        {'mountPath': '/DSIPTS-P/data', 'subPath': 'data'}
+                                    ]
+                                },
+                                {
+                                    'name': 'nfs-aim-pv',
+                                    'claimName': 'nfs-aim-pvc',
+                                    'mounts': [{'mountPath': '/aim'}]
+                                }
+                            ]
+                        },
+                        'command': {
+                            'enabled': True,
+                            'run': ['/bin/sh', '-c'],
+                            'modelsToTrain': models_to_train,
+                            'args': [
+                                f"python train.py{' -m architecture=' + models_to_train if models_to_train else ''} --config-dir=config_milan --config-name=config_milan;\nsleep infinity"
+                            ]
+                        },
+                        'configFiles': {
+                            'enabled': False,
+                            'name': '',
+                            'fromDirectory': '',
+                            'mountPath': ''
+                        }
+                    },
+                    'workerGroups': [
+                        {
+                            'name': 'a100-workers',
+                            'replicaCount': worker_groups['a100-workers']['replicaCount'],
+                            'resources': {
+                                'limits': {
+                                    'cpu': '32',
+                                    'ephemeral-storage': '10Gi',
+                                    'memory': '128Gi',
+                                    'nvidia.com/gpu': '1'
+                                },
+                                'requests': {
+                                    'cpu': '8',
+                                    'ephemeral-storage': '1Gi',
+                                    'memory': '4Gi',
+                                    'nvidia.com/gpu': '1'
+                                }
+                            },
+                            'nodeSelector': {
+                                'nvidia.com/gpu.product': 'NVIDIA-A100-80GB-PCIe'
+                            }
+                        },
+                        {
+                            'name': 'a1000-workers',
+                            'replicaCount': worker_groups['a1000-workers']['replicaCount'],
+                            'resources': {
+                                'limits': {
+                                    'cpu': '16',
+                                    'memory': '64Gi',
+                                    'nvidia.com/gpu': '1'
+                                },
+                                'requests': {
+                                    'cpu': '4',
+                                    'memory': '2Gi',
+                                    'nvidia.com/gpu': '1'
+                                }
+                            },
+                            'nodeSelector': {
+                                'nvidia.com/gpu.product': 'NVIDIA-A1000'
+                            }
+                        },
+                        {
+                            'name': 'gh200-workers',
+                            'replicaCount': worker_groups['gh200-workers']['replicaCount'],
+                            'resources': {
+                                'limits': {
+                                    'cpu': '64',
+                                    'memory': '512Gi',
+                                    'nvidia.com/gpu': '1'
+                                },
+                                'requests': {
+                                    'cpu': '16',
+                                    'memory': '8Gi',
+                                    'nvidia.com/gpu': '1'
+                                }
+                            },
+                            'nodeSelector': {
+                                'nvidia.com/gpu.product': 'NVIDIA-GH200-480GB'
+                            }
+                        },
+                        {
+                            'name': 'cpu-workers',
+                            'replicaCount': worker_groups['cpu-workers']['replicaCount'],
+                            'resources': {
+                                'limits': {
+                                    'cpu': '8',
+                                    'memory': '16Gi'
+                                },
+                                'requests': {
+                                    'cpu': '2',
+                                    'memory': '2Gi'
+                                }
+                            },
+                            'nodeSelector': {}
+                        }
+                    ]
+                }
+            }
+            
+            # Save the deployment configuration
+            safe_user = secure_filename(current_user.username)
+            safe_exp = secure_filename(experiment_name)
+            user_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users', safe_user)
+            
+            # Create user directory if it doesn't exist
+            os.makedirs(user_dir, exist_ok=True)
+            
+            # Save as values_{experiment_name}.yaml
+            values_filename = f"values_{safe_exp}.yaml"
+            values_path = os.path.join(user_dir, values_filename)
+            
+            with open(values_path, 'w') as f:
+                yaml.dump(deployment_config, f, default_flow_style=False, sort_keys=False)
+            
+            # Clean up session
+            session.pop('sweeper_experiment_name', None)
+            session.pop('experiment_name', None)
+            
+            flash(f'Deployment configuration saved as {values_filename} successfully!')
+            return redirect(url_for('routes.done'))
+            
+        except Exception as e:
+            current_app.logger.error(f"Error saving deployment config: {e}")
+            flash('An error occurred while saving the deployment configuration.')
+            return redirect(url_for('routes.deployment_config'))
+    
+    # Default values for GET request
+    default_worker_groups = {
+        'a100-workers': {'replicaCount': 1},
+        'a1000-workers': {'replicaCount': 0},
+        'gh200-workers': {'replicaCount': 0},
+        'cpu-workers': {'replicaCount': 0}
+    }
+    
+    return render_template('deployment_config.html',
+                         experiment_name=experiment_name,
+                         replica_count=1,
+                         models_to_train='',
+                         worker_groups=default_worker_groups)
 
 # Error handlers
 

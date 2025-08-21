@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Deployment Configuration - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-rocket me-2"></i>
+                        Final Step: Deployment Configuration
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h5>Experiment: <span class="text-success">{{ experiment_name }}</span></h5>
+                        <p class="text-muted">Configure your deployment settings for Kubernetes/Helm deployment.</p>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Deployment Settings:</strong> Configure replica counts for different worker groups and specify which models to train.
+                    </div>
+
+                    <form method="post" id="deploymentForm">
+                        <!-- Replica Count -->
+                        <div class="mb-4">
+                            <h5 class="text-success mb-3">
+                                <i class="fas fa-copy me-2"></i>
+                                General Replica Count
+                            </h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="replicaCount" class="form-label">Main Replica Count</label>
+                                    <input type="number" class="form-control" id="replicaCount" name="replicaCount" 
+                                           value="{{ replica_count or 1 }}" min="0" max="10">
+                                    <div class="form-text">Number of main application replicas</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Models to Train -->
+                        <div class="mb-4">
+                            <h5 class="text-success mb-3">
+                                <i class="fas fa-brain me-2"></i>
+                                Models to Train
+                            </h5>
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <label for="modelsToTrain" class="form-label">Models to Train</label>
+                                    <input type="text" class="form-control" id="modelsToTrain" name="modelsToTrain" 
+                                           value="{{ models_to_train or '' }}" placeholder="e.g., lstm,itransformer,autoformer">
+                                    <div class="form-text">Comma-separated list of model architectures to train</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Worker Groups -->
+                        <div class="mb-4">
+                            <h5 class="text-success mb-3">
+                                <i class="fas fa-server me-2"></i>
+                                Worker Groups Configuration
+                            </h5>
+                            
+                            <!-- A100 Workers -->
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-microchip me-2"></i>
+                                        A100 Workers (NVIDIA-A100-80GB-PCIe)
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <label for="a100_replicas" class="form-label">Replica Count</label>
+                                            <input type="number" class="form-control" id="a100_replicas" name="a100_replicas" 
+                                                   value="{{ worker_groups.get('a100-workers', {}).get('replicaCount', 1) }}" min="0" max="10">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <div class="form-text mt-2">
+                                                <strong>Resources:</strong> 32 CPU, 128Gi Memory, 1 GPU<br>
+                                                <strong>Node:</strong> NVIDIA-A100-80GB-PCIe
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- A1000 Workers -->
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-microchip me-2"></i>
+                                        A1000 Workers (NVIDIA-A1000)
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <label for="a1000_replicas" class="form-label">Replica Count</label>
+                                            <input type="number" class="form-control" id="a1000_replicas" name="a1000_replicas" 
+                                                   value="{{ worker_groups.get('a1000-workers', {}).get('replicaCount', 0) }}" min="0" max="10">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <div class="form-text mt-2">
+                                                <strong>Resources:</strong> 16 CPU, 64Gi Memory, 1 GPU<br>
+                                                <strong>Node:</strong> NVIDIA-A1000
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- GH200 Workers -->
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-microchip me-2"></i>
+                                        GH200 Workers (NVIDIA-GH200-480GB)
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <label for="gh200_replicas" class="form-label">Replica Count</label>
+                                            <input type="number" class="form-control" id="gh200_replicas" name="gh200_replicas" 
+                                                   value="{{ worker_groups.get('gh200-workers', {}).get('replicaCount', 0) }}" min="0" max="10">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <div class="form-text mt-2">
+                                                <strong>Resources:</strong> 64 CPU, 512Gi Memory, 1 GPU<br>
+                                                <strong>Node:</strong> NVIDIA-GH200-480GB
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CPU Workers -->
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-server me-2"></i>
+                                        CPU Workers (No GPU)
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <label for="cpu_replicas" class="form-label">Replica Count</label>
+                                            <input type="number" class="form-control" id="cpu_replicas" name="cpu_replicas" 
+                                                   value="{{ worker_groups.get('cpu-workers', {}).get('replicaCount', 0) }}" min="0" max="10">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <div class="form-text mt-2">
+                                                <strong>Resources:</strong> 8 CPU, 16Gi Memory, No GPU<br>
+                                                <strong>Node:</strong> Any CPU node
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Important:</strong> This will create a <code>values_{{ experiment_name }}.yaml</code> file for Helm deployment. 
+                            Make sure your replica counts match your cluster resources.
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-between">
+                            <a href="{{ url_for('routes.index') }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-home me-2"></i>
+                                Back to Dashboard
+                            </a>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save me-2"></i>
+                                Generate Deployment Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.card-header h6 {
+    color: #495057;
+}
+.form-text {
+    font-size: 0.875em;
+}
+</style>
+{% endblock %}

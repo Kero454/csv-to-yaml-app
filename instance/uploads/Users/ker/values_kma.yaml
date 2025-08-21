@@ -1,0 +1,84 @@
+replicaCount: 1
+dsipts_p:
+  defaults:
+    persistence:
+      enabled: true
+      volumes:
+      - name: nfs-ts-framework-pv
+        claimName: nfs-ts-framework-pvc
+        mounts:
+        - mountPath: /DSIPTS-P/output
+          subPath: output
+        - mountPath: /DSIPTS-P/data
+          subPath: data
+      - name: nfs-aim-pv
+        claimName: nfs-aim-pvc
+        mounts:
+        - mountPath: /aim
+    command:
+      enabled: true
+      run:
+      - /bin/sh
+      - -c
+      modelsToTrain: ''
+      args:
+      - 'python train.py --config-dir=config_milan --config-name=config_milan;
+
+        sleep infinity'
+    configFiles:
+      enabled: false
+      name: ''
+      fromDirectory: ''
+      mountPath: ''
+  workerGroups:
+  - name: a100-workers
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: '32'
+        ephemeral-storage: 10Gi
+        memory: 128Gi
+        nvidia.com/gpu: '1'
+      requests:
+        cpu: '8'
+        ephemeral-storage: 1Gi
+        memory: 4Gi
+        nvidia.com/gpu: '1'
+    nodeSelector:
+      nvidia.com/gpu.product: NVIDIA-A100-80GB-PCIe
+  - name: a1000-workers
+    replicaCount: 0
+    resources:
+      limits:
+        cpu: '16'
+        memory: 64Gi
+        nvidia.com/gpu: '1'
+      requests:
+        cpu: '4'
+        memory: 2Gi
+        nvidia.com/gpu: '1'
+    nodeSelector:
+      nvidia.com/gpu.product: NVIDIA-A1000
+  - name: gh200-workers
+    replicaCount: 0
+    resources:
+      limits:
+        cpu: '64'
+        memory: 512Gi
+        nvidia.com/gpu: '1'
+      requests:
+        cpu: '16'
+        memory: 8Gi
+        nvidia.com/gpu: '1'
+    nodeSelector:
+      nvidia.com/gpu.product: NVIDIA-GH200-480GB
+  - name: cpu-workers
+    replicaCount: 0
+    resources:
+      limits:
+        cpu: '8'
+        memory: 16Gi
+      requests:
+        cpu: '2'
+        memory: 2Gi
+    nodeSelector: {}
