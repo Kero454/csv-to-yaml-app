@@ -53,7 +53,7 @@ dsipts_p:
         - mountPath: /DSIPTS-P/output
           subPath: output
         - mountPath: /DSIPTS-P/data
-          subPath: Users/ker#/kma
+          subPath: Users/ker#/kfa
       - name: nfs-aim-pv
         claimName: nfs-aim-pvc
         mounts:
@@ -65,14 +65,14 @@ dsipts_p:
       - -c
       modelsToTrain: ''
       args:
-      - 'python train.py --config-dir=kma --config-name=kma_config;
+      - 'python train.py --config-dir=kfa --config-name=kfa_config;
 
         sleep infinity'
     configFiles:
       enabled: true
-      name: kma_config.yaml
-      fromDirectory: Users/ker#/kma
-      mountPath: /DSIPTS-P/config/kma
+      name: kfa_config.yaml
+      fromDirectory: Users/ker#/kfa
+      mountPath: /DSIPTS-P/config/kfa
   workerGroups:
   - name: a100-workers
     replicaCount: 1

@@ -1,47 +1,4 @@
 replicaCount: 1
-image:
-  repository: hakushaku69/dsipts-p
-  pullPolicy: Always
-  tag: 3.0.0
-imagePullSecrets: []
-nameOverride: ''
-fullnameOverride: ''
-serviceAccount:
-  create: true
-  annotations: {}
-  name: ''
-podAnnotations: {}
-podSecurityContext: {}
-securityContext: {}
-service:
-  type: ClusterIP
-  port: 80
-aim:
-  annotations:
-    description: Deployment for Aim container
-    field.cattle.io/publicEndpoints: '[{"port":30088,"protocol":"TCP","serviceName":"ts-framework:aim-service","allNodes":true}]'
-  image:
-    repository: hakushaku69/aim-container
-    pullPolicy: IfNotPresent
-    tag: '1'
-  service:
-    annotations:
-      field.cattle.io/publicEndpoints: '[{"port":30088,"protocol":"TCP","serviceName":"ts-framework:aim-service","allNodes":true}]'
-    type: NodePort
-    port: 80
-    targetPort: 43800
-    nodePort: 30088
-  persistence:
-    enabled: true
-    claimName: nfs-aim-pvc
-  resources:
-    limits:
-      cpu: '1'
-      memory: 2Gi
-    requests:
-      cpu: 100m
-      memory: 1Gi
-  nodeName: srv01
 dsipts_p:
   defaults:
     persistence:
@@ -53,7 +10,7 @@ dsipts_p:
         - mountPath: /DSIPTS-P/output
           subPath: output
         - mountPath: /DSIPTS-P/data
-          subPath: Users/ker#/kma
+          subPath: data
       - name: nfs-aim-pv
         claimName: nfs-aim-pvc
         mounts:
@@ -65,14 +22,14 @@ dsipts_p:
       - -c
       modelsToTrain: ''
       args:
-      - 'python train.py --config-dir=kma --config-name=kma_config;
+      - 'python train.py --config-dir=config_milan --config-name=config_milan;
 
         sleep infinity'
     configFiles:
-      enabled: true
-      name: kma_config.yaml
-      fromDirectory: Users/ker#/kma
-      mountPath: /DSIPTS-P/config/kma
+      enabled: false
+      name: ''
+      fromDirectory: ''
+      mountPath: ''
   workerGroups:
   - name: a100-workers
     replicaCount: 1
@@ -125,6 +82,3 @@ dsipts_p:
         cpu: '2'
         memory: 2Gi
     nodeSelector: {}
-nodeSelector: {}
-tolerations: []
-affinity: {}

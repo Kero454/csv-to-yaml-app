@@ -2025,8 +2025,9 @@ def run_experiment_config_selection():
             if os.path.isdir(exp_path):
                 for file in os.listdir(exp_path):
                     if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
-                        # Skip architecture files and description files
-                        if not file.endswith('_describe.yaml') and 'arch' not in file.lower():
+                        # Only include files matching {experiment-name}_config.yaml pattern
+                        expected_name = f"{exp_folder}_config.yaml"
+                        if file == expected_name:
                             config_files.append({
                                 'name': file,
                                 'experiment': exp_folder,
@@ -2061,9 +2062,22 @@ def run_experiment_sweeper_form():
         return redirect(url_for('routes.run_experiment'))
     
     if request.method == 'POST':
-        # Process sweeper configuration with proper hydra nesting
+        # Process sweeper configuration with proper hydra nesting and launcher
         sweeper_config = {
+            'defaults': [
+                '_self_',
+                'architecture: null',
+                'override hydra/launcher: joblib',
+                'override hydra/sweeper: optuna'
+            ],
             'hydra': {
+                'launcher': {
+                    'n_jobs': 4,
+                    'verbose': 1,
+                    'pre_dispatch': 1,
+                    'batch_size': 4
+                },
+                'output_subdir': None,
                 'sweeper': {
                     'sampler': {
                         '_target_': 'optuna.samplers.TPESampler',
@@ -2122,16 +2136,69 @@ def run_experiment_sweeper_preview():
             with open(config_path, 'r') as f:
                 existing_config = yaml.safe_load(f)
             
-            # Add sweeper configuration
-            existing_config.update(session['sweeper_config'])
+            # Merge sweeper configuration properly - only update what's needed
+            # Update defaults section - add the overrides
+            if 'defaults' not in existing_config:
+                existing_config['defaults'] = []
             
-            # Write updated config back
+            # Find and update the defaults list
+            defaults_list = existing_config['defaults']
+            if isinstance(defaults_list, list):
+                # Add the override entries if not present
+                has_sweeper_override = False
+                for item in defaults_list:
+                    if isinstance(item, str) and 'override hydra/sweeper' in item:
+                        has_sweeper_override = True
+                
+                if not has_sweeper_override:
+                    defaults_list.append('override hydra/sweeper: optuna')
+            
+            # Merge hydra section properly
+            if 'hydra' not in existing_config:
+                existing_config['hydra'] = {}
+            
+            # Update launcher config
+            existing_config['hydra']['launcher'] = session['sweeper_config']['hydra']['launcher']
+            
+            # Preserve output_subdir if it exists
+            if 'output_subdir' not in existing_config['hydra']:
+                existing_config['hydra']['output_subdir'] = None
+            
+            # Add sweeper config
+            existing_config['hydra']['sweeper'] = session['sweeper_config']['hydra']['sweeper']
+            
+            # Write updated config back with proper formatting
             with open(config_path, 'w') as f:
-                yaml.dump(existing_config, f, default_flow_style=False)
+                # Custom YAML dumper to handle defaults list formatting
+                yaml_content = yaml.dump(existing_config, default_flow_style=False, sort_keys=False)
+                
+                # Fix defaults indentation if present
+                lines = yaml_content.split('\n')
+                fixed_lines = []
+                in_defaults = False
+                
+                for line in lines:
+                    if line.startswith('defaults:'):
+                        in_defaults = True
+                        fixed_lines.append(line)
+                    elif in_defaults and line.startswith('- '):
+                        # Add proper indentation to defaults list items
+                        fixed_lines.append('  ' + line)
+                        if not line.strip().startswith('- '):
+                            in_defaults = False
+                    else:
+                        if line and not line[0].isspace() and ':' in line:
+                            in_defaults = False
+                        fixed_lines.append(line)
+                
+                f.write('\n'.join(fixed_lines))
             
-            # Clean up session
+            # Store config path for PVC mounting
+            session['config_file_path'] = config_path
+            session['config_file_name'] = session['sweeper_config_file']
+            
+            # Clean up sweeper-specific session data
             session.pop('sweeper_config_file', None)
-            session.pop('sweeper_experiment_name', None)
             session.pop('sweeper_config', None)
             session.pop('sweeper_config_path', None)
             
@@ -2189,8 +2256,9 @@ def sweeper_config_selection():
     if os.path.exists(exp_dir):
         for file in os.listdir(exp_dir):
             if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_dir, file)):
-                # Skip architecture files and description files
-                if not file.endswith('_describe.yaml') and 'arch' not in file.lower():
+                # Only include files matching {experiment-name}_config.yaml pattern
+                expected_name = f"{safe_exp}_config.yaml"
+                if file == expected_name:
                     config_files.append({
                         'name': file,
                         'path': os.path.join(exp_dir, file)
@@ -2219,9 +2287,22 @@ def sweeper_form():
         return redirect(url_for('routes.sweeper_prompt'))
     
     if request.method == 'POST':
-        # Process sweeper configuration with proper hydra nesting
+        # Process sweeper configuration with proper hydra nesting and launcher
         sweeper_config = {
+            'defaults': [
+                '_self_',
+                'architecture: null',
+                'override hydra/launcher: joblib',
+                'override hydra/sweeper: optuna'
+            ],
             'hydra': {
+                'launcher': {
+                    'n_jobs': 4,
+                    'verbose': 1,
+                    'pre_dispatch': 1,
+                    'batch_size': 4
+                },
+                'output_subdir': None,
                 'sweeper': {
                     'sampler': {
                         '_target_': 'optuna.samplers.TPESampler',
@@ -2284,17 +2365,70 @@ def sweeper_preview():
             with open(config_path, 'r') as f:
                 existing_config = yaml.safe_load(f)
             
-            # Add sweeper configuration
-            existing_config.update(session['sweeper_config'])
+            # Merge sweeper configuration properly - only update what's needed
+            # Update defaults section - add the overrides
+            if 'defaults' not in existing_config:
+                existing_config['defaults'] = []
             
-            # Write updated config back
+            # Find and update the defaults list
+            defaults_list = existing_config['defaults']
+            if isinstance(defaults_list, list):
+                # Add the override entries if not present
+                has_sweeper_override = False
+                for item in defaults_list:
+                    if isinstance(item, str) and 'override hydra/sweeper' in item:
+                        has_sweeper_override = True
+                
+                if not has_sweeper_override:
+                    defaults_list.append('override hydra/sweeper: optuna')
+            
+            # Merge hydra section properly
+            if 'hydra' not in existing_config:
+                existing_config['hydra'] = {}
+            
+            # Update launcher config
+            existing_config['hydra']['launcher'] = session['sweeper_config']['hydra']['launcher']
+            
+            # Preserve output_subdir if it exists
+            if 'output_subdir' not in existing_config['hydra']:
+                existing_config['hydra']['output_subdir'] = None
+            
+            # Add sweeper config
+            existing_config['hydra']['sweeper'] = session['sweeper_config']['hydra']['sweeper']
+            
+            # Write updated config back with proper formatting
             with open(config_path, 'w') as f:
-                yaml.dump(existing_config, f, default_flow_style=False)
+                # Custom YAML dumper to handle defaults list formatting
+                yaml_content = yaml.dump(existing_config, default_flow_style=False, sort_keys=False)
+                
+                # Fix defaults indentation if present
+                lines = yaml_content.split('\n')
+                fixed_lines = []
+                in_defaults = False
+                
+                for line in lines:
+                    if line.startswith('defaults:'):
+                        in_defaults = True
+                        fixed_lines.append(line)
+                    elif in_defaults and line.startswith('- '):
+                        # Add proper indentation to defaults list items
+                        fixed_lines.append('  ' + line)
+                        if not line.strip().startswith('- '):
+                            in_defaults = False
+                    else:
+                        if line and not line[0].isspace() and ':' in line:
+                            in_defaults = False
+                        fixed_lines.append(line)
+                
+                f.write('\n'.join(fixed_lines))
             
-            # Clean up session
+            # Store config path for PVC mounting
+            session['config_file_path'] = config_path
+            session['config_file_name'] = session['sweeper_config_file']
+            
+            # Clean up sweeper-specific session data
             session.pop('sweeper_config_file', None)
             session.pop('sweeper_config', None)
-            session.pop('experiment_name', None)
             
             flash('Hyperparameter sweeper has been added to your config file successfully!')
             return redirect(url_for('routes.deployment_config'))
@@ -2342,7 +2476,20 @@ def preview_sweeper_yaml():
     """Generate YAML preview from sweeper form data."""
     try:
         sweeper_config = {
+            'defaults': [
+                '_self_',
+                'architecture: null',
+                'override hydra/launcher: joblib',
+                'override hydra/sweeper: optuna'
+            ],
             'hydra': {
+                'launcher': {
+                    'n_jobs': 4,
+                    'verbose': 1,
+                    'pre_dispatch': 1,
+                    'batch_size': 4
+                },
+                'output_subdir': None,
                 'sweeper': {
                     'sampler': {
                         '_target_': 'optuna.samplers.TPESampler',
@@ -2389,6 +2536,10 @@ def deployment_config():
     # Get experiment name from session or use a default
     experiment_name = session.get('sweeper_experiment_name') or session.get('experiment_name', 'default')
     
+    # Get config file info for PVC mounting
+    config_file_name = session.get('config_file_name', '')
+    config_file_path = session.get('config_file_path', '')
+    
     if request.method == 'POST':
         try:
             # Extract form data
@@ -2403,9 +2554,71 @@ def deployment_config():
                 'cpu-workers': {'replicaCount': int(request.form.get('cpu_replicas', 0))}
             }
             
-            # Create the deployment configuration based on the template lines you specified
+            # Create the full deployment configuration
             deployment_config = {
+                # Default values for dsipts-p-chart
                 'replicaCount': replica_count,
+                
+                'image': {
+                    'repository': 'hakushaku69/dsipts-p',
+                    'pullPolicy': 'Always',
+                    'tag': '3.0.0'
+                },
+                
+                'imagePullSecrets': [],
+                'nameOverride': '',
+                'fullnameOverride': '',
+                
+                'serviceAccount': {
+                    'create': True,
+                    'annotations': {},
+                    'name': ''
+                },
+                
+                'podAnnotations': {},
+                'podSecurityContext': {},
+                'securityContext': {},
+                
+                'service': {
+                    'type': 'ClusterIP',
+                    'port': 80
+                },
+                
+                'aim': {
+                    'annotations': {
+                        'description': 'Deployment for Aim container',
+                        'field.cattle.io/publicEndpoints': '[{"port":30088,"protocol":"TCP","serviceName":"ts-framework:aim-service","allNodes":true}]'
+                    },
+                    'image': {
+                        'repository': 'hakushaku69/aim-container',
+                        'pullPolicy': 'IfNotPresent',
+                        'tag': '1'
+                    },
+                    'service': {
+                        'annotations': {
+                            'field.cattle.io/publicEndpoints': '[{"port":30088,"protocol":"TCP","serviceName":"ts-framework:aim-service","allNodes":true}]'
+                        },
+                        'type': 'NodePort',
+                        'port': 80,
+                        'targetPort': 43800,
+                        'nodePort': 30088
+                    },
+                    'persistence': {
+                        'enabled': True,
+                        'claimName': 'nfs-aim-pvc'
+                    },
+                    'resources': {
+                        'limits': {
+                            'cpu': '1',
+                            'memory': '2Gi'
+                        },
+                        'requests': {
+                            'cpu': '100m',
+                            'memory': '1Gi'
+                        }
+                    },
+                    'nodeName': 'srv01'
+                },
                 'dsipts_p': {
                     'defaults': {
                         'persistence': {
@@ -2416,7 +2629,7 @@ def deployment_config():
                                     'claimName': 'nfs-ts-framework-pvc',
                                     'mounts': [
                                         {'mountPath': '/DSIPTS-P/output', 'subPath': 'output'},
-                                        {'mountPath': '/DSIPTS-P/data', 'subPath': 'data'}
+                                        {'mountPath': '/DSIPTS-P/data', 'subPath': f"Users/{current_user.username}/{experiment_name}"}
                                     ]
                                 },
                                 {
@@ -2431,14 +2644,14 @@ def deployment_config():
                             'run': ['/bin/sh', '-c'],
                             'modelsToTrain': models_to_train,
                             'args': [
-                                f"python train.py{' -m architecture=' + models_to_train if models_to_train else ''} --config-dir=config_milan --config-name=config_milan;\nsleep infinity"
+                                f"python train.py{' -m architecture=' + models_to_train if models_to_train else ''} --config-dir={experiment_name} --config-name={config_file_name.replace('.yaml', '') if config_file_name else 'config'};\nsleep infinity"
                             ]
                         },
                         'configFiles': {
-                            'enabled': False,
-                            'name': '',
-                            'fromDirectory': '',
-                            'mountPath': ''
+                            'enabled': True if config_file_name else False,
+                            'name': config_file_name,
+                            'fromDirectory': f"Users/{current_user.username}/{experiment_name}",
+                            'mountPath': f"/DSIPTS-P/config/{experiment_name}"
                         }
                     },
                     'workerGroups': [
@@ -2517,21 +2730,25 @@ def deployment_config():
                             'nodeSelector': {}
                         }
                     ]
-                }
+                },
+                
+                'nodeSelector': {},
+                'tolerations': [],
+                'affinity': {}
             }
             
             # Save the deployment configuration
             safe_user = secure_filename(current_user.username)
             safe_exp = secure_filename(experiment_name)
             user_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users', safe_user)
+            exp_dir = os.path.join(user_dir, safe_exp)
             
-            # Create user directory if it doesn't exist
-            os.makedirs(user_dir, exist_ok=True)
+            # Create experiment directory if it doesn't exist
+            os.makedirs(exp_dir, exist_ok=True)
             
-            # Save as values_{experiment_name}.yaml
-            values_filename = f"values_{safe_exp}.yaml"
-            values_path = os.path.join(user_dir, values_filename)
-            
+            # Save values.yaml in the experiment folder
+            values_filename = f'values_{safe_exp}.yaml'
+            values_path = os.path.join(exp_dir, values_filename)
             with open(values_path, 'w') as f:
                 yaml.dump(deployment_config, f, default_flow_style=False, sort_keys=False)
             
