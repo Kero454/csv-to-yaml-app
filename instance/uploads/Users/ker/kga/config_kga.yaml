@@ -2,9 +2,9 @@ dataset:
   dataset: no_dataset
   path: /DSIPTS-P/data/
 defaults:
-- _self_
-- architecture: null
-- override hydra/launcher: joblib
+ - _self_
+ - architecture: null
+ - override hydra/launcher: joblib
 hydra:
   sweeper:
     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
