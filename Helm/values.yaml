@@ -15,7 +15,7 @@ service:
 # Persistent Volume Claim configuration
 pvc:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storage: 1Gi
   # If needed, specify a storage class, otherwise the default will be used.
   # storageClassName: standard

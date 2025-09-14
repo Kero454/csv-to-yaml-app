@@ -1,0 +1,75 @@
+dataset:
+  dataset: name.csv
+  path: /DSIPTS-P/data/
+defaults:
+  - _self_
+  - architecture: null
+  - override hydra/launcher: joblib
+  - 'override hydra/sweeper: optuna'
+hydra:
+  launcher:
+    batch_size: 4
+    n_jobs: 4
+    pre_dispatch: 1
+    verbose: 1
+  output_subdir: null
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    direction: minimize
+    n_jobs: 2
+    n_trials: 4
+    params: {}
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      consider_endpoints: false
+      consider_magic_clip: true
+      consider_prior: true
+      multivariate: false
+      n_ei_candidates: 24
+      n_startup_trials: 10
+      prior_weight: 1.0
+      seed: 123
+      warn_independent_sampling: true
+    storage: 'null'
+    study_name: kla
+inference:
+  batch_size: 200
+  load_last: true
+  num_workers: 4
+  output_path: /DSIPTS-P/output/
+  rescaling: true
+  set: test
+model_configs:
+  embs: null
+  future_channels: null
+  future_steps: 64
+  loss_type: null
+  out_channels: null
+  past_channels: null
+  past_steps: 64
+  persistence_weight: 1.0
+  quantiles: []
+optim_config:
+  lr: 5.0e-05
+  weight_decay: 0.0001
+scheduler_config:
+  gamma: 0.75
+  step_size: 2500
+split_params:
+  future_steps: model_configs@future_steps
+  past_steps: model_configs@past_steps
+  perc_train: 0.6
+  perc_valid: 0.2
+  range_test: null
+  range_train: null
+  range_validation: null
+  shift: 0
+  skip_step: 1
+  starting_point: null
+train_config:
+  auto_lr_find: true
+  devices:
+  - 0
+  dirpath: /DSIPTS-P/data/
+  num_workers: 0
+  seed: 42

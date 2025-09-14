@@ -1,0 +1,10 @@
+architecture_files:
+- description: YAML training configuration 1 for kla
+  filename: model.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: name.csv
+experiment: kla
+experiment_config_file: config_kla.yaml
+timestamp: '2025-09-08T14:33:52.979931'
+user: ker#
