@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Deployment Preview{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>Deployment Configuration Preview</h2>
+    <h3>Experiment: {{ experiment_name }}</h3>
+    
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5>Deployment Settings</h5>
+        </div>
+        <div class="card-body">
+            <p><strong>Values File:</strong> {{ deployment_config.values_filename }}</p>
+            <p><strong>Replica Count:</strong> {{ deployment_config.replica_count }}</p>
+            <p><strong>Models to Train:</strong> 
+                {% if deployment_config.models_to_train %}
+                    {{ deployment_config.models_to_train }}
+                {% else %}
+                    <span class="text-muted">None selected</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5>Worker Groups</h5>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Worker Type</th>
+                        <th>Replica Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for worker_name, config in deployment_config.worker_groups.items() %}
+                    <tr>
+                        <td>{{ worker_name }}</td>
+                        <td>{{ config.replicaCount }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5>Configuration Files</h5>
+        </div>
+        <div class="card-body">
+            {% if config_files %}
+                <ul>
+                    {% for file in config_files %}
+                    <li>{{ file }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-muted">No configuration files found</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="mt-4">
+        <form method="POST">
+            <button type="submit" class="btn btn-success btn-lg">
+                Run Experiment
+            </button>
+        </form>
+        <p class="text-muted mt-2">
+            Click to start the experiment. You will be redirected while it runs in the background.
+        </p>
+    </div>
+</div>
+
+<style>
+    .container {
+        max-width: 800px;
+        margin: 50px auto;
+    }
+    
+    .card {
+        margin-bottom: 20px;
+    }
+    
+    .btn-success {
+        background-color: #28a745;
+        border-color: #28a745;
+        padding: 10px 30px;
+    }
+    
+    .btn-success:hover {
+        background-color: #218838;
+        border-color: #1e7e34;
+    }
+</style>
+{% endblock %}

@@ -49,10 +49,24 @@
                             </h5>
                             <div class="row">
                                 <div class="col-md-8">
-                                    <label for="modelsToTrain" class="form-label">Models to Train</label>
-                                    <input type="text" class="form-control" id="modelsToTrain" name="modelsToTrain" 
-                                           value="{{ models_to_train or '' }}" placeholder="e.g., lstm,itransformer,autoformer">
-                                    <div class="form-text">Comma-separated list of model architectures to train</div>
+                                    <label class="form-label">Select Models to Train (at least one)</label>
+                                    <div class="border rounded p-3" style="max-height: 250px; overflow-y: auto;">
+                                        {% set models = [
+                                            'autoformer', 'lstm', 'crossformer', 'd3vae', 'diffusion',
+                                            'dilated_conv', 'dilated_conv_ed', 'dlinear', 'rnn', 'informer',
+                                            'linear', 'nlinear', 'patchtst', 'presistent', 'tft', 'xlstm'
+                                        ] %}
+                                        {% for model in models %}
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="modelsToTrain" 
+                                                   value="{{ model }}" id="model_{{ model }}">
+                                            <label class="form-check-label" for="model_{{ model }}">
+                                                {{ model }}
+                                            </label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="form-text">Select one or more models to train</div>
                                 </div>
                             </div>
                         </div>

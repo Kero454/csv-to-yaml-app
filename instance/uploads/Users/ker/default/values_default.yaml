@@ -63,15 +63,16 @@ dsipts_p:
       run:
       - /bin/sh
       - -c
-      modelsToTrain: autoformer
+      modelsToTrain: autoformer,crossformer,informer
       args:
-      - 'python train.py -m architecture=autoformer --config-dir=config_milan --config-name=config_milan;
+      - 'python train.py -m architecture=autoformer,crossformer,informer --config-dir=config_milan
+        --config-name=config_milan;
 
         sleep infinity'
     configFiles:
       enabled: true
       name: kma_config.yaml
-      fromDirectory: Users/ker#/kma
+      fromDirectory: Users/ker#/default
       mountPath: /DSIPTS-P/bash_examples/config_milan
   workerGroups:
   - name: a100-workers

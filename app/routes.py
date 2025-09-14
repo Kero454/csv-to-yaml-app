@@ -164,7 +164,7 @@ def upload_config():
             config_yaml = yaml.dump(config_data, default_flow_style=False)
             
             # Store in session
-            session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
+            session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
             session['config_bytes'] = config_yaml.encode('utf-8')
             
             # Return the template for editing
@@ -1642,8 +1642,26 @@ def template_optimizer_form():
         # Store configuration in session
         session['config_data'] = config_data
         config_yaml = yaml.dump(config_data, default_flow_style=False)
+        # Fix defaults indentation
+        lines = config_yaml.split('\n')
+        fixed_lines = []
+        in_defaults = False
+        
+        for line in lines:
+            if line.startswith('defaults:'):
+                in_defaults = True
+                fixed_lines.append(line)
+            elif in_defaults and line.startswith('- '):
+                # Add proper indentation to defaults list items (1 space)
+                fixed_lines.append(' ' + line)
+            else:
+                if line and not line[0].isspace() and ':' in line:
+                    in_defaults = False
+                fixed_lines.append(line)
+        
+        config_yaml = '\n'.join(fixed_lines)
         session['config_bytes'] = config_yaml.encode('utf-8')
-        session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
+        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
         
         # Check if user selected a dataset (either uploaded file or default dataset)
         dataset_selected = False
@@ -1831,8 +1849,26 @@ def config_form():
         config_data = generate_config_template(session['experiment_name'])
         session['config_data'] = config_data
         config_yaml = yaml.dump(config_data, default_flow_style=False)
+        # Fix defaults indentation
+        lines = config_yaml.split('\n')
+        fixed_lines = []
+        in_defaults = False
+        
+        for line in lines:
+            if line.startswith('defaults:'):
+                in_defaults = True
+                fixed_lines.append(line)
+            elif in_defaults and line.startswith('- '):
+                # Add proper indentation to defaults list items (1 space)
+                fixed_lines.append(' ' + line)
+            else:
+                if line and not line[0].isspace() and ':' in line:
+                    in_defaults = False
+                fixed_lines.append(line)
+        
+        config_yaml = '\n'.join(fixed_lines)
         session['config_bytes'] = config_yaml.encode('utf-8')
-        session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
+        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
     
     # Get user's uploaded CSV files for dataset selection
     user_csv_files = get_user_csv_files(current_user)
@@ -1855,8 +1891,26 @@ def advanced_config_form():
         config_data = generate_config_template(session['experiment_name'])
         session['config_data'] = config_data
         config_yaml = yaml.dump(config_data, default_flow_style=False)
+        # Fix defaults indentation
+        lines = config_yaml.split('\n')
+        fixed_lines = []
+        in_defaults = False
+        
+        for line in lines:
+            if line.startswith('defaults:'):
+                in_defaults = True
+                fixed_lines.append(line)
+            elif in_defaults and line.startswith('- '):
+                # Add proper indentation to defaults list items (1 space)
+                fixed_lines.append(' ' + line)
+            else:
+                if line and not line[0].isspace() and ':' in line:
+                    in_defaults = False
+                fixed_lines.append(line)
+        
+        config_yaml = '\n'.join(fixed_lines)
         session['config_bytes'] = config_yaml.encode('utf-8')
-        session['config_filename'] = f"config_{secure_filename(session['experiment_name'])}.yaml"
+        session['config_filename'] = f"{secure_filename(session['experiment_name'])}_config.yaml"
     
     # Get user's uploaded CSV files for dataset selection
     user_csv_files = get_user_csv_files(current_user)
@@ -2003,12 +2057,6 @@ def sweeper_prompt():
     
     return render_template('sweeper_prompt.html', experiment_name=session['experiment_name'])
 
-@web.route('/run_experiment', methods=['GET'])
-@login_required
-def run_experiment():
-    """Step 6: Run experiment with hyperparameter optimization on existing config files."""
-    return redirect(url_for('routes.run_experiment_config_selection'))
-
 @web.route('/run_experiment_config_selection', methods=['GET', 'POST'])
 @login_required
 def run_experiment_config_selection():
@@ -2025,9 +2073,8 @@ def run_experiment_config_selection():
             if os.path.isdir(exp_path):
                 for file in os.listdir(exp_path):
                     if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
-                        # Only include files matching {experiment-name}_config.yaml pattern
-                        expected_name = f"{exp_folder}_config.yaml"
-                        if file == expected_name:
+                        # Include any file matching pattern {name}_config.yaml
+                        if file.endswith('_config.yaml'):
                             config_files.append({
                                 'name': file,
                                 'experiment': exp_folder,
@@ -2542,9 +2589,14 @@ def deployment_config():
     
     if request.method == 'POST':
         try:
+            # Get user info first
+            safe_user = secure_filename(current_user.username)
+            
             # Extract form data
             replica_count = int(request.form.get('replicaCount', 1))
-            models_to_train = request.form.get('modelsToTrain', '').strip()
+            # Handle multi-select models
+            models_list = request.form.getlist('modelsToTrain')
+            models_to_train = ','.join(models_list) if models_list else ''
             
             # Worker group replica counts
             worker_groups = {
@@ -2629,7 +2681,7 @@ def deployment_config():
                                     'claimName': 'nfs-ts-framework-pvc',
                                     'mounts': [
                                         {'mountPath': '/DSIPTS-P/output', 'subPath': 'output'},
-                                        {'mountPath': '/DSIPTS-P/data', 'subPath': f"Users/{current_user.username}/{experiment_name}"}
+                                        {'mountPath': '/DSIPTS-P/data', 'subPath': f"instance/uploads/Users/{safe_user}/data"}
                                     ]
                                 },
                                 {
@@ -2644,14 +2696,14 @@ def deployment_config():
                             'run': ['/bin/sh', '-c'],
                             'modelsToTrain': models_to_train,
                             'args': [
-                                f"python train.py{' -m architecture=' + models_to_train if models_to_train else ''} --config-dir={experiment_name} --config-name={config_file_name.replace('.yaml', '') if config_file_name else 'config'};\nsleep infinity"
+                                f"python train.py{' -m architecture=' + models_to_train if models_to_train else ''} --config-dir=config_milan --config-name=config_milan;\nsleep infinity"
                             ]
                         },
                         'configFiles': {
                             'enabled': True if config_file_name else False,
                             'name': config_file_name,
                             'fromDirectory': f"Users/{current_user.username}/{experiment_name}",
-                            'mountPath': f"/DSIPTS-P/config/{experiment_name}"
+                            'mountPath': '/DSIPTS-P/bash_examples/config_milan'
                         }
                     },
                     'workerGroups': [
@@ -2756,13 +2808,44 @@ def deployment_config():
             session.pop('sweeper_experiment_name', None)
             session.pop('experiment_name', None)
             
+            # Store deployment info in session for preview
+            session['deployment_config'] = {
+                'experiment_name': experiment_name,
+                'values_filename': values_filename,
+                'models_to_train': models_to_train,
+                'worker_groups': worker_groups,
+                'replica_count': replica_count
+            }
+            
             flash(f'Deployment configuration saved as {values_filename} successfully!')
-            return redirect(url_for('routes.done'))
+            return redirect(url_for('routes.deployment_preview'))
             
         except Exception as e:
             current_app.logger.error(f"Error saving deployment config: {e}")
             flash('An error occurred while saving the deployment configuration.')
             return redirect(url_for('routes.deployment_config'))
+    
+    # Get architecture files for dropdown
+    safe_user = secure_filename(current_user.username)
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    user_dir = os.path.join(base_upload, safe_user)
+    
+    architecture_files = []
+    if os.path.exists(user_dir):
+        for exp_folder in os.listdir(user_dir):
+            exp_path = os.path.join(user_dir, exp_folder)
+            if os.path.isdir(exp_path):
+                for file in os.listdir(exp_path):
+                    if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
+                        # Check if it's an architecture file
+                        if 'arch' in file.lower() or any(model in file.lower() for model in 
+                            ['autoformer', 'crossformer', 'linear', 'rnn', 'patchtst', 'nlinear', 
+                             'lstm', 'gru', 'transformer', 'informer', 'fedformer']):
+                            architecture_files.append({
+                                'name': file,
+                                'experiment': exp_folder,
+                                'model_type': file.replace('.yaml', '').replace('.yml', '')
+                            })
     
     # Default values for GET request
     default_worker_groups = {
@@ -2776,7 +2859,68 @@ def deployment_config():
                          experiment_name=experiment_name,
                          replica_count=1,
                          models_to_train='',
-                         worker_groups=default_worker_groups)
+                         worker_groups=default_worker_groups,
+                         architecture_files=architecture_files)
+
+@web.route('/deployment_preview', methods=['GET', 'POST'])
+@login_required
+def deployment_preview():
+    """Preview deployment configuration before running experiment."""
+    if request.method == 'POST':
+        # User clicked Run button - redirect to Google
+        flash('Experiment is running in the background!')
+        return redirect('https://www.google.com')
+    
+    # Get deployment config from session
+    deployment_config = session.get('deployment_config', {})
+    
+    # Get experiment details
+    experiment_name = deployment_config.get('experiment_name', 'Unknown')
+    safe_user = secure_filename(current_user.username)
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    exp_dir = os.path.join(base_upload, safe_user, secure_filename(experiment_name))
+    
+    # Get config files in experiment
+    config_files = []
+    if os.path.exists(exp_dir):
+        for file in os.listdir(exp_dir):
+            if file.endswith('_config.yaml'):
+                config_files.append(file)
+    
+    return render_template('deployment_preview.html',
+                         experiment_name=experiment_name,
+                         deployment_config=deployment_config,
+                         config_files=config_files)
+
+@web.route('/run_experiment', methods=['GET'])
+@login_required
+def run_experiment():
+    """Route for Run Experiment button - goes to step 5 sweeper config."""
+    # Get the most recent experiment for this user
+    safe_user = secure_filename(current_user.username)
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    user_dir = os.path.join(base_upload, safe_user)
+    
+    most_recent_exp = None
+    if os.path.exists(user_dir):
+        # Get all experiment directories with their modification times
+        exp_dirs = []
+        for exp_folder in os.listdir(user_dir):
+            exp_path = os.path.join(user_dir, exp_folder)
+            if os.path.isdir(exp_path):
+                mtime = os.path.getmtime(exp_path)
+                exp_dirs.append((exp_folder, mtime))
+        
+        # Sort by modification time and get the most recent
+        if exp_dirs:
+            exp_dirs.sort(key=lambda x: x[1], reverse=True)
+            most_recent_exp = exp_dirs[0][0]
+    
+    # Set the most recent experiment or default
+    session['experiment_name'] = most_recent_exp if most_recent_exp else 'quick_run'
+    
+    # Redirect to step 5 - config selection for sweeper
+    return redirect(url_for('routes.run_experiment_config_selection'))
 
 # Error handlers
 
