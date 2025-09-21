@@ -46,6 +46,67 @@ def get_user_csv_files(user):
     
     return csv_files
 
+def save_single_file_and_redirect(file_type):
+    """Save a single file when coming from experiment explorer and redirect back."""
+    try:
+        safe_user = secure_filename(current_user.username)
+        safe_exp = secure_filename(session['experiment_name'])
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        
+        if file_type == 'config':
+            # Save config file to experiment directory
+            exp_dir = os.path.join(base_upload, safe_user, safe_exp)
+            os.makedirs(exp_dir, exist_ok=True)
+            
+            # Generate unique config filename with format {experiment_name_i}.config
+            counter = 1
+            config_filename = f"{safe_exp}_{counter}.config"
+            while os.path.exists(os.path.join(exp_dir, config_filename)):
+                counter += 1
+                config_filename = f"{safe_exp}_{counter}.config"
+            
+            config_path = os.path.join(exp_dir, config_filename)
+            with open(config_path, 'wb') as f:
+                f.write(session['config_bytes'])
+            
+            flash(f'Configuration file {config_filename} added successfully!')
+            
+        elif file_type == 'data':
+            # Save data file to Data directory
+            csv_filename = session.get('csv_filename', 'data.csv')
+            csv_base = os.path.splitext(csv_filename)[0]
+            data_dir = os.path.join(base_upload, safe_user, 'Data', csv_base)
+            os.makedirs(data_dir, exist_ok=True)
+            
+            csv_path = os.path.join(data_dir, csv_filename)
+            with open(csv_path, 'wb') as f:
+                f.write(session['csv_bytes'])
+            
+            flash(f'Data file {csv_filename} added successfully!')
+            
+        elif file_type == 'architecture':
+            # Save architecture files to Architecture directory
+            arch_dir = os.path.join(base_upload, safe_user, safe_exp, 'Architecture')
+            os.makedirs(arch_dir, exist_ok=True)
+            
+            # This would be handled by the upload_archs route
+            flash('Architecture files added successfully!')
+        
+        # Clean up session
+        session.pop('from_explorer', None)
+        session.pop('config_bytes', None)
+        session.pop('config_filename', None)
+        session.pop('csv_bytes', None)
+        session.pop('csv_filename', None)
+        session.pop('experiment_name', None)
+        
+        return redirect(url_for('routes.experiment_explorer'))
+        
+    except Exception as e:
+        current_app.logger.error(f"Error saving single file: {e}")
+        flash('An error occurred while saving the file.')
+        return redirect(url_for('routes.experiment_explorer'))
+
 def generate_config_template(experiment_name):
     """Generate a template configuration file for the experiment.
     
@@ -179,6 +240,11 @@ def upload_config():
                 return redirect(request.url)
             session['config_filename'] = secure_filename(config_file.filename)
             session['config_bytes'] = config_file.read()
+            
+            # Check if coming from explorer - if so, save file and redirect back
+            if session.get('from_explorer'):
+                return save_single_file_and_redirect('config')
+            
             return redirect(url_for('routes.upload_csv'))
         # Handle saving edited config
         elif 'edited_config' in request.form:
@@ -205,6 +271,11 @@ def upload_config():
             session.modified = True  # Ensure session is saved
             
             current_app.logger.info(f"Session keys after setting config_bytes: {list(session.keys())}")
+            
+            # Check if coming from explorer - if so, save file and redirect back
+            if session.get('from_explorer'):
+                return save_single_file_and_redirect('config')
+            
             return redirect(url_for('routes.upload_csv'))
     
     return render_template('upload_config.html')
@@ -226,6 +297,11 @@ def upload_csv():
             return redirect(request.url)
         session['csv_filename'] = secure_filename(csv_file.filename)
         session['csv_bytes'] = csv_file.read()
+        
+        # Check if coming from explorer - if so, save file and redirect back
+        if session.get('from_explorer'):
+            return save_single_file_and_redirect('data')
+        
         return redirect(url_for('routes.upload_archs'))
     return render_template('upload_csv.html')
 
@@ -291,6 +367,11 @@ def upload_archs():
         session.pop('config_bytes', None)
         session.pop('config_filename', None)
         session.pop('experiment_name', None)
+        
+        # Check if coming from explorer - if so, redirect back to explorer
+        if session.pop('from_explorer', None):
+            flash('Architecture files have been uploaded successfully!')
+            return redirect(url_for('routes.experiment_explorer'))
         
         flash('Your files have been uploaded and processed successfully!')
         return redirect(url_for('routes.done'))
@@ -490,6 +571,11 @@ def process_configured_arch_files():
         session.pop('arch_config', None)
         session.pop('experiment_name', None)
         
+        # Check if coming from explorer - if so, redirect back to explorer
+        if session.pop('from_explorer', None):
+            flash(f'{len(arch_saved)} architecture files have been configured and added successfully!')
+            return redirect(url_for('routes.experiment_explorer'))
+        
         flash(f'Your experiment with {len(arch_saved)} configured architecture files has been created successfully!')
         return redirect(url_for('routes.done'))
         
@@ -579,14 +665,38 @@ def yaml_arch_step1(file_num=1):
     # Get existing configuration for this file if it exists
     file_config = yaml_config['files'].get(str(file_num), {})
     
+    # Set default model type
+    model_type = file_config.get('model_type', 'autotransformer')
+    
+    # Generate default TS name based on model type with incremental numbering if not already set
+    if 'ts_name' not in file_config:
+        # Find existing files with similar names to determine next increment
+        safe_user = secure_filename(current_user.username)
+        safe_exp = secure_filename(session['experiment_name'])
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        exp_dir = os.path.join(base_upload, safe_user, safe_exp)
+        arch_dir = os.path.join(exp_dir, 'Architecture')
+        os.makedirs(arch_dir, exist_ok=True)
+        
+        counter = 1
+        while True:
+            test_filename = f"{model_type}_{counter}.yaml"
+            if not os.path.exists(os.path.join(arch_dir, test_filename)):
+                break
+            counter += 1
+        
+        default_ts_name = f"{model_type}_{counter}"
+    else:
+        default_ts_name = file_config['ts_name']
+    
     return render_template('yaml_arch_step1.html',
                          current_file=file_num,
                          total_files=total_files,
                          # Model config
-                         model_type=file_config.get('model_type', 'autotransformer'),
+                         model_type=model_type,
                          model_retrain=file_config.get('model_retrain', 'true'),
                          # TS config
-                         ts_name=file_config.get('ts_name', 'model'),
+                         ts_name=default_ts_name,
                          ts_version=file_config.get('ts_version', '1'),
                          ts_enrich=file_config.get('ts_enrich', ''),
                          use_covariates=file_config.get('use_covariates', 'true'),
@@ -956,15 +1066,19 @@ def save_yaml_arch_config():
         flash('Please provide a filename for the YAML file.')
         return redirect(url_for('routes.yaml_arch_form', file_num=current_file))
     
+    # Get model type and set TS name same as model type
+    model_type = request.form.get('model_type', 'rnn')
+    ts_name = request.form.get('ts_name', model_type)  # Default to model_type if not edited
+    
     # Collect all form data
     file_config = {
-        'filename': filename,
+        'filename': filename if filename else f"{model_type}.yaml",  # Default filename to model_type.yaml
         'description': request.form.get('description', '').strip(),
         # Model config
-        'model_type': request.form.get('model_type', 'rnn'),
+        'model_type': model_type,
         'model_retrain': request.form.get('model_retrain', 'true'),
         # TS config
-        'ts_name': request.form.get('ts_name', 'lstm'),
+        'ts_name': ts_name,
         'ts_version': request.form.get('ts_version', '1'),
         'ts_enrich': request.form.get('ts_enrich', ''),
         'use_covariates': request.form.get('use_covariates', 'true'),
@@ -1063,13 +1177,26 @@ def process_configured_yaml_arch_files():
         for file_num, file_config in yaml_config['files'].items():
             current_app.logger.info(f"Processing file {file_num}: {file_config}")
             
-            # Generate filename based on user-provided TS name
-            ts_name = file_config.get('ts_name', 'lstm')
-            filename = f"{secure_filename(ts_name)}.yaml"
+            # Generate filename based on user-provided TS name or model type with incremental numbering
+            ts_name = file_config.get('ts_name', '').strip()
+            model_type = file_config.get('model_type', 'lstm')
             
-            # Ensure .yaml extension
-            if not filename.endswith(('.yaml', '.yml')):
-                filename += '.yaml'
+            # Determine base filename (without extension)
+            if not ts_name or ts_name.lower() in ['lstm', 'default', '']:
+                base_name = secure_filename(model_type)
+            else:
+                base_name = secure_filename(ts_name)
+            
+            # Find existing files with similar names to determine next increment
+            counter = 1
+            while True:
+                test_filename = f"{base_name}_{counter}.yaml"
+                if not os.path.exists(os.path.join(arch_dir, test_filename)):
+                    break
+                counter += 1
+                
+            # Set the incremental filename
+            filename = f"{base_name}_{counter}.yaml"
             
             current_app.logger.info(f"Generating YAML content for file: {filename}")
             # Generate YAML content
@@ -1115,6 +1242,12 @@ def process_configured_yaml_arch_files():
         # Keep experiment_name for sweeper workflow - will be cleaned up in sweeper_prompt
         
         current_app.logger.info(f"Successfully completed processing {len(arch_saved)} YAML files")
+        
+        # Check if coming from explorer - if so, redirect back to explorer
+        if session.pop('from_explorer', None):
+            flash(f'{len(arch_saved)} YAML training files have been configured and added successfully!')
+            return redirect(url_for('routes.experiment_explorer'))
+        
         flash(f'Your experiment with {len(arch_saved)} configured YAML training files has been created successfully!')
         return redirect(url_for('routes.sweeper_prompt'))
         
@@ -1473,7 +1606,7 @@ def experiment_explorer():
                 # Get configuration files
                 config_files = []
                 for file in os.listdir(exp_path):
-                    if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
+                    if (file.lower().endswith(('.yaml', '.yml', '.config')) or 'config' in file.lower()) and os.path.isfile(os.path.join(exp_path, file)) and not file.startswith('values_'):
                         # Path for file links (serve_upload route)
                         file_link_path = os.path.join(secure_filename(current_user.username), experiment_name, file)
                         # Path for preview data attributes (view_file_content route)
@@ -1687,6 +1820,10 @@ def template_optimizer_form():
             # For default datasets (electricity, traffic, etc.), no CSV setup needed
         
         flash('Configuration generated successfully!')
+        
+        # Check if coming from explorer - if so, save file and redirect back
+        if session.get('from_explorer'):
+            return save_single_file_and_redirect('config')
         
         # Conditional routing: skip CSV upload if dataset selected, otherwise go to CSV upload
         if dataset_selected:
@@ -1963,6 +2100,10 @@ def save_form_config():
         
         flash('Configuration saved successfully!')
         
+        # Check if coming from explorer - if so, save file and redirect back
+        if session.get('from_explorer'):
+            return save_single_file_and_redirect('config')
+        
         # Conditional routing: skip CSV upload if dataset selected, otherwise go to CSV upload
         if dataset_selected:
             current_app.logger.info(f"Dataset selected from user files, skipping CSV upload step")
@@ -2050,10 +2191,8 @@ def sweeper_prompt():
         if add_sweeper:
             return redirect(url_for('routes.sweeper_config_selection'))
         else:
-            # User doesn't want sweeper, complete the experiment
-            session.pop('experiment_name', None)
-            flash('Your experiment has been completed successfully!')
-            return redirect(url_for('routes.done'))
+            # User doesn't want sweeper, go to config selection before deployment config
+            return redirect(url_for('routes.select_config_for_run'))
     
     return render_template('sweeper_prompt.html', experiment_name=session['experiment_name'])
 
@@ -2250,7 +2389,8 @@ def run_experiment_sweeper_preview():
             session.pop('sweeper_config_path', None)
             
             flash('Hyperparameter sweeper has been added to your config file successfully!')
-            return redirect(url_for('routes.deployment_config'))
+            # Always go through config selection before deployment config
+            return redirect(url_for('routes.select_config_for_run'))
             
         except Exception as e:
             current_app.logger.error(f"Error applying sweeper config: {e}")
@@ -2478,7 +2618,8 @@ def sweeper_preview():
             session.pop('sweeper_config', None)
             
             flash('Hyperparameter sweeper has been added to your config file successfully!')
-            return redirect(url_for('routes.deployment_config'))
+            # Always go through config selection before deployment config
+            return redirect(url_for('routes.select_config_for_run'))
             
         except Exception as e:
             current_app.logger.error(f"Error applying sweeper config: {e}")
@@ -2577,14 +2718,22 @@ def preview_sweeper_yaml():
         return jsonify({'error': 'Failed to generate preview. Check form data for errors.'}), 400
 
 @web.route('/deployment_config', methods=['GET', 'POST'])
+@web.route('/deployment_config/<experiment_name>', methods=['GET', 'POST'])
 @login_required
-def deployment_config():
+def deployment_config(experiment_name=None):
     """Final step: Configure deployment settings for Kubernetes/Helm."""
-    # Get experiment name from session or use a default
-    experiment_name = session.get('sweeper_experiment_name') or session.get('experiment_name', 'default')
+    
+    # Check if config file has been selected for run experiment workflow
+    if not session.get('run_config_filename') and not session.get('config_file_name'):
+        # No config selected, redirect to config selection
+        return redirect(url_for('routes.select_config_for_run'))
+    
+    # Get experiment name from URL parameter, session, or use default
+    if not experiment_name:
+        experiment_name = session.get('run_experiment_name') or session.get('sweeper_experiment_name') or session.get('experiment_name', 'default')
     
     # Get config file info for PVC mounting
-    config_file_name = session.get('config_file_name', '')
+    config_file_name = session.get('run_config_filename') or session.get('config_file_name', '')
     config_file_path = session.get('config_file_path', '')
     
     if request.method == 'POST':
@@ -2695,9 +2844,7 @@ def deployment_config():
                             'enabled': True,
                             'run': ['/bin/sh', '-c'],
                             'modelsToTrain': models_to_train,
-                            'args': [
-                                f"python train.py{' -m architecture=' + models_to_train if models_to_train else ''} --config-dir=config_milan --config-name=config_milan;\nsleep infinity"
-                            ]
+                            'args': 'python train.py {{ if .Values.dsipts_p.defaults.command.modelsToTrain }}-m architecture={{ .Values.dsipts_p.defaults.command.modelsToTrain }}{{ end }} --config-dir=config_milan --config-name=config_milan;\nsleep infinity'
                         },
                         'configFiles': {
                             'enabled': True if config_file_name else False,
@@ -2801,12 +2948,28 @@ def deployment_config():
             # Save values.yaml in the experiment folder
             values_filename = f'values_{safe_exp}.yaml'
             values_path = os.path.join(exp_dir, values_filename)
+            
+            # Custom YAML dump to handle the args format correctly
+            yaml_content = yaml.dump(deployment_config, default_flow_style=False, sort_keys=False)
+            
+            # Replace the args format to use literal block scalar
+            args_pattern = r"args: 'python train\.py.*?sleep infinity'"
+            args_replacement = """args: 
+          - |
+          python train.py {{ if .Values.dsipts_p.defaults.command.modelsToTrain }}-m architecture={{ .Values.dsipts_p.defaults.command.modelsToTrain }}{{ end }} --config-dir=config_milan --config-name=config_milan;
+          sleep infinity"""
+            
+            import re
+            yaml_content = re.sub(args_pattern, args_replacement, yaml_content, flags=re.DOTALL)
+            
             with open(values_path, 'w') as f:
-                yaml.dump(deployment_config, f, default_flow_style=False, sort_keys=False)
+                f.write(yaml_content)
             
             # Clean up session
             session.pop('sweeper_experiment_name', None)
             session.pop('experiment_name', None)
+            session.pop('run_config_filename', None)
+            session.pop('run_experiment_name', None)
             
             # Store deployment info in session for preview
             session['deployment_config'] = {
@@ -2835,16 +2998,38 @@ def deployment_config():
         for exp_folder in os.listdir(user_dir):
             exp_path = os.path.join(user_dir, exp_folder)
             if os.path.isdir(exp_path):
+                # Check main experiment directory for architecture files
                 for file in os.listdir(exp_path):
-                    if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, file)):
-                        # Check if it's an architecture file
-                        if 'arch' in file.lower() or any(model in file.lower() for model in 
-                            ['autoformer', 'crossformer', 'linear', 'rnn', 'patchtst', 'nlinear', 
-                             'lstm', 'gru', 'transformer', 'informer', 'fedformer']):
+                    file_path = os.path.join(exp_path, file)
+                    if file.lower().endswith(('.yaml', '.yml')) and os.path.isfile(file_path):
+                        # Check if it's an architecture file (not config file)
+                        if not file.endswith('_config.yaml') and not file.startswith('values_'):
+                            # Try to read the file to check if it's an architecture file
+                            try:
+                                with open(file_path, 'r') as f:
+                                    content = f.read()
+                                    # Check if it contains architecture-related fields
+                                    if 'model_type' in content or 'ts_name' in content or 'model_configs' in content:
+                                        model_name = file.replace('.yaml', '').replace('.yml', '')
+                                        architecture_files.append({
+                                            'name': file,
+                                            'experiment': exp_folder,
+                                            'model_type': model_name
+                                        })
+                            except:
+                                pass
+                
+                # Check Architecture subdirectory
+                arch_dir = os.path.join(exp_path, 'Architecture')
+                if os.path.exists(arch_dir) and os.path.isdir(arch_dir):
+                    for file in os.listdir(arch_dir):
+                        file_path = os.path.join(arch_dir, file)
+                        if file.lower().endswith(('.yaml', '.yml', '.py')) and os.path.isfile(file_path):
+                            model_name = os.path.splitext(file)[0]
                             architecture_files.append({
                                 'name': file,
-                                'experiment': exp_folder,
-                                'model_type': file.replace('.yaml', '').replace('.yml', '')
+                                'experiment': f"{exp_folder}/Architecture",
+                                'model_type': model_name
                             })
     
     # Default values for GET request
@@ -2866,11 +3051,6 @@ def deployment_config():
 @login_required
 def deployment_preview():
     """Preview deployment configuration before running experiment."""
-    if request.method == 'POST':
-        # User clicked Run button - redirect to Google
-        flash('Experiment is running in the background!')
-        return redirect('https://www.google.com')
-    
     # Get deployment config from session
     deployment_config = session.get('deployment_config', {})
     
@@ -2887,15 +3067,245 @@ def deployment_preview():
             if file.endswith('_config.yaml'):
                 config_files.append(file)
     
+    if request.method == 'POST':
+        # User clicked Run button - stay on page with embedded iframe
+        return render_template('deployment_preview.html',
+                             experiment_name=experiment_name,
+                             deployment_config=deployment_config,
+                             config_files=config_files,
+                             show_iframe=True)
+    
     return render_template('deployment_preview.html',
                          experiment_name=experiment_name,
                          deployment_config=deployment_config,
-                         config_files=config_files)
+                         config_files=config_files,
+                         show_iframe=False)
+
+@web.route('/add_file_to_experiment/<experiment_name>', methods=['GET', 'POST'])
+@web.route('/add_file_to_experiment/<experiment_name>/<file_type>', methods=['GET', 'POST'])
+@login_required
+def add_file_to_experiment(experiment_name, file_type='config'):
+    """Add a new file to an existing experiment."""
+    if request.method == 'POST':
+        file = request.files.get('file')
+        if file and file.filename:
+            safe_user = secure_filename(current_user.username)
+            safe_exp = secure_filename(experiment_name)
+            base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+            
+            # Determine target directory based on file type
+            if file_type == 'data':
+                # For data files, save to Data/{csv_base} directory
+                filename = secure_filename(file.filename)
+                csv_base = os.path.splitext(filename)[0]
+                target_dir = os.path.join(base_upload, safe_user, 'Data', csv_base)
+            elif file_type == 'architecture':
+                # For architecture files, save to experiment/Architecture directory
+                target_dir = os.path.join(base_upload, safe_user, safe_exp, 'Architecture')
+            else:
+                # For config files, save to experiment directory
+                target_dir = os.path.join(base_upload, safe_user, safe_exp)
+            
+            os.makedirs(target_dir, exist_ok=True)
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(target_dir, filename)
+            file.save(file_path)
+            
+            flash(f'File {filename} added to experiment {experiment_name} ({file_type} files)')
+            return redirect(url_for('routes.experiment_explorer'))
+    
+    return render_template('add_file.html', experiment_name=experiment_name, file_type=file_type)
+
+@web.route('/edit_file_in_experiment/<experiment_name>', methods=['GET', 'POST'])
+@web.route('/edit_file_in_experiment/<experiment_name>/<file_type>', methods=['GET', 'POST'])
+@login_required
+def edit_file_in_experiment(experiment_name, file_type='config'):
+    """Edit a file in an existing experiment."""
+    safe_user = secure_filename(current_user.username)
+    safe_exp = secure_filename(experiment_name)
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    
+    # Determine source directories based on file type
+    directories = []
+    if file_type == 'data':
+        # Look in Data directories
+        data_base_dir = os.path.join(base_upload, safe_user, 'Data')
+        if os.path.exists(data_base_dir):
+            for data_dir in os.listdir(data_base_dir):
+                data_path = os.path.join(data_base_dir, data_dir)
+                if os.path.isdir(data_path):
+                    directories.append(data_path)
+    elif file_type == 'architecture':
+        # Look in experiment/Architecture directory
+        arch_dir = os.path.join(base_upload, safe_user, safe_exp, 'Architecture')
+        if os.path.exists(arch_dir):
+            directories.append(arch_dir)
+    else:
+        # Look in experiment directory for config files
+        exp_dir = os.path.join(base_upload, safe_user, safe_exp)
+        if os.path.exists(exp_dir):
+            directories.append(exp_dir)
+    
+    # Get list of files from all relevant directories
+    files = []
+    for directory in directories:
+        if os.path.exists(directory):
+            for file in os.listdir(directory):
+                file_path = os.path.join(directory, file)
+                if os.path.isfile(file_path):
+                    # Create the preview path for view_file_content route
+                    # Remove the base upload folder and Users prefix to get relative path
+                    relative_path = os.path.relpath(file_path, os.path.join(base_upload, 'Users'))
+                    preview_path = os.path.join('uploads', 'Users', relative_path).replace('\\', '/')
+                    
+                    files.append({
+                        'name': file,
+                        'path': file_path,
+                        'preview_path': preview_path,
+                        'directory': directory
+                    })
+    
+    if request.method == 'POST':
+        selected_file = request.form.get('selected_file')
+        content = request.form.get('content')
+        
+        if selected_file and content:
+            # Find the full path for the selected file
+            file_path = None
+            for file_info in files:
+                if file_info['name'] == selected_file:
+                    file_path = file_info['path']
+                    break
+            
+            if file_path:
+                with open(file_path, 'w') as f:
+                    f.write(content)
+                
+                flash(f'File {selected_file} updated successfully')
+                return redirect(url_for('routes.experiment_explorer'))
+    
+    return render_template('edit_file.html', experiment_name=experiment_name, files=files, file_type=file_type)
+
+@web.route('/add_config_from_explorer/<experiment_name>')
+@login_required
+def add_config_from_explorer(experiment_name):
+    """Redirect to config upload step from experiment explorer."""
+    # Set experiment name in session and redirect to config upload step
+    session['experiment_name'] = experiment_name
+    session['from_explorer'] = True
+    return redirect(url_for('routes.upload_config'))
+
+@web.route('/add_arch_from_explorer/<experiment_name>')
+@login_required
+def add_arch_from_explorer(experiment_name):
+    """Redirect to architecture step from experiment explorer."""
+    # Set experiment name in session and redirect to architecture step (step 4) with all options
+    session['experiment_name'] = experiment_name
+    session['from_explorer'] = True
+    # Need to set dummy config and csv to pass validation
+    session['config_bytes'] = b'# Dummy config for adding architecture files'
+    session['config_filename'] = 'dummy_config.yaml'
+    session['csv_bytes'] = b'# Dummy CSV for adding architecture files'
+    session['csv_filename'] = 'dummy_data.csv'
+    return redirect(url_for('routes.upload_archs'))
+
+@web.route('/add_data_from_explorer/<experiment_name>')
+@login_required
+def add_data_from_explorer(experiment_name):
+    """Redirect to CSV upload step from experiment explorer."""
+    # Set experiment name in session and redirect to CSV upload step
+    session['experiment_name'] = experiment_name
+    session['from_explorer'] = True
+    # Need to set dummy config to pass validation
+    session['config_bytes'] = b'# Dummy config for adding data files'
+    session['config_filename'] = 'dummy_config.yaml'
+    return redirect(url_for('routes.upload_csv'))
 
 @web.route('/run_experiment', methods=['GET'])
 @login_required
 def run_experiment():
-    """Route for Run Experiment button - goes to step 5 sweeper config."""
+    """Route for Run Experiment button - first select config file."""
+    # Clear any previous config selection to ensure user always selects a config file
+    session.pop('run_config_filename', None)
+    session.pop('run_experiment_name', None)
+    session.pop('config_file_name', None)
+    session.pop('config_file_path', None)
+    return redirect(url_for('routes.select_config_for_run'))
+
+@web.route('/select_config_for_run', methods=['GET', 'POST'])
+@login_required
+def select_config_for_run():
+    """Select which config file to use for running the experiment."""
+    if request.method == 'POST':
+        selected_config = request.form.get('selected_config')
+        if not selected_config:
+            flash('Please select a configuration file to run the experiment.')
+            return redirect(request.url)
+        
+        # Parse the selected config (format: experiment_name/config_filename)
+        try:
+            experiment_name, config_filename = selected_config.split('/', 1)
+            session['run_experiment_name'] = experiment_name
+            session['run_config_filename'] = config_filename
+            return redirect(url_for('routes.deployment_config', experiment_name=experiment_name))
+        except ValueError:
+            flash('Invalid configuration file selection.')
+            return redirect(request.url)
+    
+    # GET request - show config file selection
+    safe_user = secure_filename(current_user.username)
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    user_dir = os.path.join(base_upload, safe_user)
+    
+    config_files = []
+    if os.path.exists(user_dir):
+        for exp_folder in os.listdir(user_dir):
+            exp_path = os.path.join(user_dir, exp_folder)
+            if os.path.isdir(exp_path) and exp_folder != 'Data':  # Skip Data folder
+                for file in os.listdir(exp_path):
+                    if file.endswith('.config') or file.endswith('_config.yaml') or (file.endswith('.yaml') and 'config' in file.lower()):
+                        config_files.append({
+                            'experiment': exp_folder,
+                            'filename': file,
+                            'full_path': f"{exp_folder}/{file}"
+                        })
+    
+    return render_template('select_config_for_run.html', config_files=config_files)
+
+@web.route('/get_next_model_counter', methods=['POST'])
+@login_required
+def get_next_model_counter():
+    """Get the next available counter for a model type."""
+    try:
+        data = request.get_json()
+        model_type = data.get('model_type', 'lstm')
+        experiment_name = data.get('experiment_name') or session.get('experiment_name', 'default')
+        
+        safe_user = secure_filename(current_user.username)
+        safe_exp = secure_filename(experiment_name)
+        base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+        exp_dir = os.path.join(base_upload, safe_user, safe_exp)
+        arch_dir = os.path.join(exp_dir, 'Architecture')
+        
+        # Find next available counter
+        counter = 1
+        if os.path.exists(arch_dir):
+            while True:
+                test_filename = f"{model_type}_{counter}.yaml"
+                if not os.path.exists(os.path.join(arch_dir, test_filename)):
+                    break
+                counter += 1
+        
+        return jsonify({'success': True, 'counter': counter})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting next model counter: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@web.route('/deployment_config_old', methods=['GET'])
+@login_required
+def deployment_config_old():
+    """Old route for Run Experiment button - goes to step 5 sweeper config."""
     # Get the most recent experiment for this user
     safe_user = secure_filename(current_user.username)
     base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Edit {{ file_type|title }} File in Experiment: {{ experiment_name }}</h2>
+    
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        {% if file_type == 'data' %}
+            Editing data files from your user data folder. Changes will affect all experiments using this data.
+        {% elif file_type == 'architecture' %}
+            Editing architecture files from this experiment's Architecture folder.
+        {% else %}
+            Editing configuration files from this experiment's main folder.
+        {% endif %}
+    </div>
+    
+    <form method="POST">
+        <div class="mb-3">
+            <label for="selected_file" class="form-label">Select {{ file_type|title }} File to Edit</label>
+            <select class="form-control" id="selected_file" name="selected_file" onchange="loadFileContent()" required>
+                <option value="">-- Select a file --</option>
+                {% for file in files %}
+                <option value="{{ file.name if file is mapping else file }}" data-preview-path="{{ file.preview_path if file is mapping else '' }}">
+                    {{ file.name if file is mapping else file }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="mb-3">
+            <label for="content" class="form-label">File Content</label>
+            <textarea class="form-control" id="content" name="content" rows="20" style="font-family: monospace;" placeholder="Select a file above to load its content..."></textarea>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+
+<script>
+async function loadFileContent() {
+    const select = document.getElementById('selected_file');
+    const textarea = document.getElementById('content');
+    const selectedFile = select.value;
+    
+    if (!selectedFile) {
+        textarea.value = '';
+        return;
+    }
+    
+    try {
+        // Get the preview path from the selected option's data attribute
+        const selectedOption = select.options[select.selectedIndex];
+        const previewPath = selectedOption.getAttribute('data-preview-path');
+        
+        if (previewPath) {
+            textarea.value = 'Loading...';
+            const response = await fetch(`/view_file_content?filepath=${encodeURIComponent(previewPath)}`);
+            if (response.ok) {
+                const data = await response.json();
+                textarea.value = data.content;
+            } else {
+                const error = await response.json();
+                textarea.value = `Error loading file: ${error.error || 'Unknown error'}. Please enter content manually.`;
+            }
+        } else {
+            textarea.value = 'Please enter file content manually.';
+        }
+    } catch (error) {
+        console.error('Error loading file content:', error);
+        textarea.value = 'Error loading file content. Please enter content manually.';
+    }
+}
+</script>
+{% endblock %}

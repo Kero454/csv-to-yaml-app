@@ -11,7 +11,7 @@
             <a href="{{ url_for('auth.login') }}">Login</a>
             {% else %}
             <a href="{{ url_for('routes.experiment') }}">New Experiment</a>
-            <a href="{{ url_for('routes.run_experiment') }}">Run Experiment</a>
+            <a href="{{ url_for('routes.deployment_config') }}">Run Experiment</a>
             <a href="{{ url_for('auth.logout') }}">Logout</a>
             {% endif %}
         </div>

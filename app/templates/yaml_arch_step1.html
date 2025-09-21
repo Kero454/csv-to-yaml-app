@@ -82,7 +82,7 @@
                             <input type="text" class="form-control" id="ts_name" name="ts_name" 
                                    value="{{ ts_name if ts_name else '' }}" 
                                    placeholder="e.g., lstm, transformer, custom_model" required>
-                            <small class="form-text text-muted">Enter the time series model name (will also be used as model name).</small>
+                            <small class="form-text text-muted">Enter the time series model name (auto-filled from model type, but editable).</small>
                         </div>
                     </div>
                     <div class="col-md-4">
@@ -174,4 +174,47 @@
         </div>
     </form>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modelTypeSelect = document.getElementById('model_type');
+    const tsNameInput = document.getElementById('ts_name');
+    let userModifiedTsName = false;
+    
+    // Track if user manually modified the TS name
+    tsNameInput.addEventListener('input', function() {
+        userModifiedTsName = true;
+    });
+    
+    // Update TS name when model type changes (only if user hasn't manually modified it)
+    modelTypeSelect.addEventListener('change', function() {
+        if (!userModifiedTsName) {
+            const selectedModelType = this.value;
+            // Find next available counter for this model type
+            fetch('/get_next_model_counter', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model_type: selectedModelType,
+                    experiment_name: '{{ session.experiment_name }}'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    tsNameInput.value = selectedModelType + '_' + data.counter;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                // Fallback to simple naming
+                tsNameInput.value = selectedModelType + '_1';
+            });
+        }
+    });
+});
+</script>
+
 {% endblock %}

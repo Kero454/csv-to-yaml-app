@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Add {{ file_type|title }} File to Experiment: {{ experiment_name }}</h2>
+    
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        {% if file_type == 'data' %}
+            Data files will be saved to your user data folder and can be reused across experiments.
+        {% elif file_type == 'architecture' %}
+            Architecture files will be saved to the Architecture folder of this experiment.
+        {% else %}
+            Configuration files will be saved to the main experiment folder.
+        {% endif %}
+    </div>
+    
+    <form method="POST" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label for="file" class="form-label">Select {{ file_type|title }} File to Upload</label>
+            <input type="file" class="form-control" id="file" name="file" required>
+            {% if file_type == 'data' %}
+                <div class="form-text">Supported formats: CSV files</div>
+            {% elif file_type == 'architecture' %}
+                <div class="form-text">Supported formats: Python (.py), YAML (.yaml, .yml), JSON (.json), Text (.txt)</div>
+            {% else %}
+                <div class="form-text">Supported formats: YAML (.yaml, .yml), JSON (.json)</div>
+            {% endif %}
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Upload File</button>
+        <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

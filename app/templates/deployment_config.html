@@ -45,28 +45,29 @@
                         <div class="mb-4">
                             <h5 class="text-success mb-3">
                                 <i class="fas fa-brain me-2"></i>
-                                Models to Train
+                                Architecture Files to Train
                             </h5>
                             <div class="row">
                                 <div class="col-md-8">
-                                    <label class="form-label">Select Models to Train (at least one)</label>
+                                    <label class="form-label">Select Architecture Files (at least one)</label>
+                                    {% if architecture_files %}
                                     <div class="border rounded p-3" style="max-height: 250px; overflow-y: auto;">
-                                        {% set models = [
-                                            'autoformer', 'lstm', 'crossformer', 'd3vae', 'diffusion',
-                                            'dilated_conv', 'dilated_conv_ed', 'dlinear', 'rnn', 'informer',
-                                            'linear', 'nlinear', 'patchtst', 'presistent', 'tft', 'xlstm'
-                                        ] %}
-                                        {% for model in models %}
+                                        {% for arch in architecture_files %}
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="modelsToTrain" 
-                                                   value="{{ model }}" id="model_{{ model }}">
-                                            <label class="form-check-label" for="model_{{ model }}">
-                                                {{ model }}
+                                                   value="{{ arch.model_type }}" id="arch_{{ loop.index }}">
+                                            <label class="form-check-label" for="arch_{{ loop.index }}">
+                                                {{ arch.experiment }}/{{ arch.name }}
                                             </label>
                                         </div>
                                         {% endfor %}
                                     </div>
-                                    <div class="form-text">Select one or more models to train</div>
+                                    <div class="form-text">Select one or more architecture files to train</div>
+                                    {% else %}
+                                    <div class="alert alert-warning">
+                                        No architecture files found. Please configure architecture files first.
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>

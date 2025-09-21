@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Select Configuration File - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-cog me-2"></i>
+                        Select Configuration File
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <p class="text-muted">Choose which configuration file you want to use to run your experiment.</p>
+                    </div>
+
+                    {% if config_files %}
+                    <form method="post">
+                        <div class="mb-4">
+                            <label class="form-label">Available Configuration Files</label>
+                            <div class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
+                                {% for config in config_files %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_config" 
+                                           value="{{ config.full_path }}" id="config_{{ loop.index }}" required>
+                                    <label class="form-check-label" for="config_{{ loop.index }}">
+                                        <strong>{{ config.experiment }}</strong> / {{ config.filename }}
+                                        <small class="text-muted d-block">Experiment: {{ config.experiment }}</small>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-between">
+                            <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>
+                                Back to Experiments
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-rocket me-2"></i>
+                                Continue to Deployment
+                            </button>
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>No Configuration Files Found</strong>
+                        <p class="mb-0 mt-2">You don't have any configuration files yet. Please create an experiment with configuration files first.</p>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>
+                            Back to Experiments
+                        </a>
+                        <a href="{{ url_for('routes.experiment') }}" class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i>
+                            Create New Experiment
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
