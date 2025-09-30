@@ -29,9 +29,22 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: uploads
-              mountPath: {{ .Values.env.uploadFolder }}
+            # - name: uploads
+            #   mountPath: {{ .Values.env.uploadFolder }}
+            - mountPath: {{ .Values.env.uploadFolder }}
+              name: nfs-ts-framework-pv
+              subPath: frontend_uploads
+            - name: ssh-key
+              mountPath: /root/.ssh
+              readOnly: true
       volumes:
-        - name: uploads
+        # - name: uploads
+        #   persistentVolumeClaim:
+        #     claimName: {{ include "Helm.fullname" . }}-pvc
+        - name: nfs-ts-framework-pv
           persistentVolumeClaim:
-            claimName: {{ include "Helm.fullname" . }}-pvc
+            claimName: nfs-ts-framework-pvc
+        - name: ssh-key
+          secret:
+            secretName: ssh-key-secret
+            defaultMode: 0600

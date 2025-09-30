@@ -1,6 +1,8 @@
 # Base Python image
 FROM python:3.10-slim
 
+RUN apt-get update && apt-get install -y openssh-client
+
 # Prevents Python from writing .pyc files and buffers
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

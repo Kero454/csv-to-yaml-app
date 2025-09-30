@@ -8,10 +8,11 @@ image:
 
 # Service configuration
 service:
-  type: ClusterIP
+  type: NodePort
   port: 80
   targetPort: 5000
-
+  nodePort: 30888
+  
 # Persistent Volume Claim configuration
 pvc:
   accessModes:
@@ -27,7 +28,7 @@ resources:
     memory: "128Mi"
   limits:
     cpu: "500m"
-    memory: "256Mi"
+    memory: "512Mi"
 
 # Environment variables
 env:

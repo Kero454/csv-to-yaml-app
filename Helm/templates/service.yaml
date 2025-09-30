@@ -7,10 +7,16 @@ metadata:
     {{- include "Helm.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
+  # ports:
+  #   - port: {{ .Values.service.port }}
+  #     targetPort: {{ .Values.service.targetPort }}
+  #     protocol: TCP
+  #     name: http
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: {{ .Values.service.targetPort }}
+    - nodePort: {{ .Values.service.nodePort }}
+      port: {{ .Values.service.port }}
       protocol: TCP
       name: http
+      targetPort: {{ .Values.service.targetPort }}
   selector:
     {{- include "Helm.selectorLabels" . | nindent 4 }}
