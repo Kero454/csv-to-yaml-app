@@ -1450,6 +1450,58 @@ def serve_upload(filepath):
     return send_file(file_abs_path)
 
 
+@web.route('/save_file_content', methods=['POST'])
+@login_required
+def save_file_content():
+    """Save edited file content directly."""
+    try:
+        data = request.get_json()
+        filepath = data.get('filepath', '')
+        filename = data.get('filename', '')
+        experiment = data.get('experiment', '')
+        filetype = data.get('filetype', '')
+        content = data.get('content', '')
+        
+        # Clean the filepath if it starts with 'uploads/'
+        if filepath.startswith('uploads/'):
+            filepath = filepath[8:]  # Remove 'uploads/' prefix
+        
+        # Security check: ensure the filepath belongs to the current user
+        original_username = current_user.username
+        safe_user = secure_filename(current_user.username)
+        # Handle both forward slash and backslash separators
+        path_parts = filepath.replace('\\', '/').split('/')
+        
+        # Find the username part in the path (check both original and sanitized)
+        username_found = False
+        for i, part in enumerate(path_parts):
+            if part == safe_user or part == original_username:
+                # Username should be first or second after "Users"
+                if i <= 2 and (i == 0 or path_parts[0] == 'Users' or (path_parts[0] == 'Users' and path_parts[1] == '..')):
+                    username_found = True
+                    break
+        
+        if not username_found:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Build the full file path
+        upload_folder = current_app.config['UPLOAD_FOLDER']
+        full_path = os.path.join(upload_folder, 'Users', filepath)
+        
+        # Verify the file exists and is within allowed directories
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Write the content to the file
+        with open(full_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return jsonify({'success': True, 'message': 'File saved successfully'})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error saving file content: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @web.route('/view_file_content')
 @login_required
 def view_file_content():
@@ -1488,10 +1540,36 @@ def view_file_content():
     current_app.logger.info(f"Current user: {current_user.username}, Sanitized: {sanitized_username}, User ID: {current_user.id}")
     current_app.logger.info(f"Relative path: {relative_path}")
     current_app.logger.info(f"Expected prefix: {sanitized_username}/")
-    if not relative_path.startswith(sanitized_username + '/'):
-        current_app.logger.warning(f"Username check failed: {relative_path} does not start with {sanitized_username}/")
+    
+    # Check if the path starts with the sanitized username
+    # Handle both forward slash and backslash separators
+    path_parts = relative_path.replace('\\', '/').split('/')
+    
+    # The path might be "Users/username/..." or just "username/..."
+    # We need to check for both the original username and sanitized username
+    original_username = current_user.username
+    sanitized_username = secure_filename(current_user.username)
+    
+    # Find the username part in the path (check both original and sanitized)
+    username_index = -1
+    found_username = None
+    for i, part in enumerate(path_parts):
+        if part == sanitized_username or part == original_username:
+            username_index = i
+            found_username = part
+            break
+    
+    if username_index == -1:
+        current_app.logger.warning(f"Username check failed: neither original '{original_username}' nor sanitized '{sanitized_username}' found in path parts {path_parts}")
         current_app.logger.warning(f"User {current_user.id} ({current_user.username}) attempting to access other user's file at {relative_path}")
-        return jsonify({'error': 'Access denied.'}), 403
+        return jsonify({'error': 'Access denied. Username not found in path.'}), 403
+    
+    # If username is found but not in the expected position (should be first or second after "Users")
+    if username_index > 2 or (username_index == 1 and path_parts[0] != 'Users') or (username_index == 2 and not (path_parts[0] == 'Users' and path_parts[1] == '..')):
+        current_app.logger.warning(f"Username check failed: username '{found_username}' found at unexpected position {username_index} in path {path_parts}")
+        current_app.logger.warning(f"Path parts: {path_parts}, username_index: {username_index}, path_parts[0]: '{path_parts[0] if path_parts else 'EMPTY'}'")
+        error_msg = f'Access denied. Invalid path structure. Username "{found_username}" at position {username_index} in path {path_parts}'
+        return jsonify({'error': error_msg}), 403
     
     current_app.logger.info(f"Username check passed")
 
@@ -2747,6 +2825,11 @@ def deployment_config(experiment_name=None):
             models_list = request.form.getlist('modelsToTrain')
             models_to_train = ','.join(models_list) if models_list else ''
             
+            # Validate that at least one architecture file is selected
+            if not models_to_train:
+                flash('Please select at least one architecture file to train.')
+                return redirect(url_for('routes.deployment_config', experiment_name=experiment_name))
+            
             # Worker group replica counts
             worker_groups = {
                 'a100-workers': {'replicaCount': int(request.form.get('a100_replicas', 1))},
@@ -3343,3 +3426,5 @@ def internal_error(error):
     db.session.rollback()
     current_app.logger.error(f'Server error: {error}', exc_info=True)
     return render_template('error.html', error='Internal server error', code=500), 500
+
+

@@ -1,0 +1,13 @@
+architecture_files:
+- description: YAML training configuration 1 for ka
+  filename: linear_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 2 for ka
+  filename: lstm_1_1.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: Traffic.csv
+experiment: ka
+experiment_config_file: ka_config.yaml
+timestamp: '2025-10-02T15:01:25.630302'
+user: khal

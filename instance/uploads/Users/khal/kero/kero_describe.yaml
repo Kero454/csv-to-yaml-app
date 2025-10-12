@@ -1,0 +1,16 @@
+architecture_files:
+- description: YAML training configuration 1 for kero
+  filename: lstm_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 2 for kero
+  filename: autotransformer_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 3 for kero
+  filename: persistent_1_1.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: Traffic.csv
+experiment: kero
+experiment_config_file: kero_config.yaml
+timestamp: '2025-10-02T14:52:07.323591'
+user: khal

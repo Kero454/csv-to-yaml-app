@@ -43,6 +43,7 @@
                                                 </span>
                                                  <div>
                                                      <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
+                                                     <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}" data-experiment="{{ experiment.name }}" data-filetype="config">Edit</button>
                                                      <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
                                                  </div>
                                              </li>
@@ -69,6 +70,7 @@
                                                 </span>
                                                  <div>
                                                      <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
+                                                     <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}" data-experiment="{{ experiment.name }}" data-filetype="architecture">Edit</button>
                                                      <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
                                                  </div>
                                              </li>
@@ -95,6 +97,7 @@
                                                 </span>
                                                  <div>
                                                      <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
+                                                     <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}" data-experiment="{{ experiment.name }}" data-filetype="data">Edit</button>
                                                      <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
                                                  </div>
                                              </li>
@@ -113,6 +116,25 @@
             You haven't created any experiments yet. Click the button above to create your first experiment.
         </div>
     {% endif %}
+</div>
+
+<!-- File Edit Modal -->
+<div class="modal fade" id="fileEditModal" tabindex="-1" aria-labelledby="fileEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fileEditModalLabel">Edit File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <textarea id="file-edit-content" class="form-control" style="font-family: monospace; min-height: 400px;" rows="20"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-edit-btn">Save Changes</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- File Preview Modal -->
@@ -174,6 +196,84 @@ document.addEventListener('DOMContentLoaded', function() {
                 modalContent.textContent = 'An unexpected error occurred.';
             }
         });
+    });
+
+    // Handle Edit buttons
+    const editModal = new bootstrap.Modal(document.getElementById('fileEditModal'));
+    const editModalTitle = document.getElementById('fileEditModalLabel');
+    const editModalContent = document.getElementById('file-edit-content');
+    const saveEditBtn = document.getElementById('save-edit-btn');
+    let currentEditFile = null;
+
+    document.querySelectorAll('.edit-btn').forEach(button => {
+        button.addEventListener('click', async function() {
+            const filepath = this.dataset.filepath;
+            const filename = this.dataset.filename;
+            const experiment = this.dataset.experiment;
+            const filetype = this.dataset.filetype;
+
+            currentEditFile = {
+                filepath: filepath,
+                filename: filename,
+                experiment: experiment,
+                filetype: filetype
+            };
+
+            editModalTitle.textContent = `Edit: ${filename}`;
+            editModalContent.value = 'Loading...';
+            editModal.show();
+
+            try {
+                const response = await fetch(`/view_file_content?filepath=${encodeURIComponent(filepath)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    editModalContent.value = data.content;
+                } else {
+                    const error = await response.json();
+                    editModalContent.value = `Error: ${error.error || 'Could not load file.'}\n\nPlease enter the content manually.`;
+                }
+            } catch (error) {
+                console.error('Error fetching file content:', error);
+                editModalContent.value = 'Error loading file. Please enter the content manually.';
+            }
+        });
+    });
+
+    // Handle Save button
+    saveEditBtn.addEventListener('click', async function() {
+        if (!currentEditFile) return;
+
+        const content = editModalContent.value;
+        
+        try {
+            const response = await fetch(`/save_file_content`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filepath: currentEditFile.filepath,
+                    filename: currentEditFile.filename,
+                    experiment: currentEditFile.experiment,
+                    filetype: currentEditFile.filetype,
+                    content: content
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                alert('File saved successfully!');
+                editModal.hide();
+                // Optionally reload the page to show updated file size
+                // location.reload();
+            } else {
+                const error = await response.json();
+                alert(`Error saving file: ${error.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Error saving file:', error);
+            alert('An unexpected error occurred while saving the file.');
+        }
     });
 });
 </script>

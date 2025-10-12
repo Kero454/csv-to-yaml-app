@@ -1,0 +1,29 @@
+# @package _global_
+
+model:
+  type: linear
+  retrain: true
+ts:
+  name: linear_1
+  version: 1
+  enrich: []
+  use_covariates: true
+  past_variables: []
+  future_variables: []
+  static_variables: []
+train_config:
+  batch_size: 32
+  max_epochs: 20
+model_configs:
+  activation: torch.nn.PReLU
+  cat_emb_dim: 16
+  dropout_rate: 0.5
+  hidden_size: 12
+  kernel_size: 3
+  kind: lstm
+  loss_type: l1
+  optim: torch.optim.Adam
+  persistence_weight: 0.01
+  simple: true
+  sum_emb: true
+  use_bn: false
