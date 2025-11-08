@@ -53,7 +53,7 @@ dsipts_p:
         - mountPath: /DSIPTS-P/output
           subPath: output
         - mountPath: /DSIPTS-P/data
-          subPath: Users/ker#/kla
+          subPath: instance/uploads/Users/ker/data
       - name: nfs-aim-pv
         claimName: nfs-aim-pvc
         mounts:
@@ -63,16 +63,16 @@ dsipts_p:
       run:
       - /bin/sh
       - -c
-      modelsToTrain: ''
-      args:
-      - 'python train.py --config-dir=kla --config-name=kla_config;
-
-        sleep infinity'
+      modelsToTrain: config_kga
+      args: 
+          - |
+          python train.py {{ if .Values.dsipts_p.defaults.command.modelsToTrain }}-m architecture={{ .Values.dsipts_p.defaults.command.modelsToTrain }}{{ end }} --config-dir=config_milan --config-name=config_milan;
+          sleep infinity
     configFiles:
       enabled: true
       name: kla_config.yaml
       fromDirectory: Users/ker#/kla
-      mountPath: /DSIPTS-P/config/kla
+      mountPath: /DSIPTS-P/bash_examples/config_milan
   workerGroups:
   - name: a100-workers
     replicaCount: 1

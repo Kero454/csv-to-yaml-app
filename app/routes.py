@@ -3151,18 +3151,165 @@ def deployment_preview():
                 config_files.append(file)
     
     if request.method == 'POST':
-        # User clicked Run button - stay on page with embedded iframe
-        return render_template('deployment_preview.html',
-                             experiment_name=experiment_name,
-                             deployment_config=deployment_config,
-                             config_files=config_files,
-                             show_iframe=True)
+        # User clicked Run button - execute Helm command
+        return redirect(url_for('routes.execute_experiment', experiment_name=experiment_name))
     
     return render_template('deployment_preview.html',
                          experiment_name=experiment_name,
                          deployment_config=deployment_config,
                          config_files=config_files,
                          show_iframe=False)
+
+@web.route('/execute_experiment/<experiment_name>', methods=['GET'])
+@login_required
+def execute_experiment(experiment_name):
+    """Execute the Kubernetes Helm command for the experiment."""
+    try:
+        # Get deployment config from session
+        deployment_config = session.get('deployment_config', {})
+        
+        # Set up paths and variables
+        # Use original username, not secure_filename version
+        username = current_user.username
+        safe_exp = secure_filename(experiment_name)
+        
+        # Define paths according to user specifications
+        CHART_PATH = "/home/admin/khalid/dsipts-p/dsipts-p-chart"
+        EXP_NAME = safe_exp
+        
+        # Build the Linux path - DO NOT include any Windows paths
+        # The NFS mount on the Linux server maps to: /mnt/NFS/khalid/DSIPTS-P/
+        # Inside that, our uploads are at: uploads/Users/{username}/{experiment}/
+        VALUE_PATH = f"/mnt/NFS/khalid/DSIPTS-P/uploads/Users/{username}/{safe_exp}/values_{safe_exp}.yaml"
+        
+        # Ensure all backslashes are converted to forward slashes (safety check)
+        VALUE_PATH = VALUE_PATH.replace('\\', '/')
+        
+        current_app.logger.info(f"Building paths for user '{username}', experiment '{safe_exp}'")
+        current_app.logger.info(f"VALUE_PATH: {VALUE_PATH}")
+        
+        # Construct the Helm command
+        helm_command = f"microk8s helm install {EXP_NAME} {CHART_PATH} --values {VALUE_PATH}"
+        
+        # Execute the command via SSH on the remote Linux server
+        import subprocess
+        import platform
+        
+        ssh_host = "admin@10.1.65.194"  # Remote server
+        
+        # Determine SSH key path based on OS
+        if platform.system() == 'Windows':
+            # Windows SSH key path (adjust to your actual key location)
+            ssh_key = os.path.expanduser("~/.ssh/id_rsa")
+            # Alternative: Use PuTTY's plink if OpenSSH not available
+            # ssh_command = f'plink -i "path/to/private.ppk" {ssh_host} "{helm_command}"'
+        else:
+            ssh_key = "/root/.ssh/id_rsa"
+        
+        # Check if SSH key exists
+        ssh_key_exists = os.path.exists(ssh_key)
+        ssh_key_message = f"SSH key {'found' if ssh_key_exists else 'NOT found'} at: {ssh_key}"
+        current_app.logger.warning(ssh_key_message)
+        
+        if not ssh_key_exists:
+            # Try multiple fallback options
+            ssh_command = f'ssh -o StrictHostKeyChecking=no {ssh_host} "{helm_command}"'
+            ssh_method = "SSH without key (key not found)"
+        else:
+            ssh_command = f'ssh -i "{ssh_key}" -o StrictHostKeyChecking=no {ssh_host} "{helm_command}"'
+            ssh_method = f"SSH with key at {ssh_key}"
+        
+        current_app.logger.info(f"=== SSH EXECUTION DEBUG ===")
+        current_app.logger.info(f"Method: {ssh_method}")
+        current_app.logger.info(f"SSH Host: {ssh_host}")
+        current_app.logger.info(f"Helm Command: {helm_command}")
+        current_app.logger.info(f"Full SSH Command: {ssh_command}")
+        current_app.logger.info(f"Working Directory: {os.getcwd()}")
+        
+        # Try to execute command with detailed error capture
+        try:
+            result = subprocess.run(ssh_command, shell=True, capture_output=True, text=True, timeout=30)
+            current_app.logger.info(f"Command executed with return code: {result.returncode}")
+            current_app.logger.info(f"STDOUT: {result.stdout[:500]}...") if result.stdout else None
+            current_app.logger.info(f"STDERR: {result.stderr[:500]}...") if result.stderr else None
+        except subprocess.TimeoutExpired:
+            current_app.logger.error("Command timed out after 30 seconds")
+            result = subprocess.CompletedProcess(args=ssh_command, returncode=1, 
+                                                stdout="", 
+                                                stderr="Command timed out after 30 seconds. The server might be unreachable.")
+        except Exception as e:
+            current_app.logger.error(f"Subprocess error: {str(e)}")
+            result = subprocess.CompletedProcess(args=ssh_command, returncode=1,
+                                                stdout="",
+                                                stderr=f"Failed to execute command: {str(e)}")
+        
+        # Generate run ID (hash) - use a simple timestamp-based hash for now
+        import hashlib
+        import time
+        run_id = hashlib.md5(f"{experiment_name}_{time.time()}".encode()).hexdigest()[:24]
+        
+        # Default hash if none provided
+        if not run_id:
+            run_id = "3a3e543d791f4bbbbed0e330"
+        
+        # Generate embedding link
+        embedding_link = f"http://10.1.65.194:30088/runs/{run_id}/overview"
+        
+        # Prepare debug information
+        debug_info = {
+            'ssh_method': ssh_method,
+            'ssh_key_message': ssh_key_message,
+            'working_dir': os.getcwd(),
+            'platform': platform.system(),
+            'helm_command': helm_command,
+            'value_path': VALUE_PATH,
+            'ssh_host': ssh_host
+        }
+        
+        if result.returncode == 0:
+            flash(f'Experiment {EXP_NAME} deployed successfully!')
+            success = True
+            output = result.stdout
+            error = None
+        else:
+            # Provide detailed error information
+            error_msg = result.stderr if result.stderr else "No error output captured"
+            
+            # Add helpful debugging hints
+            if "ssh" in error_msg.lower() and "not recognized" in error_msg.lower():
+                error_msg += "\n\nDEBUG: SSH is not installed on Windows. Install OpenSSH Client via Windows Settings."
+            elif "permission denied" in error_msg.lower():
+                error_msg += f"\n\nDEBUG: SSH key authentication failed. Check key at: {ssh_key}"
+            elif "could not resolve hostname" in error_msg.lower():
+                error_msg += f"\n\nDEBUG: Cannot reach server {ssh_host}. Check network connection."
+            elif "connection refused" in error_msg.lower():
+                error_msg += f"\n\nDEBUG: SSH connection refused. Server might be down or SSH not running."
+            elif "no such file" in error_msg.lower():
+                error_msg += f"\n\nDEBUG: File not found. Check if values file exists at: {VALUE_PATH}"
+                
+            flash(f'Error deploying experiment {EXP_NAME}')
+            success = False
+            output = result.stdout if result.stdout else "No output captured"
+            error = error_msg
+        
+        # Clean up session
+        session.pop('deployment_config', None)
+        
+        return render_template('experiment_execution.html',
+                             experiment_name=experiment_name,
+                             helm_command=helm_command,
+                             ssh_command=ssh_command,
+                             success=success,
+                             output=output,
+                             error=error,
+                             run_id=run_id,
+                             embedding_link=embedding_link,
+                             debug_info=debug_info)
+        
+    except Exception as e:
+        current_app.logger.error(f"Error executing experiment: {e}")
+        flash(f'An error occurred while executing the experiment: {str(e)}')
+        return redirect(url_for('routes.deployment_preview'))
 
 @web.route('/add_file_to_experiment/<experiment_name>', methods=['GET', 'POST'])
 @web.route('/add_file_to_experiment/<experiment_name>/<file_type>', methods=['GET', 'POST'])

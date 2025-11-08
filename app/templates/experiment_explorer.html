@@ -1,5 +1,19 @@
 {% extends "base.html" %}
 
+{% block head %}
+<style>
+    .file-name {
+        text-decoration: none !important;
+        color: inherit;
+        cursor: default;
+        font-weight: 500;
+    }
+    .file-name:hover {
+        text-decoration: none !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <h1>My Experiments</h1>
@@ -39,11 +53,9 @@
                                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                                 <span>
                                                     <i class="bi bi-file-text me-2 text-primary"></i>
-                                                    <a href="{{ url_for('routes.serve_upload', filepath=file.path) }}">{{ file.name }}</a>
+                                                    <span class="file-name">{{ file.name }}</span>
                                                 </span>
                                                  <div>
-                                                     <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
-                                                     <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}" data-experiment="{{ experiment.name }}" data-filetype="config">Edit</button>
                                                      <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
                                                  </div>
                                              </li>
@@ -66,11 +78,9 @@
                                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                                 <span>
                                                     <i class="bi bi-file-code me-2 text-success"></i>
-                                                    <a href="{{ url_for('routes.serve_upload', filepath=file.path) }}">{{ file.name }}</a>
+                                                    <span class="file-name">{{ file.name }}</span>
                                                 </span>
                                                  <div>
-                                                     <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
-                                                     <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}" data-experiment="{{ experiment.name }}" data-filetype="architecture">Edit</button>
                                                      <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
                                                  </div>
                                              </li>
@@ -93,11 +103,9 @@
                                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                                 <span>
                                                     <i class="bi bi-file-spreadsheet me-2 text-danger"></i>
-                                                    <a href="{{ url_for('routes.serve_upload', filepath=file.path) }}">{{ file.name }}</a>
+                                                    <span class="file-name">{{ file.name }}</span>
                                                 </span>
                                                  <div>
-                                                     <button class="btn btn-sm btn-outline-secondary preview-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}">Preview</button>
-                                                     <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-filepath="{{ file.preview_path }}" data-filename="{{ file.name }}" data-experiment="{{ experiment.name }}" data-filetype="data">Edit</button>
                                                      <span class="badge bg-secondary rounded-pill">{{ file.size }}</span>
                                                  </div>
                                              </li>
@@ -228,6 +236,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (response.ok) {
                     const data = await response.json();
                     editModalContent.value = data.content;
+                    // Refresh tooltips for any new content
+                    if (window.refreshTooltips) {
+                        setTimeout(window.refreshTooltips, 100);
+                    }
                 } else {
                     const error = await response.json();
                     editModalContent.value = `Error: ${error.error || 'Could not load file.'}\n\nPlease enter the content manually.`;
@@ -264,6 +276,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const data = await response.json();
                 alert('File saved successfully!');
                 editModal.hide();
+                // Refresh tooltips after saving
+                if (window.refreshTooltips) {
+                    setTimeout(window.refreshTooltips, 100);
+                }
                 // Optionally reload the page to show updated file size
                 // location.reload();
             } else {

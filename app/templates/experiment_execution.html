@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h2><i class="bi bi-rocket"></i> Experiment Execution Results</h2>
+            <h4 class="text-muted">Experiment: {{ experiment_name }}</h4>
+            
+            {% if success %}
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <strong>Success!</strong> Your experiment has been deployed to the Kubernetes cluster.
+                </div>
+            {% else %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-circle-fill me-2"></i>
+                    <strong>Deployment Failed!</strong>
+                    <hr>
+                    <p class="mb-2"><strong>Common Solutions:</strong></p>
+                    <ul class="mb-0">
+                        {% if error and 'ssh' in error.lower() and 'not recognized' in error.lower() %}
+                            <li><strong>SSH is not installed.</strong> Install OpenSSH via: Windows Settings → Apps → Optional Features → Add OpenSSH Client</li>
+                        {% elif error and 'permission denied' in error.lower() %}
+                            <li><strong>SSH authentication failed.</strong> Check your SSH key or use password authentication</li>
+                        {% elif error and 'connection' in error.lower() %}
+                            <li><strong>Cannot connect to server.</strong> Check if server 10.1.65.194 is reachable and SSH is running</li>
+                        {% elif error and 'no such file' in error.lower() %}
+                            <li><strong>Values file not found.</strong> Ensure the configuration file was properly uploaded</li>
+                        {% else %}
+                            <li>Check the error details below for more information</li>
+                        {% endif %}
+                        <li>See the Debug Information panel below for detailed diagnostics</li>
+                        <li>Check your Flask console for complete logs</li>
+                    </ul>
+                </div>
+            {% endif %}
+            
+            <!-- Command Executed -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="bi bi-terminal"></i> Helm Command Executed</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Helm Command:</strong></p>
+                    <pre class="bg-light p-3 rounded mb-3"><code>{{ helm_command }}</code></pre>
+                    {% if ssh_command %}
+                    <p><strong>Full SSH Command:</strong></p>
+                    <pre class="bg-light p-3 rounded"><code>{{ ssh_command }}</code></pre>
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-info-circle"></i> <strong>Note:</strong> This command is executed via SSH on the remote Kubernetes server (admin@10.1.65.194)
+                        <br><br>
+                        <strong>Expected Path Format:</strong> <code>/mnt/NFS/khalid/DSIPTS-P/uploads/Users/{username}/{experiment}/values_{experiment}.yaml</code>
+                        <br>
+                        All paths use Linux forward slashes (/), no Windows backslashes (\)
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Command Output -->
+            {% if output %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="bi bi-file-text"></i> Command Output</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="bg-light p-3 rounded"><code>{{ output }}</code></pre>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Error Output -->
+            {% if error %}
+            <div class="card mb-4">
+                <div class="card-header bg-danger text-white">
+                    <h5><i class="bi bi-exclamation-circle"></i> Error Output</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="bg-light p-3 rounded text-danger" style="white-space: pre-wrap;"><code>{{ error }}</code></pre>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Debug Information -->
+            {% if debug_info %}
+            <div class="card mb-4">
+                <div class="card-header bg-warning">
+                    <h5><i class="bi bi-bug"></i> Debug Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Platform:</strong> {{ debug_info.platform }}</p>
+                            <p><strong>SSH Method:</strong> {{ debug_info.ssh_method }}</p>
+                            <p><strong>SSH Key Status:</strong> {{ debug_info.ssh_key_message }}</p>
+                            <p><strong>Working Directory:</strong> <code>{{ debug_info.working_dir }}</code></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>SSH Host:</strong> {{ debug_info.ssh_host }}</p>
+                            <p><strong>Values Path (Linux):</strong><br> <code>{{ debug_info.value_path }}</code></p>
+                        </div>
+                    </div>
+                    <hr>
+                    <p><strong>Full Helm Command:</strong></p>
+                    <pre class="bg-light p-2 rounded"><code>{{ debug_info.helm_command }}</code></pre>
+                    
+                    <div class="alert alert-secondary mt-3">
+                        <strong>💡 Troubleshooting Tips:</strong>
+                        <ul class="mb-0">
+                            <li>Check the terminal/console where Flask is running for detailed logs</li>
+                            <li>Verify SSH is installed: Run <code>ssh -V</code> in command prompt</li>
+                            <li>Test SSH connection: <code>ssh admin@10.1.65.194</code></li>
+                            <li>Ensure your SSH key is at the expected location</li>
+                            <li>Check if the values file exists on the remote server</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Experiment Details -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="bi bi-info-circle"></i> Experiment Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Experiment Name:</strong> {{ experiment_name }}</p>
+                            <p><strong>Run ID (Hash):</strong> <code>{{ run_id }}</code></p>
+                            <p><strong>Chart Path:</strong> <code>/home/admin/khalid/dsipts-p/dsipts-p-chart</code></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Values File:</strong> <code>values_{{ experiment_name }}.yaml</code></p>
+                            <p><strong>Status:</strong> 
+                                {% if success %}
+                                    <span class="badge bg-success">Deployed</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Failed</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Monitoring Link -->
+            {% if success %}
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5><i class="bi bi-graph-up"></i> Experiment Monitoring</h5>
+                </div>
+                <div class="card-body">
+                    <p>Your experiment is now running! You can monitor its progress using the link below:</p>
+                    <div class="d-grid gap-2">
+                        <a href="{{ embedding_link }}" target="_blank" class="btn btn-primary btn-lg">
+                            <i class="bi bi-box-arrow-up-right me-2"></i>
+                            Open Experiment Dashboard
+                        </a>
+                    </div>
+                    <small class="text-muted mt-2 d-block">
+                        <i class="bi bi-link-45deg"></i> {{ embedding_link }}
+                    </small>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Action Buttons -->
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to My Experiments
+                        </a>
+                        <a href="{{ url_for('routes.deployment_config', experiment_name=experiment_name) }}" class="btn btn-outline-primary">
+                            <i class="bi bi-gear"></i> Modify Configuration
+                        </a>
+                        {% if success %}
+                        <a href="{{ embedding_link }}" target="_blank" class="btn btn-success">
+                            <i class="bi bi-eye"></i> View Dashboard
+                        </a>
+                        {% else %}
+                        <a href="{{ url_for('routes.execute_experiment', experiment_name=experiment_name) }}" class="btn btn-warning">
+                            <i class="bi bi-arrow-clockwise"></i> Retry Deployment
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+}
+
+pre code {
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+.btn-lg {
+    padding: 0.75rem 1.5rem;
+    font-size: 1.1rem;
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+}
+
+.bg-dark {
+    background-color: #2d3748 !important;
+}
+</style>
+{% endblock %}
