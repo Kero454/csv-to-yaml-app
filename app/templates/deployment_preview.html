@@ -133,12 +133,13 @@ document.addEventListener('DOMContentLoaded', function() {
         // Simulate progress stages
         let progress = 0;
         const stages = [
-            { percent: 10, text: 'Connecting to server...', time: '~25 seconds' },
-            { percent: 30, text: 'Authenticating SSH connection...', time: '~20 seconds' },
-            { percent: 50, text: 'Transferring configuration...', time: '~15 seconds' },
-            { percent: 70, text: 'Installing Helm chart...', time: '~10 seconds' },
-            { percent: 90, text: 'Finalizing deployment...', time: '~5 seconds' },
-            { percent: 100, text: 'Deployment command sent!', time: 'Complete!' }
+            { percent: 10, text: 'Connecting to SSH server...', time: '~35 seconds' },
+            { percent: 25, text: 'Authenticating connection...', time: '~30 seconds' },
+            { percent: 40, text: 'Transferring configuration...', time: '~25 seconds' },
+            { percent: 60, text: 'Installing Helm chart...', time: '~18 seconds' },
+            { percent: 75, text: 'Waiting for Aim registration...', time: '~12 seconds' },
+            { percent: 90, text: 'Fetching run hash from Aim...', time: '~5 seconds' },
+            { percent: 100, text: 'Deployment complete with tracking!', time: 'Done!' }
         ];
         
         let currentStage = 0;

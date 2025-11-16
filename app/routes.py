@@ -3188,9 +3188,6 @@ def execute_experiment(experiment_name):
         current_app.logger.info(f"Building paths for user '{username}', experiment '{safe_exp}'")
         current_app.logger.info(f"VALUE_PATH: {VALUE_PATH}")
         
-        # Construct the Helm command
-        helm_command = f"microk8s helm install {EXP_NAME} {CHART_PATH} --values {VALUE_PATH}"
-        
         # Execute the command via SSH on the remote Linux server
         import subprocess
         import platform
@@ -3211,13 +3208,17 @@ def execute_experiment(experiment_name):
         ssh_key_message = f"SSH key {'found' if ssh_key_exists else 'NOT found'} at: {ssh_key}"
         current_app.logger.warning(ssh_key_message)
         
+        # Prepare SSH prefix for all commands
         if not ssh_key_exists:
-            # Try multiple fallback options
-            ssh_command = f'ssh -o StrictHostKeyChecking=no {ssh_host} "{helm_command}"'
+            ssh_prefix = f'ssh -o StrictHostKeyChecking=no {ssh_host}'
             ssh_method = "SSH without key (key not found)"
         else:
-            ssh_command = f'ssh -i "{ssh_key}" -o StrictHostKeyChecking=no {ssh_host} "{helm_command}"'
+            ssh_prefix = f'ssh -i "{ssh_key}" -o StrictHostKeyChecking=no {ssh_host}'
             ssh_method = f"SSH with key at {ssh_key}"
+        
+        # Construct the Helm command
+        helm_command = f"microk8s helm install {EXP_NAME} {CHART_PATH} --values {VALUE_PATH}"
+        ssh_command = f'{ssh_prefix} "{helm_command}"'
         
         current_app.logger.info(f"=== SSH EXECUTION DEBUG ===")
         current_app.logger.info(f"Method: {ssh_method}")
@@ -3243,12 +3244,66 @@ def execute_experiment(experiment_name):
                                                 stdout="",
                                                 stderr=f"Failed to execute command: {str(e)}")
         
-        # Generate run ID (hash) - use a simple timestamp-based hash for now
-        import hashlib
-        import time
-        run_id = hashlib.md5(f"{experiment_name}_{time.time()}".encode()).hexdigest()[:24]
+        # After Helm deployment, wait a bit and get the latest hash from Aim repository
+        run_id = None
+        if result.returncode == 0:
+            current_app.logger.info("=== WAITING FOR AIM REGISTRATION ===")
+            import time
+            time.sleep(5)  # Wait 5 seconds for deployment to register in Aim
+            
+            current_app.logger.info("=== FETCHING LATEST AIM HASH ===")
+            aim_python_script = '''python3 -c "from aim import Repo; import os,sys; repo=Repo('/aim'); cand=[]
+for r in repo.iter_runs():
+  h=r.hash; ts=None
+  try:
+    ct=getattr(r,'creation_time',None)
+    ts = ct.timestamp() if hasattr(ct,'timestamp') else float(ct) if ct is not None else None
+  except Exception:
+    pass
+  if ts is None:
+    try:
+      st=getattr(r,'start_time',None)
+      ts = st.timestamp() if hasattr(st,'timestamp') else float(st) if st is not None else None
+    except Exception:
+      pass
+  if ts is None:
+    for pfx in (os.path.join('/aim','runs'), os.path.join('/aim','run'), os.path.join('/aim','objects'), '/aim'):
+      p=os.path.join(pfx,h)
+      if os.path.exists(p):
+        ts=os.path.getmtime(p); break
+  if ts is not None:
+    cand.append((h,ts))
+if cand:
+  print(sorted(cand, key=lambda x:x[1], reverse=True)[0][0])
+else:
+  print('NO_HASH_FOUND')"'''
+            
+            # Execute the Aim hash retrieval command
+            aim_command = f'{ssh_prefix} {aim_python_script}'
+            current_app.logger.info(f"Executing Aim command to get latest hash...")
+            
+            try:
+                aim_result = subprocess.run(aim_command, shell=True, capture_output=True, text=True, timeout=15)
+                if aim_result.returncode == 0 and aim_result.stdout.strip():
+                    hash_output = aim_result.stdout.strip()
+                    if hash_output != 'NO_HASH_FOUND':
+                        run_id = hash_output
+                        current_app.logger.info(f"Successfully retrieved Aim hash: {run_id}")
+                    else:
+                        current_app.logger.warning("No hash found in Aim repository")
+                else:
+                    current_app.logger.error(f"Failed to get Aim hash: {aim_result.stderr}")
+            except Exception as e:
+                current_app.logger.error(f"Error getting Aim hash: {str(e)}")
         
-        # Default hash if none provided
+        # If we didn't get a hash from Aim, generate a fallback hash
+        if not run_id:
+            import hashlib
+            import time
+            run_id = hashlib.md5(f"{experiment_name}_{time.time()}".encode()).hexdigest()[:24]
+            current_app.logger.info(f"Using generated fallback hash: {run_id}")
+        
+        # Default hash if still none
         if not run_id:
             run_id = "3a3e543d791f4bbbbed0e330"
         
@@ -3263,7 +3318,8 @@ def execute_experiment(experiment_name):
             'platform': platform.system(),
             'helm_command': helm_command,
             'value_path': VALUE_PATH,
-            'ssh_host': ssh_host
+            'ssh_host': ssh_host,
+            'aim_hash_retrieved': run_id if run_id and not run_id.startswith('3a3e') else 'Not retrieved - using fallback'
         }
         
         if result.returncode == 0:

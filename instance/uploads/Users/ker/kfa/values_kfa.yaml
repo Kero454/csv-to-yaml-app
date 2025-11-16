@@ -70,7 +70,7 @@ dsipts_p:
           sleep infinity
     configFiles:
       enabled: true
-      name: kfa_config.yaml
+      name: config_kfa.yaml
       fromDirectory: Users/ker#/kfa
       mountPath: /DSIPTS-P/bash_examples/config_milan
   workerGroups:
