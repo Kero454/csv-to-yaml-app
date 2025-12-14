@@ -1,0 +1,27 @@
+---
+# PersistentVolumeClaim for uploads
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-ts-framework-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Secret for SSH key (dummy for now)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ssh-key-secret
+  namespace: default
+type: Opaque
+stringData:
+  id_rsa: |
+    -----BEGIN RSA PRIVATE KEY-----
+    # This is a placeholder SSH key
+    # Replace with your actual SSH private key if needed
+    -----END RSA PRIVATE KEY-----

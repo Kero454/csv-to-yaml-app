@@ -1,16 +1,22 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "Helm.fullname" . }}
+  name: {{ include "csv-to-yaml-app.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "Helm.labels" . | nindent 4 }}
+    {{- include "csv-to-yaml-app.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
+  # ports:
+  #   - port: {{ .Values.service.port }}
+  #     targetPort: {{ .Values.service.targetPort }}
+  #     protocol: TCP
+  #     name: http
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: {{ .Values.service.targetPort }}
+    - nodePort: {{ .Values.service.nodePort }}
+      port: {{ .Values.service.port }}
       protocol: TCP
       name: http
+      targetPort: {{ .Values.service.targetPort }}
   selector:
-    {{- include "Helm.selectorLabels" . | nindent 4 }}
+    {{- include "csv-to-yaml-app.selectorLabels" . | nindent 4 }}

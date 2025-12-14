@@ -1,6 +1,6 @@
 apiVersion: v2
-name: Helm
-description: A Helm chart for Kubernetes
+name: csv-to-yaml-app
+description: A Helm chart for CSV to YAML converter application
 
 # A chart can be either an 'application' or a 'library' chart.
 #

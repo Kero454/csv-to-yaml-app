@@ -1,20 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "Helm.fullname" . }}
+  name: {{ include "csv-to-yaml-app.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "Helm.labels" . | nindent 4 }}
+    {{- include "csv-to-yaml-app.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "Helm.selectorLabels" . | nindent 6 }}
+      {{- include "csv-to-yaml-app.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "Helm.selectorLabels" . | nindent 8 }}
+        {{- include "csv-to-yaml-app.selectorLabels" . | nindent 8 }}
     spec:
+      hostNetwork: true
       containers:
         - name: {{ .Chart.Name | lower }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -29,9 +30,22 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: uploads
-              mountPath: {{ .Values.env.uploadFolder }}
+            # - name: uploads
+            #   mountPath: {{ .Values.env.uploadFolder }}
+            - mountPath: {{ .Values.env.uploadFolder }}
+              name: nfs-ts-framework-pv
+              subPath: frontend_uploads
+            - name: ssh-key
+              mountPath: /root/.ssh
+              readOnly: true
       volumes:
-        - name: uploads
+        # - name: uploads
+        #   persistentVolumeClaim:
+        #     claimName: {{ include "csv-to-yaml-app.fullname" . }}-pvc
+        - name: nfs-ts-framework-pv
           persistentVolumeClaim:
-            claimName: {{ include "Helm.fullname" . }}-pvc
+            claimName: nfs-ts-framework-pvc
+        - name: ssh-key
+          secret:
+            secretName: ssh-key-secret
+            defaultMode: 0600

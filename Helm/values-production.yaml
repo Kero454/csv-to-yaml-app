@@ -1,0 +1,89 @@
+# Production values for csv-to-yaml-app
+# This overrides the default values.yaml
+
+replicaCount: 3
+
+image:
+  repository: kerollosadel/csv-to-yaml-app
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: LoadBalancer  # Use LoadBalancer for cloud deployments
+  port: 80
+  targetPort: 5000
+  # nodePort is not used with LoadBalancer type
+
+# Increase resources for production
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+# Enable autoscaling for production
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Ingress for production domain
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: csv-to-yaml.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: csv-to-yaml-tls
+      hosts:
+        - csv-to-yaml.example.com
+
+# PVC for production
+pvc:
+  accessModes:
+    - ReadWriteMany
+  storage: 50Gi
+  storageClassName: fast-ssd  # Use appropriate storage class
+
+# Environment variables
+env:
+  uploadFolder: /uploads
+
+# Node selector for production nodes
+nodeSelector:
+  node-role.kubernetes.io/worker: "true"
+  environment: "production"
+
+# Tolerations for production
+tolerations:
+  - key: "production"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+# Affinity rules for production
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - csv-to-yaml-app
+          topologyKey: kubernetes.io/hostname

@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "Helm.fullname" . }}
+  name: {{ include "csv-to-yaml-app.fullname" . }}
   namespace: {{ .Release.Namespace }}
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
@@ -14,7 +14,7 @@ spec:
         pathType: {{ .Values.ingress.pathType }}
         backend:
           service:
-            name: {{ include "Helm.fullname" . }}
+            name: {{ include "csv-to-yaml-app.fullname" . }}
             port:
               number: {{ .Values.service.port }}
 {{- end }}
