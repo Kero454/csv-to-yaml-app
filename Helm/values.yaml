@@ -4,7 +4,7 @@ replicaCount: 1
 image:
   repository: kerollosadel/csv-to-yaml-app
   pullPolicy: Never
-  tag: "v5"
+  tag: "v6"
 
 # Service configuration
 service:
@@ -33,6 +33,9 @@ resources:
 # Environment variables
 env:
   uploadFolder: /uploads
+  sshHost: ""  # Leave empty to disable SSH deployment
+  enableSshDeployment: false  # Set to true for production
+  aimHost: "localhost:30088"  # Default Aim host
 
 # Ingress configuration
 ingress:

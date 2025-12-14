@@ -3192,57 +3192,81 @@ def execute_experiment(experiment_name):
         import subprocess
         import platform
         
-        ssh_host = "admin@10.1.65.194"  # Remote server
+        # Get SSH configuration from environment
+        enable_ssh = os.environ.get('ENABLE_SSH_DEPLOYMENT', 'false').lower() == 'true'
+        ssh_host_env = os.environ.get('SSH_HOST', '')
+        ssh_host = f"admin@{ssh_host_env}" if ssh_host_env else "admin@10.1.65.194"  # Fallback for backward compatibility
         
-        # Determine SSH key path based on OS
-        if platform.system() == 'Windows':
-            # Windows SSH key path (adjust to your actual key location)
-            ssh_key = os.path.expanduser("~/.ssh/id_rsa")
-            # Alternative: Use PuTTY's plink if OpenSSH not available
-            # ssh_command = f'plink -i "path/to/private.ppk" {ssh_host} "{helm_command}"'
+        # Import required modules for local mode
+        import hashlib
+        import time
+        
+        # Check if SSH deployment is disabled
+        if not enable_ssh:
+            current_app.logger.info("SSH deployment is disabled. Simulating local deployment.")
+            # Simulate successful deployment for local testing
+            helm_command = f"helm install {safe_exp} local-chart --values local-values.yaml"
+            ssh_command = "Local deployment (no SSH)"
+            ssh_method = "Local deployment mode"
+            ssh_key_message = "SSH deployment disabled - running in local mode"
+            
+            result = subprocess.CompletedProcess(
+                args="local deployment simulation",
+                returncode=0,
+                stdout="Local deployment simulation successful\nExperiment would be deployed to local Kubernetes\nNote: This is a simulation - no actual deployment occurred",
+                stderr=""
+            )
+            # Use a test run_id for local mode
+            run_id = hashlib.md5(f"{experiment_name}_local_{time.time()}".encode()).hexdigest()[:24]
+            ssh_prefix = "local"  # Set for later use in Aim commands
         else:
-            ssh_key = "/root/.ssh/id_rsa"
-        
-        # Check if SSH key exists
-        ssh_key_exists = os.path.exists(ssh_key)
-        ssh_key_message = f"SSH key {'found' if ssh_key_exists else 'NOT found'} at: {ssh_key}"
-        current_app.logger.warning(ssh_key_message)
-        
-        # Prepare SSH prefix for all commands
-        if not ssh_key_exists:
-            ssh_prefix = f'ssh -o StrictHostKeyChecking=no {ssh_host}'
-            ssh_method = "SSH without key (key not found)"
-        else:
-            ssh_prefix = f'ssh -i "{ssh_key}" -o StrictHostKeyChecking=no {ssh_host}'
-            ssh_method = f"SSH with key at {ssh_key}"
-        
-        # Construct the Helm command
-        helm_command = f"microk8s helm install {EXP_NAME} {CHART_PATH} --values {VALUE_PATH}"
-        ssh_command = f'{ssh_prefix} "{helm_command}"'
-        
-        current_app.logger.info(f"=== SSH EXECUTION DEBUG ===")
-        current_app.logger.info(f"Method: {ssh_method}")
-        current_app.logger.info(f"SSH Host: {ssh_host}")
-        current_app.logger.info(f"Helm Command: {helm_command}")
-        current_app.logger.info(f"Full SSH Command: {ssh_command}")
-        current_app.logger.info(f"Working Directory: {os.getcwd()}")
-        
-        # Try to execute command with detailed error capture
-        try:
-            result = subprocess.run(ssh_command, shell=True, capture_output=True, text=True, timeout=30)
-            current_app.logger.info(f"Command executed with return code: {result.returncode}")
-            current_app.logger.info(f"STDOUT: {result.stdout[:500]}...") if result.stdout else None
-            current_app.logger.info(f"STDERR: {result.stderr[:500]}...") if result.stderr else None
-        except subprocess.TimeoutExpired:
-            current_app.logger.error("Command timed out after 30 seconds")
-            result = subprocess.CompletedProcess(args=ssh_command, returncode=1, 
-                                                stdout="", 
-                                                stderr="Command timed out after 30 seconds. The server might be unreachable.")
-        except Exception as e:
-            current_app.logger.error(f"Subprocess error: {str(e)}")
-            result = subprocess.CompletedProcess(args=ssh_command, returncode=1,
-                                                stdout="",
-                                                stderr=f"Failed to execute command: {str(e)}")
+            # SSH deployment is enabled
+            # Determine SSH key path based on OS
+            if platform.system() == 'Windows':
+                ssh_key = os.path.expanduser("~/.ssh/id_rsa")
+            else:
+                ssh_key = "/root/.ssh/id_rsa"
+            
+            # Check if SSH key exists
+            ssh_key_exists = os.path.exists(ssh_key)
+            ssh_key_message = f"SSH key {'found' if ssh_key_exists else 'NOT found'} at: {ssh_key}"
+            current_app.logger.warning(ssh_key_message)
+            
+            # Prepare SSH prefix for all commands
+            if not ssh_key_exists:
+                ssh_prefix = f'ssh -o StrictHostKeyChecking=no {ssh_host}'
+                ssh_method = "SSH without key (key not found)"
+            else:
+                ssh_prefix = f'ssh -i "{ssh_key}" -o StrictHostKeyChecking=no {ssh_host}'
+                ssh_method = f"SSH with key at {ssh_key}"
+            
+            # Construct the Helm command for SSH deployment
+            helm_command = f"microk8s helm install {EXP_NAME} {CHART_PATH} --values {VALUE_PATH}"
+            ssh_command = f'{ssh_prefix} "{helm_command}"'
+            
+            current_app.logger.info(f"=== SSH EXECUTION DEBUG ===")
+            current_app.logger.info(f"Method: {ssh_method}")
+            current_app.logger.info(f"SSH Host: {ssh_host}")
+            current_app.logger.info(f"Helm Command: {helm_command}")
+            current_app.logger.info(f"Full SSH Command: {ssh_command}")
+            current_app.logger.info(f"Working Directory: {os.getcwd()}")
+            
+            # Try to execute command with detailed error capture
+            try:
+                result = subprocess.run(ssh_command, shell=True, capture_output=True, text=True, timeout=30)
+                current_app.logger.info(f"Command executed with return code: {result.returncode}")
+                current_app.logger.info(f"STDOUT: {result.stdout[:500]}...") if result.stdout else None
+                current_app.logger.info(f"STDERR: {result.stderr[:500]}...") if result.stderr else None
+            except subprocess.TimeoutExpired:
+                current_app.logger.error("Command timed out after 30 seconds")
+                result = subprocess.CompletedProcess(args=ssh_command, returncode=1, 
+                                                    stdout="", 
+                                                    stderr="Command timed out after 30 seconds. The server might be unreachable.")
+            except Exception as e:
+                current_app.logger.error(f"Subprocess error: {str(e)}")
+                result = subprocess.CompletedProcess(args=ssh_command, returncode=1,
+                                                    stdout="",
+                                                    stderr=f"Failed to execute command: {str(e)}")
         
         # After Helm deployment, wait a bit and get the latest hash from Aim repository
         run_id = None
@@ -3308,7 +3332,8 @@ else:
             run_id = "3a3e543d791f4bbbbed0e330"
         
         # Generate embedding link
-        embedding_link = f"http://10.1.65.194:30088/runs/{run_id}/overview"
+        aim_host = os.environ.get('AIM_HOST', '10.1.65.194:30088')
+        embedding_link = f"http://{aim_host}/runs/{run_id}/overview"
         
         # Prepare debug information
         debug_info = {

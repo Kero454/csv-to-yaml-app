@@ -15,7 +15,6 @@ spec:
       labels:
         {{- include "csv-to-yaml-app.selectorLabels" . | nindent 8 }}
     spec:
-      hostNetwork: true
       containers:
         - name: {{ .Chart.Name | lower }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -27,21 +26,32 @@ spec:
           env:
             - name: UPLOAD_FOLDER
               value: {{ .Values.env.uploadFolder }}
+            - name: SSH_HOST
+              value: {{ .Values.env.sshHost | default "" }}
+            - name: ENABLE_SSH_DEPLOYMENT
+              value: {{ .Values.env.enableSshDeployment | default "false" | quote }}
+            - name: AIM_HOST
+              value: {{ .Values.env.aimHost | default "localhost:30088" }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            # - name: uploads
-            #   mountPath: {{ .Values.env.uploadFolder }}
-            - mountPath: {{ .Values.env.uploadFolder }}
-              name: nfs-ts-framework-pv
+            - name: instance
+              mountPath: /app/instance
+            - name: uploads
+              mountPath: {{ .Values.env.uploadFolder }}
+            - name: nfs-ts-framework-pv
+              mountPath: /uploads-nfs
               subPath: frontend_uploads
             - name: ssh-key
               mountPath: /root/.ssh
               readOnly: true
       volumes:
-        # - name: uploads
-        #   persistentVolumeClaim:
-        #     claimName: {{ include "csv-to-yaml-app.fullname" . }}-pvc
+        - name: instance
+          persistentVolumeClaim:
+            claimName: {{ include "csv-to-yaml-app.fullname" . }}-instance-pvc
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ include "csv-to-yaml-app.fullname" . }}-pvc
         - name: nfs-ts-framework-pv
           persistentVolumeClaim:
             claimName: nfs-ts-framework-pvc
