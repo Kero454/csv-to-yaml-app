@@ -1,12 +1,127 @@
 {% extends "base.html" %}
 
+{% block extra_css %}
+<style>
+    .info-icon {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: #ffffff;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        width: 55px;
+        height: 55px;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .info-icon:hover {
+        transform: scale(1.15);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        border-color: rgba(255,255,255,0.6);
+        background: linear-gradient(45deg, #7c8cff, #8a6bb8);
+    }
+    .info-icon i {
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+        font-style: normal;
+        font-weight: 900;
+    }
+    .step-container {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 15px;
+        padding: 40px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        margin-top: 30px;
+    }
+    .step-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-    <h2>Step 1: Name Your Experiment</h2>
-    <form method="post">
-        <div class="form-group">
-            <label for="experiment_name">Experiment Name</label>
-            <input type="text" class="form-control" id="experiment_name" name="experiment_name" required>
+<!-- Info Icon -->
+<button class="info-icon" data-bs-toggle="modal" data-bs-target="#infoModal">
+    <i>i</i>
+</button>
+
+<div class="container mt-4">
+    <div class="step-container">
+        <div class="step-header">
+            <h2 class="mb-0">Step 1: Name Your Experiment</h2>
+            <p class="mb-0 mt-2">Give your machine learning experiment a unique name</p>
         </div>
-        <button type="submit" class="btn btn-primary">Next</button>
-    </form>
+        
+        <form method="post">
+            <div class="form-group mb-4">
+                <label for="experiment_name" class="form-label fw-bold">Experiment Name</label>
+                <input type="text" class="form-control form-control-lg" id="experiment_name" name="experiment_name" 
+                       placeholder="Enter a descriptive name for your experiment" required 
+                       style="border-radius: 10px; border: 2px solid #e9ecef;">
+                <div class="form-text text-muted mt-2">
+                    <i class="fas fa-lightbulb me-1"></i>
+                    Choose a descriptive name that helps you identify this experiment later (e.g., "Sales_Forecasting_Q4_2024")
+                </div>
+            </div>
+            <div class="text-center">
+                <button type="submit" class="btn btn-primary btn-lg px-5" 
+                        style="border-radius: 25px; background: linear-gradient(45deg, #667eea, #764ba2); border: none;">
+                    Next Step <i class="fas fa-arrow-right ms-2"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title" id="infoModalLabel">Step 1: Experiment Name - Help</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="fw-bold text-primary">What is this step for?</h6>
+                <p>This is the first step in creating your machine learning experiment. Here you give your experiment a unique, descriptive name that will help you identify and organize your work.</p>
+                
+                <h6 class="fw-bold text-primary mt-4">Experiment Name Guidelines:</h6>
+                <ul>
+                    <li><strong>Be Descriptive:</strong> Use names that clearly indicate the purpose (e.g., "Customer_Churn_Prediction")</li>
+                    <li><strong>Include Context:</strong> Add dates, versions, or dataset info (e.g., "Sales_Forecast_2024_V2")</li>
+                    <li><strong>Use Underscores:</strong> Replace spaces with underscores for better file compatibility</li>
+                    <li><strong>Avoid Special Characters:</strong> Stick to letters, numbers, and underscores</li>
+                </ul>
+                
+                <h6 class="fw-bold text-primary mt-4">What happens next?</h6>
+                <p>After naming your experiment, you'll proceed through these steps:</p>
+                <ol>
+                    <li><strong>Configuration:</strong> Upload or create configuration files</li>
+                    <li><strong>Data:</strong> Upload your CSV datasets</li>
+                    <li><strong>Architecture:</strong> Define your model architecture</li>
+                    <li><strong>Optimization:</strong> Configure hyperparameter sweeping (optional)</li>
+                </ol>
+                
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Pro Tip:</strong> Choose a name you'll remember and that describes your experiment's goal. You can always create multiple experiments with similar names but different versions.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

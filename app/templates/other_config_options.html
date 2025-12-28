@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .futuristic-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+    }
+    .futuristic-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+    }
+    .info-icon {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: #ffffff;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        width: 55px;
+        height: 55px;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .info-icon:hover {
+        transform: scale(1.15);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        border-color: rgba(255,255,255,0.6);
+        background: linear-gradient(45deg, #7c8cff, #8a6bb8);
+    }
+    .info-icon i {
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+        font-style: normal;
+        font-weight: 900;
+    }
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    .back-btn {
+        background: linear-gradient(45deg, #6c757d, #495057);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 25px;
+        transition: all 0.3s ease;
+        text-decoration: none;
+    }
+    .back-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(108, 117, 125, 0.4);
+        color: white;
+        text-decoration: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Info Icon -->
+<button class="info-icon" data-bs-toggle="modal" data-bs-target="#infoModal">
+    <i>i</i>
+</button>
+
+<div class="page-header">
+    <h2 class="mb-0">Other Configuration Options</h2>
+    <p class="mb-0 mt-2">Additional ways to create your configuration file</p>
+</div>
+
+<!-- Back Button -->
+<div class="mb-4">
+    <a href="{{ url_for('routes.upload_config') }}" class="back-btn">
+        <i class="fas fa-arrow-left me-2"></i>Back to Main Options
+    </a>
+</div>
+
+<!-- Basic Form Editor Option -->
+<div class="card futuristic-card mb-4">
+    <div class="card-header text-white" style="background: rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.2);">
+        <h5 class="mb-0">Option 3: Basic Form Editor</h5>
+    </div>
+    <div class="card-body" style="background: rgba(255,255,255,0.95); color: #333;">
+        <p class="fw-bold">Create your configuration using a simple step-by-step form interface.</p>
+        <p class="text-muted">Perfect for users who prefer guided forms over manual file editing. This option provides a user-friendly interface to configure your experiment settings.</p>
+        <div class="mt-3">
+            <a href="{{ url_for('routes.config_form') }}" class="btn" style="border-radius: 25px; background: linear-gradient(45deg, #17a2b8, #138496); border: none; color: white;">
+                <i class="fas fa-edit me-2"></i>Open Basic Editor
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Use Template Option -->
+<div class="card futuristic-card mb-4">
+    <div class="card-header text-white" style="background: rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.2);">
+        <h5 class="mb-0">Option 4: Use a Template</h5>
+    </div>
+    <div class="card-body" style="background: rgba(255,255,255,0.95); color: #333;">
+        <p class="fw-bold">Use a pre-configured template with default values for time series experiments.</p>
+        <p class="text-muted">This template includes dataset paths, scheduler, optimizer, model configurations, split parameters, training and inference settings - all pre-configured with sensible defaults.</p>
+        <div class="mt-3">
+            <a href="{{ url_for('routes.advanced_config_form') }}" class="btn" style="border-radius: 25px; background: linear-gradient(45deg, #ffc107, #e0a800); border: none; color: #212529;">
+                <i class="fas fa-file-alt me-2"></i>Use Template
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title" id="infoModalLabel">Other Configuration Options - Help</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="fw-bold text-primary">What are these options?</h6>
+                <p>These are alternative methods for creating configuration files that offer different levels of guidance and complexity.</p>
+                
+                <h6 class="fw-bold text-primary mt-4">Available Options:</h6>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-info">Option 3: Basic Form Editor</h6>
+                                <p class="card-text small"><strong>Best for:</strong> Users who want a simple, guided form interface</p>
+                                <p class="card-text small"><strong>Features:</strong></p>
+                                <ul class="small">
+                                    <li>Step-by-step form interface</li>
+                                    <li>Field validation</li>
+                                    <li>Basic configuration options</li>
+                                    <li>Beginner-friendly</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-warning">Option 4: Use Template</h6>
+                                <p class="card-text small"><strong>Best for:</strong> Users who want pre-configured settings</p>
+                                <p class="card-text small"><strong>Features:</strong></p>
+                                <ul class="small">
+                                    <li>Pre-filled default values</li>
+                                    <li>Time series experiment focus</li>
+                                    <li>Complete configuration coverage</li>
+                                    <li>Ready-to-use settings</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Recommendation:</strong> If you're looking for maximum control and customization, try Option 3 (Template Optimizer) from the main page. For quick setup with good defaults, use Option 4 here.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add some interactive effects
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add hover effects to cards
+        const cards = document.querySelectorAll('.futuristic-card');
+        cards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-5px)';
+            });
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+            });
+        });
+    });
+</script>
+{% endblock %}

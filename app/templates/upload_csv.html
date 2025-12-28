@@ -1,19 +1,154 @@
 {% extends "base.html" %}
 
+{% block extra_css %}
+<style>
+    .info-icon {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: #ffffff;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        width: 55px;
+        height: 55px;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .info-icon:hover {
+        transform: scale(1.15);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        border-color: rgba(255,255,255,0.6);
+        background: linear-gradient(45deg, #7c8cff, #8a6bb8);
+    }
+    .info-icon i {
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+        font-style: normal;
+        font-weight: 900;
+    }
+    .step-container {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 15px;
+        padding: 40px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        margin-top: 30px;
+    }
+    .step-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    .upload-area {
+        border: 3px dashed #667eea;
+        border-radius: 15px;
+        padding: 40px;
+        text-align: center;
+        background: rgba(102, 126, 234, 0.05);
+        transition: all 0.3s ease;
+    }
+    .upload-area:hover {
+        border-color: #764ba2;
+        background: rgba(118, 75, 162, 0.1);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-    <h2>Step 3: Upload CSV Data File</h2>
-    
-    <div class="alert alert-info mb-4">
-        <i class="bi bi-info-circle-fill me-2"></i>
-        <strong>Tip:</strong> You can skip this step by selecting one of your previously uploaded CSV files in the configuration step. 
-        If you selected a dataset from "Your Uploaded CSV Files" in the previous step, you would have been automatically redirected to the next step.
-    </div>
-    
-    <form method="post" enctype="multipart/form-data">
-        <div class="form-group">
-            <label for="csv_file">Select CSV file</label>
-            <input type="file" class="form-control-file" id="csv_file" name="csv_file" accept=".csv" required>
+<!-- Info Icon -->
+<button class="info-icon" data-bs-toggle="modal" data-bs-target="#infoModal">
+    <i>i</i>
+</button>
+
+<div class="container mt-4">
+    <div class="step-container">
+        <div class="step-header">
+            <h2 class="mb-0">Step 3: Upload CSV Data File</h2>
+            <p class="mb-0 mt-2">Upload your dataset for machine learning training</p>
         </div>
-        <button type="submit" class="btn btn-primary">Next</button>
-    </form>
+        
+        <div class="alert alert-info mb-4" style="border-radius: 10px; border-left: 4px solid #667eea;">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Smart Skip:</strong> You can skip this step by selecting one of your previously uploaded CSV files in the configuration step. 
+            If you selected a dataset from "Your Uploaded CSV Files" in the previous step, you would have been automatically redirected to the next step.
+        </div>
+        
+        <form method="post" enctype="multipart/form-data">
+            <div class="upload-area mb-4">
+                <i class="fas fa-cloud-upload-alt" style="font-size: 3rem; color: #667eea; margin-bottom: 20px;"></i>
+                <div class="form-group">
+                    <label for="csv_file" class="form-label fw-bold fs-5">Select CSV Data File</label>
+                    <input type="file" class="form-control form-control-lg mt-3" id="csv_file" name="csv_file" 
+                           accept=".csv" required style="border-radius: 10px; border: 2px solid #e9ecef;">
+                    <div class="form-text text-muted mt-3">
+                        <i class="fas fa-file-csv me-1"></i>
+                        Upload a CSV file containing your training data. Supported format: .csv files only.
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center">
+                <button type="submit" class="btn btn-primary btn-lg px-5" 
+                        style="border-radius: 25px; background: linear-gradient(45deg, #667eea, #764ba2); border: none;">
+                    Upload & Continue <i class="fas fa-arrow-right ms-2"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title" id="infoModalLabel">Step 3: CSV Data Upload - Help</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="fw-bold text-primary">What is this step for?</h6>
+                <p>This step allows you to upload the CSV dataset that will be used to train your machine learning model. The data you upload here will be processed and used in your experiment.</p>
+                
+                <h6 class="fw-bold text-primary mt-4">CSV File Requirements:</h6>
+                <ul>
+                    <li><strong>Format:</strong> Must be a valid CSV (.csv) file</li>
+                    <li><strong>Headers:</strong> First row should contain column names</li>
+                    <li><strong>Data Quality:</strong> Clean data with consistent formatting</li>
+                    <li><strong>Size:</strong> Reasonable file size for processing</li>
+                    <li><strong>Encoding:</strong> UTF-8 encoding recommended</li>
+                </ul>
+                
+                <h6 class="fw-bold text-primary mt-4">Smart Skip Feature:</h6>
+                <div class="alert alert-success">
+                    <i class="fas fa-magic me-2"></i>
+                    If you already selected a dataset from "Your Uploaded CSV Files" in the configuration step, you can skip this upload step entirely!
+                </div>
+                
+                <h6 class="fw-bold text-primary mt-4">Data Tips:</h6>
+                <ul>
+                    <li><strong>Time Series:</strong> Include timestamp columns for time-based predictions</li>
+                    <li><strong>Target Variable:</strong> Ensure your target column is clearly defined</li>
+                    <li><strong>Missing Values:</strong> Handle missing data before upload when possible</li>
+                    <li><strong>Feature Names:</strong> Use descriptive column names</li>
+                </ul>
+                
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Pro Tip:</strong> Your uploaded CSV files are saved and can be reused across multiple experiments. This saves time and ensures consistency in your data pipeline.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

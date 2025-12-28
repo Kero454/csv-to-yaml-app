@@ -280,6 +280,16 @@ def upload_config():
     
     return render_template('upload_config.html')
 
+@web.route('/other_config_options')
+@login_required
+def other_config_options():
+    """Display other configuration options (Basic Form Editor and Use Template)."""
+    if 'experiment_name' not in session:
+        flash('Experiment session expired. Please start again.')
+        return redirect(url_for('routes.experiment'))
+    
+    return render_template('other_config_options.html')
+
 @web.route('/upload_csv', methods=['GET', 'POST'])
 @login_required
 def upload_csv():

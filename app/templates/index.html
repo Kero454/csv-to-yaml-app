@@ -2,74 +2,225 @@
 
 {% block title %}Home - CSV-to-YAML App{% endblock %}
 
+{% block extra_css %}
+<style>
+    .futuristic-dashboard {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 0;
+    }
+    .hero-section {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 60px 40px;
+        margin-bottom: 40px;
+        text-align: center;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+    .dashboard-card {
+        background: rgba(255, 255, 255, 0.95);
+        border: none;
+        border-radius: 20px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        transition: all 0.4s ease;
+        overflow: hidden;
+        position: relative;
+    }
+    .dashboard-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+    }
+    .dashboard-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 25px 50px rgba(0,0,0,0.2);
+    }
+    .card-icon {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-size: 4rem;
+        margin-bottom: 20px;
+    }
+    .futuristic-btn {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        border: none;
+        color: white;
+        padding: 12px 30px;
+        border-radius: 25px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .futuristic-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        color: white;
+    }
+    .futuristic-btn.btn-success {
+        background: linear-gradient(45deg, #28a745, #20c997);
+    }
+    .futuristic-btn.btn-success:hover {
+        box-shadow: 0 10px 25px rgba(40, 167, 69, 0.4);
+    }
+    .futuristic-btn.btn-warning {
+        background: linear-gradient(45deg, #ffc107, #fd7e14);
+        color: #212529;
+    }
+    .futuristic-btn.btn-warning:hover {
+        box-shadow: 0 10px 25px rgba(255, 193, 7, 0.4);
+        color: #212529;
+    }
+    .info-icon {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: #ffffff;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        width: 55px;
+        height: 55px;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .info-icon:hover {
+        transform: scale(1.15);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        border-color: rgba(255,255,255,0.6);
+        background: linear-gradient(45deg, #7c8cff, #8a6bb8);
+    }
+    .info-icon i {
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+        font-style: normal;
+        font-weight: 900;
+    }
+    .quick-start-card {
+        background: rgba(255, 255, 255, 0.95);
+        border: none;
+        border-radius: 20px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    }
+    .step-number {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-right: 10px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="jumbotron bg-primary text-white p-5 rounded mb-4">
-                <h1 class="display-4">Welcome to CSV-to-YAML App</h1>
-                <p class="lead">Transform your CSV data into structured YAML configurations with ease.</p>
-                <p>Hello, <strong>{{ current_user.username }}</strong>! Ready to create some amazing experiments?</p>
+<!-- Info Icon -->
+<button class="info-icon" data-bs-toggle="modal" data-bs-target="#infoModal">
+    <i>i</i>
+</button>
+
+<div class="futuristic-dashboard">
+<div class="container py-5">
+    <!-- Hero Section -->
+    <div class="hero-section">
+        <h1 class="display-3 fw-bold text-white mb-4">Welcome to CSV-to-YAML App</h1>
+        <p class="lead text-white mb-4">Transform your CSV data into structured YAML configurations with cutting-edge AI technology.</p>
+        <p class="text-white-50 fs-5">Hello, <strong class="text-white">{{ current_user.username }}</strong>! Ready to create some amazing experiments?</p>
+    </div>
+
+    <!-- Dashboard Cards -->
+    <div class="row g-4 mb-5">
+        <div class="col-md-4">
+            <div class="dashboard-card h-100">
+                <div class="card-body text-center p-4">
+                    <i class="fas fa-plus-circle card-icon"></i>
+                    <h5 class="card-title fw-bold mb-3">Create New Experiment</h5>
+                    <p class="card-text text-muted mb-4">Start a new experiment by uploading your CSV data and configuration files with our intelligent wizard.</p>
+                    <a href="{{ url_for('routes.experiment') }}" class="futuristic-btn btn-success">Get Started</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="dashboard-card h-100">
+                <div class="card-body text-center p-4">
+                    <i class="fas fa-folder-open card-icon"></i>
+                    <h5 class="card-title fw-bold mb-3">My Experiments</h5>
+                    <p class="card-text text-muted mb-4">View and manage your existing experiments, download results, and preview files with advanced analytics.</p>
+                    <a href="{{ url_for('routes.experiment_explorer') }}" class="futuristic-btn">View Experiments</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="dashboard-card h-100">
+                <div class="card-body text-center p-4">
+                    <i class="fas fa-rocket card-icon"></i>
+                    <h5 class="card-title fw-bold mb-3">Run Experiment</h5>
+                    <p class="card-text text-muted mb-4">Execute hyperparameter optimization on your existing configuration files with AI-powered insights.</p>
+                    <a href="{{ url_for('routes.run_experiment') }}" class="futuristic-btn btn-warning">Launch</a>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
-                <div class="card-body text-center">
-                    <i class="bi bi-plus-circle-fill text-success" style="font-size: 3rem;"></i>
-                    <h5 class="card-title mt-3">Create New Experiment</h5>
-                    <p class="card-text">Start a new experiment by uploading your CSV data and configuration files.</p>
-                    <a href="{{ url_for('routes.experiment') }}" class="btn btn-success">Get Started</a>
-                </div>
-            </div>
+    <!-- Quick Start Guide -->
+    <div class="quick-start-card">
+        <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 20px 20px 0 0;">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-lightbulb me-2"></i>Quick Start Guide</h5>
         </div>
-
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
-                <div class="card-body text-center">
-                    <i class="bi bi-folder-fill text-primary" style="font-size: 3rem;"></i>
-                    <h5 class="card-title mt-3">My Experiments</h5>
-                    <p class="card-text">View and manage your existing experiments, download results, and preview files.</p>
-                    <a href="{{ url_for('routes.experiment_explorer') }}" class="btn btn-primary">View Experiments</a>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
-                <div class="card-body text-center">
-                    <i class="bi bi-play-circle-fill text-warning" style="font-size: 3rem;"></i>
-                    <h5 class="card-title mt-3">Run Experiment</h5>
-                    <p class="card-text">Run hyperparameter optimization on your existing configuration files.</p>
-                    <a href="{{ url_for('routes.run_experiment') }}" class="btn btn-warning">Run Optimization</a>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Quick Start Guide</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6>1. Create an Experiment</h6>
-                            <p>Start by giving your experiment a name and uploading your configuration files.</p>
-                            
-                            <h6>2. Upload Data</h6>
-                            <p>Upload your CSV data files that will be used in your experiment.</p>
+        <div class="card-body p-4">
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="step-number">1</span>
+                        <div>
+                            <h6 class="fw-bold">Create an Experiment</h6>
+                            <p class="text-muted mb-0">Start by giving your experiment a name and uploading your configuration files through our guided wizard.</p>
                         </div>
-                        <div class="col-md-6">
-                            <h6>3. Configure Architecture</h6>
-                            <p>Upload or configure your model architecture files.</p>
-                            
-                            <h6>4. Run & Monitor</h6>
-                            <p>Execute your experiment and monitor the results through our dashboard.</p>
+                    </div>
+                    
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="step-number">2</span>
+                        <div>
+                            <h6 class="fw-bold">Upload Data</h6>
+                            <p class="text-muted mb-0">Upload your CSV data files that will be used in your machine learning experiment.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="step-number">3</span>
+                        <div>
+                            <h6 class="fw-bold">Configure Architecture</h6>
+                            <p class="text-muted mb-0">Upload or configure your model architecture files using our intelligent configuration tools.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="step-number">4</span>
+                        <div>
+                            <h6 class="fw-bold">Run & Monitor</h6>
+                            <p class="text-muted mb-0">Execute your experiment and monitor the results through our advanced analytics dashboard.</p>
                         </div>
                     </div>
                 </div>
@@ -77,4 +228,88 @@
         </div>
     </div>
 </div>
+</div>
+
+<!-- Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title" id="infoModalLabel">Dashboard - Help & Information</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="fw-bold text-primary">Welcome to Your Dashboard!</h6>
+                <p>This is your central hub for managing machine learning experiments. From here, you can create new experiments, manage existing ones, and run optimizations.</p>
+                
+                <h6 class="fw-bold text-primary mt-4">Main Features:</h6>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-success"><i class="fas fa-plus-circle me-2"></i>Create Experiment</h6>
+                                <p class="card-text small">Start a new ML experiment with guided setup including data upload, configuration, and architecture files.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-primary"><i class="fas fa-folder-open me-2"></i>My Experiments</h6>
+                                <p class="card-text small">Browse, edit, and manage all your existing experiments. View files, download results, and organize your work.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-warning"><i class="fas fa-rocket me-2"></i>Run Experiment</h6>
+                                <p class="card-text small">Execute experiments with hyperparameter optimization and deployment to Kubernetes clusters.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h6 class="fw-bold text-primary mt-4">Getting Started:</h6>
+                <ol>
+                    <li><strong>New Users:</strong> Click "Create New Experiment" to start your first ML project</li>
+                    <li><strong>Existing Users:</strong> Use "My Experiments" to continue working on previous projects</li>
+                    <li><strong>Ready to Deploy:</strong> Use "Run Experiment" to execute configured experiments</li>
+                </ol>
+                
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Pro Tip:</strong> Each experiment follows a structured workflow: Configuration → Data → Architecture → Optimization → Deployment. You can always return to previous steps to make changes.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add some interactive effects
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add hover effects to dashboard cards
+        const cards = document.querySelectorAll('.dashboard-card');
+        cards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-10px)';
+            });
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+            });
+        });
+        
+        // Add parallax effect to hero section
+        window.addEventListener('scroll', function() {
+            const scrolled = window.pageYOffset;
+            const hero = document.querySelector('.hero-section');
+            if (hero) {
+                hero.style.transform = `translateY(${scrolled * 0.5}px)`;
+            }
+        });
+    });
+</script>
 {% endblock %}

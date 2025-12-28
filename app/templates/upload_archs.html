@@ -1,44 +1,184 @@
 {% extends "base.html" %}
 
-{% block content %}
-    <h2>Step 4: Architecture Files</h2>
-    
-    <!-- Upload Option -->
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">Option 1: Upload Architecture Files</h5>
-        </div>
-        <div class="card-body">
-            <form method="post" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label for="arch_files">Select one or more architecture files</label>
-                    <input type="file" class="form-control-file" id="arch_files" name="arch_files" multiple required>
-                </div>
-                <button type="submit" class="btn btn-primary mt-3">Upload and Continue</button>
-            </form>
-        </div>
-    </div>
-    
-    <!-- Configuration Option -->
-    <div class="card mb-4">
-        <div class="card-header bg-success text-white">
-            <h5 class="mb-0">Option 2: Configure Architecture Files</h5>
-        </div>
-        <div class="card-body">
-            <p>Configure multiple architecture files step by step. You'll specify how many files you want to configure, then configure each one individually.</p>
-            <a href="{{ url_for('routes.arch_config_setup') }}" class="btn btn-success">Configure Architecture Files</a>
-        </div>
-    </div>
-    
-    <!-- YAML Training Configuration Option -->
-    <div class="card mb-4">
-        <div class="card-header bg-warning text-dark">
-            <h5 class="mb-0">Option 3: Configure YAML Training Models</h5>
-        </div>
-        <div class="card-body">
-            <p>Configure multiple YAML files for training models using a Google Form-style interface. Perfect for model configurations, time series settings, and training parameters.</p>
-            <a href="{{ url_for('routes.yaml_arch_setup') }}" class="btn btn-warning">Configure YAML Training Files</a>
-        </div>
-    </div>
+{% block extra_css %}
+<style>
+    .info-icon {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: #ffffff;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        width: 55px;
+        height: 55px;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .info-icon:hover {
+        transform: scale(1.15);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        border-color: rgba(255,255,255,0.6);
+        background: linear-gradient(45deg, #7c8cff, #8a6bb8);
+    }
+    .info-icon i {
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+        font-style: normal;
+        font-weight: 900;
+    }
+    .futuristic-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+        margin-bottom: 25px;
+    }
+    .futuristic-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+    }
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
 
+{% block content %}
+<!-- Info Icon -->
+<button class="info-icon" data-bs-toggle="modal" data-bs-target="#infoModal">
+    <i>i</i>
+</button>
+
+<div class="page-header">
+    <h2 class="mb-0">Step 4: Architecture Files</h2>
+    <p class="mb-0 mt-2">Define your model architecture for machine learning experiments</p>
+</div>
+
+<!-- Upload Option -->
+<div class="futuristic-card">
+    <div class="card-header text-white" style="background: rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.2);">
+        <h5 class="mb-0">Option 1: Upload Architecture Files</h5>
+    </div>
+    <div class="card-body" style="background: rgba(255,255,255,0.95); color: #333;">
+        <p class="fw-bold">Upload existing architecture files directly from your computer.</p>
+        <form method="post" enctype="multipart/form-data">
+            <div class="form-group mb-3">
+                <label for="arch_files" class="form-label fw-bold">Select one or more architecture files</label>
+                <input type="file" class="form-control" id="arch_files" name="arch_files" multiple required 
+                       style="border-radius: 10px; border: 2px solid #e9ecef;">
+                <div class="form-text text-muted mt-2">
+                    <i class="fas fa-file-code me-1"></i>
+                    Supported formats: .yaml, .yml, .json files
+                </div>
+            </div>
+            <button type="submit" class="btn mt-3" style="border-radius: 25px; background: linear-gradient(45deg, #667eea, #764ba2); border: none; color: white;">
+                <i class="fas fa-upload me-2"></i>Upload and Continue
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Configuration Option -->
+<div class="futuristic-card">
+    <div class="card-header text-white" style="background: rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.2);">
+        <h5 class="mb-0">Option 2: Configure Architecture Files</h5>
+    </div>
+    <div class="card-body" style="background: rgba(255,255,255,0.95); color: #333;">
+        <p class="fw-bold">Configure multiple architecture files step by step using our guided interface.</p>
+        <p class="text-muted">You'll specify how many files you want to configure, then configure each one individually with our intelligent form system.</p>
+        <a href="{{ url_for('routes.arch_config_setup') }}" class="btn mt-3" style="border-radius: 25px; background: linear-gradient(45deg, #28a745, #20c997); border: none; color: white;">
+            <i class="fas fa-cogs me-2"></i>Configure Architecture Files
+        </a>
+    </div>
+</div>
+
+<!-- YAML Training Configuration Option -->
+<div class="futuristic-card">
+    <div class="card-header text-white" style="background: rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.2);">
+        <h5 class="mb-0">Option 3: Configure YAML Training Models</h5>
+    </div>
+    <div class="card-body" style="background: rgba(255,255,255,0.95); color: #333;">
+        <p class="fw-bold">Configure multiple YAML files for training models using our advanced Google Form-style interface.</p>
+        <p class="text-muted">Perfect for model configurations, time series settings, and training parameters with intelligent defaults and validation.</p>
+        <a href="{{ url_for('routes.yaml_arch_setup') }}" class="btn mt-3" style="border-radius: 25px; background: linear-gradient(45deg, #ffc107, #fd7e14); border: none; color: #212529;">
+            <i class="fas fa-brain me-2"></i>Configure YAML Training Files
+        </a>
+    </div>
+</div>
+
+<!-- Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title" id="infoModalLabel">Step 4: Architecture Files - Help</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="fw-bold text-primary">What are Architecture Files?</h6>
+                <p>Architecture files define the structure and configuration of your machine learning models. They specify model parameters, layers, training settings, and other crucial aspects of your ML pipeline.</p>
+                
+                <h6 class="fw-bold text-primary mt-4">Available Options:</h6>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-primary">Option 1: Upload</h6>
+                                <p class="card-text small">Upload existing architecture files (.yaml, .yml, .json) that you already have configured.</p>
+                                <p class="card-text small"><strong>Best for:</strong> Users with pre-existing architecture definitions</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-success">Option 2: Configure</h6>
+                                <p class="card-text small">Use our guided interface to create architecture files step-by-step with validation and smart defaults.</p>
+                                <p class="card-text small"><strong>Best for:</strong> Users who want guided architecture creation</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title text-warning">Option 3: YAML Training</h6>
+                                <p class="card-text small">Advanced YAML configuration for training models with comprehensive parameter settings.</p>
+                                <p class="card-text small"><strong>Best for:</strong> Advanced users needing detailed training configurations</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h6 class="fw-bold text-primary mt-4">Architecture File Contents:</h6>
+                <ul>
+                    <li><strong>Model Type:</strong> Specify the ML model (LSTM, Transformer, etc.)</li>
+                    <li><strong>Layer Configuration:</strong> Define network architecture</li>
+                    <li><strong>Hyperparameters:</strong> Set learning rates, batch sizes, etc.</li>
+                    <li><strong>Training Settings:</strong> Configure epochs, validation, etc.</li>
+                    <li><strong>Data Processing:</strong> Define input/output specifications</li>
+                </ul>
+                
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Pro Tip:</strong> If you're new to ML architecture configuration, start with Option 2 (Configure) for guided assistance. Experienced users can upload existing files with Option 1.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
