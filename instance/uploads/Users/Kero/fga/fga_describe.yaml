@@ -1,0 +1,10 @@
+architecture_files:
+- description: YAML training configuration 1 for fga
+  filename: persistent_1_1.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: name.csv
+experiment: fga
+experiment_config_file: fga_config.yaml
+timestamp: '2026-02-17T14:50:58.051743'
+user: Kero

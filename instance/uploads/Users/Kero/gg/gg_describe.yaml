@@ -1,0 +1,16 @@
+architecture_files:
+- description: YAML training configuration 1 for gg
+  filename: nlinear_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 2 for gg
+  filename: nlinear_1_2.yaml
+  type: yaml_training_config
+- description: YAML training configuration 3 for gg
+  filename: autotransformer_1_1.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: name.csv
+experiment: gg
+experiment_config_file: gg_config.yaml
+timestamp: '2026-02-17T14:35:37.748575'
+user: Kero

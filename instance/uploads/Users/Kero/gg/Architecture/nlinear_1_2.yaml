@@ -1,0 +1,22 @@
+# @package _global_
+
+model:
+  type: nlinear
+  retrain: true
+ts:
+  name: nlinear_1
+  version: 1
+  enrich: []
+  use_covariates: true
+  past_variables: []
+  future_variables: []
+  static_variables: []
+train_config:
+  batch_size: 32
+  max_epochs: 20
+model_configs:
+  cat_emb_dim: 16
+  hidden_size: 12
+  kernel_size: 3
+  kind: lstm
+  sum_emb: true

@@ -1,0 +1,17 @@
+# @package _global_
+
+model:
+  type: persistent
+  retrain: true
+ts:
+  name: persistent_1
+  version: 1
+  enrich: []
+  use_covariates: true
+  past_variables: []
+  future_variables: []
+  static_variables: []
+train_config:
+  batch_size: 32
+  max_epochs: 20
+model_configs: {}

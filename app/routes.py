@@ -3653,6 +3653,191 @@ def deployment_config_old():
     # Redirect to step 5 - config selection for sweeper
     return redirect(url_for('routes.run_experiment_config_selection'))
 
+# ========================
+# Non-RT RIC Publishing API
+# ========================
+
+@web.route('/api/publish_to_ric', methods=['POST'])
+@login_required
+def publish_to_ric():
+    """
+    Publish a trained model from an experiment to the Non-RT RIC ML Model Catalog.
+    This is the 'Publish' button action on the experiment explorer.
+    
+    Reads the experiment's architecture YAML to extract:
+      - model_type (lstm for now)
+      - model_configs (architecture parameters)
+      - training metadata
+    Then POSTs to the ML Model Catalog on the RIC server.
+    """
+    import requests as http_requests
+    
+    data = request.get_json()
+    if not data or 'experiment_name' not in data:
+        return jsonify({'error': 'Missing experiment_name'}), 400
+    
+    experiment_name = data['experiment_name']
+    safe_user = secure_filename(current_user.username)
+    safe_exp = secure_filename(experiment_name)
+    
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    exp_path = os.path.join(base_upload, safe_user, safe_exp)
+    
+    if not os.path.exists(exp_path):
+        return jsonify({'error': f'Experiment "{experiment_name}" not found'}), 404
+    
+    # Find architecture YAML files to extract model config
+    arch_dir = os.path.join(exp_path, 'Architecture')
+    config_data = {}
+    model_type = 'unknown'
+    model_configs = {}
+    
+    # Check Architecture directory first
+    if os.path.exists(arch_dir):
+        for fname in os.listdir(arch_dir):
+            if fname.endswith(('.yaml', '.yml')):
+                fpath = os.path.join(arch_dir, fname)
+                try:
+                    with open(fpath, 'r') as f:
+                        arch_data = yaml.safe_load(f)
+                    if arch_data:
+                        # Extract model type
+                        if 'model' in arch_data and 'type' in arch_data['model']:
+                            model_type = arch_data['model']['type']
+                        elif 'model_type' in arch_data:
+                            model_type = arch_data['model_type']
+                        # Extract model_configs
+                        if 'model_configs' in arch_data:
+                            model_configs = arch_data['model_configs']
+                        config_data = arch_data
+                        break
+                except Exception as e:
+                    current_app.logger.error(f"Error reading arch file {fname}: {e}")
+    
+    # Also check experiment-level config files
+    if model_type == 'unknown':
+        for fname in os.listdir(exp_path):
+            if fname.endswith(('.yaml', '.yml')) and 'config' in fname.lower():
+                fpath = os.path.join(exp_path, fname)
+                try:
+                    with open(fpath, 'r') as f:
+                        cfg = yaml.safe_load(f)
+                    if cfg:
+                        if 'model' in cfg and 'type' in cfg['model']:
+                            model_type = cfg['model']['type']
+                        elif 'model_type' in cfg:
+                            model_type = cfg['model_type']
+                        if 'model_configs' in cfg:
+                            model_configs = cfg['model_configs']
+                        if not config_data:
+                            config_data = cfg
+                except Exception as e:
+                    current_app.logger.error(f"Error reading config {fname}: {e}")
+    
+    # For now, only support LSTM
+    if model_type.lower() not in ['lstm', 'rnn']:
+        # Still allow publishing but flag that only LSTM is fully supported
+        current_app.logger.warning(f"Model type '{model_type}' - publishing with generic params")
+    
+    # Extract LSTM-specific parameters
+    lstm_params = {}
+    if model_type.lower() == 'lstm':
+        lstm_params = {
+            'cat_emb_dim': model_configs.get('cat_emb_dim', 16),
+            'hidden_RNN': model_configs.get('hidden_RNN', 12),
+            'num_layers_RNN': model_configs.get('num_layers_RNN', 3),
+            'kernel_size': model_configs.get('kernel_size', 5),
+            'kind': model_configs.get('kind', 'lstm'),
+            'sum_emb': model_configs.get('sum_emb', True),
+            'optim': model_configs.get('optim', 'torch.optim.SGD'),
+            'activation': model_configs.get('activation', 'torch.nn.SELU')
+        }
+    
+    # Extract training config if available
+    train_config = config_data.get('train_config', {})
+    ts_config = config_data.get('ts', {})
+    
+    # Build the model version from experiment name
+    model_version = data.get('version', '1.0.0')
+    model_name = f"{safe_exp}-{model_type}".lower().replace('_', '-')
+    
+    # Build the payload for the ML Model Catalog
+    catalog_payload = {
+        'name': model_name,
+        'version': model_version,
+        'model_type': model_type.lower(),
+        'image': f'localhost:5000/xapps/{model_name}:{model_version}',
+        'description': f'{model_type.upper()} model from experiment "{experiment_name}"',
+        'metrics': {
+            'accuracy': data.get('accuracy', 0.0),
+            'batch_size': train_config.get('batch_size', 32),
+            'max_epochs': train_config.get('max_epochs', 50)
+        },
+        'training_framework': 'csv-to-yaml-platform',
+        'input_schema': {
+            'past_variables': ts_config.get('past_variables', []),
+            'future_variables': ts_config.get('future_variables', []),
+            'use_covariates': ts_config.get('use_covariates', True)
+        },
+        'output_schema': {
+            'type': 'prediction',
+            'model_type': model_type.lower()
+        },
+        'xapp_descriptor': {
+            'model_configs': model_configs if model_configs else lstm_params,
+            'xapp_name': model_name,
+            'messaging': {
+                'rxMessages': ['A1_POLICY_REQ', 'RIC_SUB_RESP'],
+                'txMessages': ['A1_POLICY_RESP', 'RIC_SUB_REQ', 'RIC_INDICATION']
+            }
+        }
+    }
+    
+    # Send to ML Model Catalog on the RIC server
+    catalog_url = os.environ.get('RIC_CATALOG_URL', 'http://10.1.65.251:8080')
+    
+    try:
+        resp = http_requests.post(
+            f'{catalog_url}/models',
+            json=catalog_payload,
+            timeout=10
+        )
+        
+        if resp.status_code == 201:
+            result = resp.json()
+            current_app.logger.info(f"Model published to Non-RT RIC: {result}")
+            return jsonify({
+                'success': True,
+                'message': f'Model "{model_name}" published to Non-RT RIC!',
+                'model_id': result.get('model_id', result.get('model', {}).get('id', 'unknown')),
+                'catalog_url': catalog_url,
+                'payload': catalog_payload
+            }), 200
+        else:
+            current_app.logger.error(f"Catalog returned {resp.status_code}: {resp.text}")
+            return jsonify({
+                'success': False,
+                'error': f'Catalog returned status {resp.status_code}',
+                'details': resp.text
+            }), 502
+            
+    except http_requests.exceptions.ConnectionError:
+        current_app.logger.warning(f"Cannot connect to RIC catalog at {catalog_url}")
+        # Return success with demo mode info
+        return jsonify({
+            'success': True,
+            'message': f'Model "{model_name}" prepared for Non-RT RIC (catalog offline - demo mode)',
+            'demo_mode': True,
+            'payload': catalog_payload
+        }), 200
+    except Exception as e:
+        current_app.logger.error(f"Error publishing to RIC: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # Error handlers
 
 @web.errorhandler(404)

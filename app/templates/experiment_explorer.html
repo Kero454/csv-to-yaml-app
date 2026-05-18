@@ -111,6 +111,23 @@
                                              </li>
                                         {% endfor %}
                                     </ul>
+                                    
+                                    <!-- Publish to Non-RT RIC -->
+                                    <hr class="my-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h5><i class="bi bi-broadcast me-2"></i>O-RAN Non-RT RIC</h5>
+                                        <button class="btn btn-success publish-ric-btn" 
+                                                data-experiment="{{ experiment.name }}"
+                                                onclick="publishToRIC(this)">
+                                            <i class="bi bi-cloud-upload me-2"></i>Publish to Non-RT RIC
+                                        </button>
+                                    </div>
+                                    <div id="ric-result-{{ loop.index }}" class="mt-2" style="display:none;">
+                                        <div class="alert" role="alert">
+                                            <div class="ric-result-message"></div>
+                                            <pre class="ric-result-details mt-2 mb-0" style="font-size:0.8em; max-height:300px; overflow-y:auto; display:none;"></pre>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -164,6 +181,62 @@
 
 {% block scripts %}
 <script>
+async function publishToRIC(button) {
+    const experimentName = button.dataset.experiment;
+    const resultDiv = button.closest('.accordion-body').querySelector('[id^="ric-result-"]');
+    const alertDiv = resultDiv.querySelector('.alert');
+    const msgDiv = resultDiv.querySelector('.ric-result-message');
+    const detailsPre = resultDiv.querySelector('.ric-result-details');
+    
+    // Disable button and show loading
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Publishing...';
+    resultDiv.style.display = 'block';
+    alertDiv.className = 'alert alert-info';
+    msgDiv.textContent = 'Connecting to Non-RT RIC ML Model Catalog...';
+    detailsPre.style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/publish_to_ric', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ experiment_name: experimentName })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alertDiv.className = 'alert alert-success';
+            msgDiv.innerHTML = '<strong>' + data.message + '</strong>';
+            if (data.model_id) {
+                msgDiv.innerHTML += '<br><small>Model ID: ' + data.model_id + '</small>';
+            }
+            if (data.demo_mode) {
+                msgDiv.innerHTML += '<br><small class="text-muted">Demo mode: RIC catalog is offline. Payload prepared for when server is available.</small>';
+            }
+            // Show payload details
+            detailsPre.style.display = 'block';
+            detailsPre.textContent = JSON.stringify(data.payload, null, 2);
+            button.innerHTML = '<i class="bi bi-check-circle me-2"></i>Published!';
+            button.className = 'btn btn-outline-success publish-ric-btn';
+        } else {
+            alertDiv.className = 'alert alert-danger';
+            msgDiv.innerHTML = '<strong>Failed:</strong> ' + (data.error || 'Unknown error');
+            if (data.details) {
+                detailsPre.style.display = 'block';
+                detailsPre.textContent = data.details;
+            }
+            button.innerHTML = '<i class="bi bi-cloud-upload me-2"></i>Retry Publish';
+            button.disabled = false;
+        }
+    } catch (error) {
+        alertDiv.className = 'alert alert-danger';
+        msgDiv.innerHTML = '<strong>Network error:</strong> ' + error.message;
+        button.innerHTML = '<i class="bi bi-cloud-upload me-2"></i>Retry Publish';
+        button.disabled = false;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const previewModal = new bootstrap.Modal(document.getElementById('filePreviewModal'));
     const modalTitle = document.getElementById('filePreviewModalLabel');

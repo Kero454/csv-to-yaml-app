@@ -1,0 +1,19 @@
+architecture_files:
+- description: YAML training configuration 1 for kfa
+  filename: crossformer_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 2 for kfa
+  filename: nlinear_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 3 for kfa
+  filename: autotransformer_1_1.yaml
+  type: yaml_training_config
+- description: YAML training configuration 4 for kfa
+  filename: linear_1_1.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: name.csv
+experiment: kfa
+experiment_config_file: config_kfa.yaml
+timestamp: '2026-02-17T13:08:02.964561'
+user: ghatas
