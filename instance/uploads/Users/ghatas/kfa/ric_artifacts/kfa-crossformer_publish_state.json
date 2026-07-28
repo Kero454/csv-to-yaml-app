@@ -1,0 +1,99 @@
+{
+  "model_id": "9d26ceb2-6720-4bb0-98ac-b7edec2e9f3d",
+  "model_name": "kfa-crossformer",
+  "model_type": "crossformer",
+  "version": "1.0.0",
+  "pkl_path": "C:\\Users\\wwwke\\csv-to-yaml-app\\instance\\uploads\\Users\\ghatas\\kfa\\ric_artifacts\\kfa-crossformer_v1.0.0.pkl",
+  "catalog_url": "http://localhost:8080",
+  "catalog_payload": {
+    "name": "kfa-crossformer",
+    "version": "1.0.0",
+    "model_type": "crossformer",
+    "image": "localhost:30500/xapps/kfa-crossformer:1.0.0",
+    "description": "CROSSFORMER model from experiment \"kfa\" (arch: crossformer_1_1.yaml)",
+    "metrics": {
+      "batch_size": 32,
+      "max_epochs": 20
+    },
+    "hyperparameters": {
+      "d_model": 4,
+      "hidden_size": 12,
+      "n_layer_encoder": 2,
+      "n_head": 2,
+      "dropout_rate": 0.5,
+      "win_size": 2,
+      "seg_len": 6,
+      "factor": 5,
+      "optim": "torch.optim.Adam",
+      "persistence_weight": 0.01,
+      "loss_type": "l1"
+    },
+    "training_framework": "csv-to-yaml-platform",
+    "input_schema": {
+      "past_variables": [],
+      "future_variables": [],
+      "use_covariates": true
+    },
+    "output_schema": {
+      "type": "prediction",
+      "model_type": "crossformer"
+    },
+    "pkl_path": "C:\\Users\\wwwke\\csv-to-yaml-app\\instance\\uploads\\Users\\ghatas\\kfa\\ric_artifacts\\kfa-crossformer_v1.0.0.pkl",
+    "xapp_descriptor": {
+      "model_configs": {
+        "d_model": 4,
+        "dropout_rate": 0.5,
+        "factor": 5,
+        "hidden_size": 12,
+        "loss_type": "l1",
+        "n_head": 2,
+        "n_layer_encoder": 2,
+        "optim": "torch.optim.Adam",
+        "persistence_weight": 0.01,
+        "seg_len": 6,
+        "win_size": 2
+      },
+      "hyperparameters": {
+        "d_model": 4,
+        "hidden_size": 12,
+        "n_layer_encoder": 2,
+        "n_head": 2,
+        "dropout_rate": 0.5,
+        "win_size": 2,
+        "seg_len": 6,
+        "factor": 5,
+        "optim": "torch.optim.Adam",
+        "persistence_weight": 0.01,
+        "loss_type": "l1"
+      },
+      "xapp_name": "kfa-crossformer",
+      "messaging": {
+        "rxMessages": [
+          "A1_POLICY_REQ",
+          "RIC_SUB_RESP"
+        ],
+        "txMessages": [
+          "A1_POLICY_RESP",
+          "RIC_SUB_REQ",
+          "RIC_INDICATION"
+        ]
+      }
+    }
+  },
+  "hyperparameters": {
+    "d_model": 4,
+    "hidden_size": 12,
+    "n_layer_encoder": 2,
+    "n_head": 2,
+    "dropout_rate": 0.5,
+    "win_size": 2,
+    "seg_len": 6,
+    "factor": 5,
+    "optim": "torch.optim.Adam",
+    "persistence_weight": 0.01,
+    "loss_type": "l1"
+  },
+  "demo_mode": false,
+  "experiment_name": "kfa",
+  "published_at": "2026-06-09T00:35:19.346926Z"
+}

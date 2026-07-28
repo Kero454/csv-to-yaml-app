@@ -1,0 +1,103 @@
+{
+  "model_id": "731c8b1b-3110-4c00-9302-af7d2bcde7ce",
+  "model_name": "kfa-linear",
+  "model_type": "linear",
+  "version": "1.0.0",
+  "pkl_path": "C:\\Users\\wwwke\\csv-to-yaml-app\\instance\\uploads\\Users\\ghatas\\kfa\\ric_artifacts\\kfa-linear_v1.0.0.pkl",
+  "catalog_url": "http://localhost:8080",
+  "catalog_payload": {
+    "name": "kfa-linear",
+    "version": "1.0.0",
+    "model_type": "linear",
+    "image": "localhost:30500/xapps/kfa-linear:1.0.0",
+    "description": "LINEAR model from experiment \"kfa\" (arch: linear_1_1.yaml)",
+    "metrics": {
+      "batch_size": 32,
+      "max_epochs": 20
+    },
+    "hyperparameters": {
+      "cat_emb_dim": 16,
+      "kernel_size": 3,
+      "sum_emb": true,
+      "hidden_size": 12,
+      "kind": "lstm",
+      "dropout_rate": 0.5,
+      "use_bn": false,
+      "optim": "torch.optim.Adam",
+      "activation": "torch.nn.PReLU",
+      "persistence_weight": 0.01,
+      "loss_type": "l1",
+      "simple": true
+    },
+    "training_framework": "csv-to-yaml-platform",
+    "input_schema": {
+      "past_variables": [],
+      "future_variables": [],
+      "use_covariates": true
+    },
+    "output_schema": {
+      "type": "prediction",
+      "model_type": "linear"
+    },
+    "pkl_path": "C:\\Users\\wwwke\\csv-to-yaml-app\\instance\\uploads\\Users\\ghatas\\kfa\\ric_artifacts\\kfa-linear_v1.0.0.pkl",
+    "xapp_descriptor": {
+      "model_configs": {
+        "cat_emb_dim": 16,
+        "kernel_size": 3,
+        "sum_emb": true,
+        "hidden_size": 12,
+        "kind": "lstm",
+        "dropout_rate": 0.5,
+        "use_bn": false,
+        "optim": "torch.optim.Adam",
+        "activation": "torch.nn.PReLU",
+        "persistence_weight": 0.01,
+        "loss_type": "l1",
+        "simple": true
+      },
+      "hyperparameters": {
+        "cat_emb_dim": 16,
+        "kernel_size": 3,
+        "sum_emb": true,
+        "hidden_size": 12,
+        "kind": "lstm",
+        "dropout_rate": 0.5,
+        "use_bn": false,
+        "optim": "torch.optim.Adam",
+        "activation": "torch.nn.PReLU",
+        "persistence_weight": 0.01,
+        "loss_type": "l1",
+        "simple": true
+      },
+      "xapp_name": "kfa-linear",
+      "messaging": {
+        "rxMessages": [
+          "A1_POLICY_REQ",
+          "RIC_SUB_RESP"
+        ],
+        "txMessages": [
+          "A1_POLICY_RESP",
+          "RIC_SUB_REQ",
+          "RIC_INDICATION"
+        ]
+      }
+    }
+  },
+  "hyperparameters": {
+    "cat_emb_dim": 16,
+    "kernel_size": 3,
+    "sum_emb": true,
+    "hidden_size": 12,
+    "kind": "lstm",
+    "dropout_rate": 0.5,
+    "use_bn": false,
+    "optim": "torch.optim.Adam",
+    "activation": "torch.nn.PReLU",
+    "persistence_weight": 0.01,
+    "loss_type": "l1",
+    "simple": true
+  },
+  "demo_mode": false,
+  "experiment_name": "kfa",
+  "published_at": "2026-06-09T00:35:23.451303Z"
+}

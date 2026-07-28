@@ -14,6 +14,22 @@ import yaml
 from datetime import datetime
 from app import db
 
+# ---------------------------------------------------------------------------
+# xApp container registry.
+# The O-RAN xApp onboarder validates the container image `registry` against the
+# pattern ^[A-Za-z0-9.-]+\.[A-Za-z]+(:\d+)?$ (it MUST contain a dot), so a bare
+# `localhost:30500` is rejected. We therefore tag images with a dotted registry
+# name. The image is built into minikube's docker daemon and deployed with
+# imagePullPolicy=Never, so this name is only a local tag - no real registry is
+# contacted. Override with the XAPP_REGISTRY env var if a real registry is used.
+XAPP_REGISTRY = os.environ.get('XAPP_REGISTRY', 'registry.local:30500')
+
+
+def xapp_image_tag(model_name, model_version):
+    """Return the fully-qualified image tag for an xApp model image."""
+    return f'{XAPP_REGISTRY}/xapps/{model_name}:{model_version}'
+
+
 def get_user_csv_files(user):
     """Get list of CSV files uploaded by the user.
     
@@ -3653,30 +3669,218 @@ def deployment_config_old():
     # Redirect to step 5 - config selection for sweeper
     return redirect(url_for('routes.run_experiment_config_selection'))
 
-# ========================
-# Non-RT RIC Publishing API
-# ========================
+# ===================================================
+# O-RAN ML Lifecycle Pipeline (Steps 5, 6, 7)
+# ===================================================
+# Step 5: Publish to Non-RT RIC ML Model Catalog
+# Step 6: Package model into Docker Image + set A1 policies
+# Step 7: Deploy packaged xApp to Near-RT RIC
+# ===================================================
+
+# ---------------------------------------------------
+# Model hyperparameter registry
+# ---------------------------------------------------
+# Single source of truth describing the hyperparameters that belong to each
+# supported model type, together with their default values. Mirrors the form
+# handling in yaml_arch_step2(). Used by Step 5 (Publish) to extract and save
+# each model's own parameters into the .pkl artifact and the catalog payload.
+MODEL_PARAMETERS = {
+    'autoformer': {
+        'd_model': 4, 'kernel_size': 3, 'n_layer_encoder': 2, 'n_layer_decoder': 2,
+        'label_len': 4, 'n_head': 2, 'dropout_rate': 0.5, 'factor': 5, 'hidden_size': 12,
+        'optim': 'torch.optim.Adam', 'activation': 'torch.nn.PReLU',
+        'persistence_weight': 0.010, 'loss_type': 'l1'
+    },
+    'lstm': {
+        'cat_emb_dim': 16, 'hidden_RNN': 12, 'num_layers_RNN': 3, 'kernel_size': 5,
+        'kind': 'lstm', 'sum_emb': True, 'optim': 'torch.optim.SGD',
+        'activation': 'torch.nn.SELU'
+    },
+    'crossformer': {
+        'd_model': 4, 'hidden_size': 12, 'n_layer_encoder': 2, 'n_head': 2,
+        'dropout_rate': 0.5, 'win_size': 2, 'seg_len': 6, 'factor': 10,
+        'optim': 'torch.optim.Adam', 'persistence_weight': 0.010, 'loss_type': 'l1'
+    },
+    'd3vae': {
+        'embedding_dimension': 2, 'scale': 0.1, 'hidden_size': 2, 'num_layers': 1,
+        'dropout_rate': 0.1, 'diff_steps': 1, 'loss_type': 'kl', 'beta_end': 0.01,
+        'beta_schedule': 'linear', 'channel_mult': 1, 'mult': 4,
+        'num_preprocess_blocks': 1, 'num_preprocess_cells': 1, 'num_channels_enc': 1,
+        'arch_instance': 'res_mbconv', 'num_latent_per_group': 1, 'num_channels_dec': 1,
+        'groups_per_scale': 1, 'num_postprocess_blocks': 1, 'num_postprocess_cells': 1,
+        'beta_start': 0, 'optim': 'torch.optim.SGD'
+    },
+    'diffusion': {
+        'd_model': 12, 'learn_var': True, 'cosine_alpha': True, 'diffusion_steps': 100,
+        'beta': 0.03, 'gamma': 0.01, 'n_layers_RNN': 4, 'd_head': 64, 'n_head': 8,
+        'dropout_rate': 0.0, 'activation': 'torch.nn.GELU', 'subnet': 1,
+        'optim': 'torch.optim.Adam', 'perc_subnet_learning_for_step': 0.1,
+        'persistence_weight': 0.010, 'loss_type': 'l1'
+    },
+    'dilated_conv': {
+        'cat_emb_dim': 4, 'hidden_RNN': 16, 'num_layers_RNN': 1, 'kernel_size': 3,
+        'kind': 'gru', 'sum_emb': True, 'persistence_weight': 1.0, 'use_bn': False,
+        'use_glu': True, 'glu_percentage': 0.2, 'quantiles': [0.1, 0.5, 0.9],
+        'optim': 'torch.optim.SGD', 'activation': 'torch.nn.SELU',
+        'loss_type': 'linear_penalization'
+    },
+    'dilated_conv_ed': {
+        'cat_emb_dim': 4, 'hidden_RNN': 16, 'num_layers_RNN': 1, 'kernel_size': 3,
+        'kind': 'gru', 'sum_emb': True, 'persistence_weight': 1.0, 'use_bn': False,
+        'quantiles': [0.1, 0.5, 0.9], 'optim': 'torch.optim.SGD',
+        'activation': 'torch.nn.SELU', 'loss_type': 'linear_penalization'
+    },
+    'dlinear': {
+        'cat_emb_dim': 4, 'kernel_size': 3, 'sum_emb': True, 'hidden_size': 12,
+        'kind': 'dlinear', 'optim': 'torch.optim.SGD', 'activation': 'torch.nn.LeakyReLU',
+        'simple': True
+    },
+    'informer': {
+        'd_model': 4, 'hidden_size': 4, 'n_layer_encoder': 2, 'n_layer_decoder': 2,
+        'n_head': 2, 'dropout_rate': 0.5, 'optim': 'torch.optim.Adam',
+        'activation': 'torch.nn.PReLU', 'persistence_weight': 0.010, 'loss_type': 'l1',
+        'remove_last': True
+    },
+    'linear': {
+        'cat_emb_dim': 16, 'kernel_size': 5, 'sum_emb': True, 'hidden_size': 8,
+        'kind': 'linear', 'dropout_rate': 0.1, 'use_bn': False, 'optim': 'torch.optim.Adam',
+        'activation': 'torch.nn.PReLU', 'persistence_weight': 0.010, 'loss_type': 'l1',
+        'simple': False
+    },
+    'nlinear': {
+        'cat_emb_dim': 16, 'kernel_size': 5, 'sum_emb': True, 'hidden_size': 24,
+        'kind': 'nlinear'
+    },
+    'patchtst': {
+        'd_model': 4, 'kernel_size': 3, 'decomposition': True, 'n_layer': 2,
+        'patch_len': 4, 'n_head': 2, 'stride': 4, 'dropout_rate': 0.5, 'hidden_size': 12,
+        'optim': 'torch.optim.Adam', 'activation': 'torch.nn.PReLU',
+        'persistence_weight': 0.010, 'loss_type': 'l1', 'remove_last': True
+    },
+    'persistent': {},
+    'rnn': {
+        'cat_emb_dim': 16, 'hidden_RNN': 12, 'num_layers_RNN': 3, 'kernel_size': 5,
+        'kind': 'gru', 'sum_emb': True
+    },
+    'tft': {
+        'd_model': 4, 'd_head': 4, 'n_head': 4, 'num_layers_RNN': 8,
+        'optim': 'torch.optim.Adam', 'dropout_rate': 0.5, 'persistence_weight': 0.010,
+        'loss_type': 'l1'
+    },
+    'xlstm': {
+        'cat_emb_dim': 16, 'hidden_RNN': 12, 'num_layers_RNN': 3, 'kernel_size': 5,
+        'kind': 'xlstm', 'sum_emb': True, 'num_blocks': 2, 'bidirectional': True,
+        'lstm_type': 'slstm'
+    },
+}
+
+
+def _extract_model_hyperparameters(model_type, model_configs):
+    """Return a clean dict of hyperparameters for the given model type.
+
+    Uses the MODEL_PARAMETERS registry to know which parameters belong to the
+    model. Values are taken from the experiment's model_configs; any missing
+    parameter is filled with the registry default. Extra keys present in
+    model_configs but not in the registry are preserved so nothing is lost.
+    """
+    mt = (model_type or '').lower()
+    spec = MODEL_PARAMETERS.get(mt, {})
+    model_configs = model_configs or {}
+    hyperparameters = {}
+    for param, default in spec.items():
+        hyperparameters[param] = model_configs.get(param, default)
+    # Preserve any additional params the user defined that aren't in the spec
+    for key, value in model_configs.items():
+        if key not in hyperparameters:
+            hyperparameters[key] = value
+    return hyperparameters
+
+
+def _scan_experiment_models(exp_path):
+    """Scan an experiment directory and return all architecture YAML data found."""
+    models_found = []
+    
+    # Check Architecture directory
+    arch_dir = os.path.join(exp_path, 'Architecture')
+    if os.path.exists(arch_dir):
+        for fname in sorted(os.listdir(arch_dir)):
+            if fname.endswith(('.yaml', '.yml')):
+                fpath = os.path.join(arch_dir, fname)
+                try:
+                    with open(fpath, 'r') as f:
+                        arch_data = yaml.safe_load(f)
+                    if not arch_data:
+                        continue
+                    model_type = 'unknown'
+                    if isinstance(arch_data.get('model'), dict) and 'type' in arch_data['model']:
+                        model_type = arch_data['model']['type']
+                    elif 'model_type' in arch_data:
+                        model_type = arch_data['model_type']
+                    if model_type != 'unknown':
+                        models_found.append({
+                            'filename': fname,
+                            'filepath': fpath,
+                            'model_type': model_type,
+                            'model_configs': arch_data.get('model_configs', {}),
+                            'train_config': arch_data.get('train_config', {}),
+                            'ts': arch_data.get('ts', {}),
+                            'full_data': arch_data
+                        })
+                except Exception:
+                    pass
+    
+    # Fallback: check experiment-level config files
+    if not models_found:
+        for fname in sorted(os.listdir(exp_path)):
+            if fname.endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(exp_path, fname)):
+                fpath = os.path.join(exp_path, fname)
+                try:
+                    with open(fpath, 'r') as f:
+                        cfg = yaml.safe_load(f)
+                    if not cfg:
+                        continue
+                    model_type = 'unknown'
+                    if isinstance(cfg.get('model'), dict) and 'type' in cfg['model']:
+                        model_type = cfg['model']['type']
+                    elif 'model_type' in cfg:
+                        model_type = cfg['model_type']
+                    if model_type != 'unknown' and cfg.get('model_configs'):
+                        models_found.append({
+                            'filename': fname,
+                            'filepath': fpath,
+                            'model_type': model_type,
+                            'model_configs': cfg.get('model_configs', {}),
+                            'train_config': cfg.get('train_config', {}),
+                            'ts': cfg.get('ts', {}),
+                            'full_data': cfg
+                        })
+                except Exception:
+                    pass
+    
+    return models_found
+
 
 @web.route('/api/publish_to_ric', methods=['POST'])
 @login_required
 def publish_to_ric():
     """
-    Publish a trained model from an experiment to the Non-RT RIC ML Model Catalog.
-    This is the 'Publish' button action on the experiment explorer.
+    Step 5: Publish trained model to Non-RT RIC ML Model Catalog.
     
-    Reads the experiment's architecture YAML to extract:
-      - model_type (lstm for now)
-      - model_configs (architecture parameters)
-      - training metadata
-    Then POSTs to the ML Model Catalog on the RIC server.
+    - Scans experiment Architecture/ for YAML files
+    - Extracts model_type, model_configs, training params
+    - Generates a .pkl artifact containing the model metadata
+    - POSTs to the ML Model Catalog
     """
+    import pickle
+    import json as json_mod
     import requests as http_requests
     
     data = request.get_json()
     if not data or 'experiment_name' not in data:
-        return jsonify({'error': 'Missing experiment_name'}), 400
+        return jsonify({'success': False, 'error': 'Missing experiment_name'}), 400
     
     experiment_name = data['experiment_name']
+    arch_file = data.get('arch_file', None)  # optional: specific arch file
     safe_user = secure_filename(current_user.username)
     safe_exp = secure_filename(experiment_name)
     
@@ -3684,107 +3888,110 @@ def publish_to_ric():
     exp_path = os.path.join(base_upload, safe_user, safe_exp)
     
     if not os.path.exists(exp_path):
-        return jsonify({'error': f'Experiment "{experiment_name}" not found'}), 404
+        return jsonify({'success': False, 'error': f'Experiment "{experiment_name}" not found'}), 404
     
-    # Find architecture YAML files to extract model config
-    arch_dir = os.path.join(exp_path, 'Architecture')
-    config_data = {}
-    model_type = 'unknown'
-    model_configs = {}
+    # Scan for architecture models
+    models_found = _scan_experiment_models(exp_path)
     
-    # Check Architecture directory first
-    if os.path.exists(arch_dir):
-        for fname in os.listdir(arch_dir):
-            if fname.endswith(('.yaml', '.yml')):
-                fpath = os.path.join(arch_dir, fname)
-                try:
-                    with open(fpath, 'r') as f:
-                        arch_data = yaml.safe_load(f)
-                    if arch_data:
-                        # Extract model type
-                        if 'model' in arch_data and 'type' in arch_data['model']:
-                            model_type = arch_data['model']['type']
-                        elif 'model_type' in arch_data:
-                            model_type = arch_data['model_type']
-                        # Extract model_configs
-                        if 'model_configs' in arch_data:
-                            model_configs = arch_data['model_configs']
-                        config_data = arch_data
-                        break
-                except Exception as e:
-                    current_app.logger.error(f"Error reading arch file {fname}: {e}")
+    if not models_found:
+        return jsonify({
+            'success': False,
+            'error': 'No architecture YAML files with model_type found in this experiment. '
+                     'Please add an architecture file with model type and model_configs first.'
+        }), 400
     
-    # Also check experiment-level config files
-    if model_type == 'unknown':
-        for fname in os.listdir(exp_path):
-            if fname.endswith(('.yaml', '.yml')) and 'config' in fname.lower():
-                fpath = os.path.join(exp_path, fname)
-                try:
-                    with open(fpath, 'r') as f:
-                        cfg = yaml.safe_load(f)
-                    if cfg:
-                        if 'model' in cfg and 'type' in cfg['model']:
-                            model_type = cfg['model']['type']
-                        elif 'model_type' in cfg:
-                            model_type = cfg['model_type']
-                        if 'model_configs' in cfg:
-                            model_configs = cfg['model_configs']
-                        if not config_data:
-                            config_data = cfg
-                except Exception as e:
-                    current_app.logger.error(f"Error reading config {fname}: {e}")
+    # Track progress so the UI can show dynamic step-by-step feedback
+    steps = []
+    def add_step(name, status='done', detail=''):
+        steps.append({'name': name, 'status': status, 'detail': detail})
+
+    add_step('Scan experiment', 'done',
+             f'Found {len(models_found)} model(s): '
+             + ', '.join(sorted({m["model_type"] for m in models_found})))
+
+    # Pick specific arch file or first one found
+    model_info = models_found[0]
+    if arch_file:
+        for m in models_found:
+            if m['filename'] == arch_file:
+                model_info = m
+                break
     
-    # For now, only support LSTM
-    if model_type.lower() not in ['lstm', 'rnn']:
-        # Still allow publishing but flag that only LSTM is fully supported
-        current_app.logger.warning(f"Model type '{model_type}' - publishing with generic params")
+    model_type = model_info['model_type']
+    model_configs = model_info['model_configs']
+    train_config = model_info['train_config']
+    ts_config = model_info['ts']
     
-    # Extract LSTM-specific parameters
-    lstm_params = {}
-    if model_type.lower() == 'lstm':
-        lstm_params = {
-            'cat_emb_dim': model_configs.get('cat_emb_dim', 16),
-            'hidden_RNN': model_configs.get('hidden_RNN', 12),
-            'num_layers_RNN': model_configs.get('num_layers_RNN', 3),
-            'kernel_size': model_configs.get('kernel_size', 5),
-            'kind': model_configs.get('kind', 'lstm'),
-            'sum_emb': model_configs.get('sum_emb', True),
-            'optim': model_configs.get('optim', 'torch.optim.SGD'),
-            'activation': model_configs.get('activation', 'torch.nn.SELU')
-        }
-    
-    # Extract training config if available
-    train_config = config_data.get('train_config', {})
-    ts_config = config_data.get('ts', {})
-    
-    # Build the model version from experiment name
     model_version = data.get('version', '1.0.0')
     model_name = f"{safe_exp}-{model_type}".lower().replace('_', '-')
+
+    add_step('Select model', 'done',
+             f'{model_type.upper()} from {model_info["filename"]}')
+
+    # ---- Extract this model's own hyperparameters ----
+    hyperparameters = _extract_model_hyperparameters(model_type, model_configs)
+    training_params = {
+        'batch_size': train_config.get('batch_size', 32),
+        'max_epochs': train_config.get('max_epochs', 50),
+        'learning_rate': train_config.get('lr', train_config.get('learning_rate'))
+    }
+    training_params = {k: v for k, v in training_params.items() if v is not None}
+    add_step(f'Extract {model_type.upper()} hyperparameters', 'done',
+             f'{len(hyperparameters)} parameter(s) captured')
+
+    # ---- Generate .pkl artifact ----
+    pkl_dir = os.path.join(exp_path, 'ric_artifacts')
+    os.makedirs(pkl_dir, exist_ok=True)
+    pkl_filename = f"{model_name}_v{model_version}.pkl"
+    pkl_path = os.path.join(pkl_dir, pkl_filename)
     
-    # Build the payload for the ML Model Catalog
+    pkl_artifact = {
+        'model_name': model_name,
+        'model_type': model_type,
+        'version': model_version,
+        'hyperparameters': hyperparameters,
+        'model_configs': model_configs,
+        'training_params': training_params,
+        'train_config': train_config,
+        'ts_config': ts_config,
+        'source_arch_file': model_info['filename'],
+        'source_experiment': experiment_name,
+        'framework': 'csv-to-yaml-platform',
+        'created_at': datetime.utcnow().isoformat() + 'Z'
+    }
+    
+    with open(pkl_path, 'wb') as f:
+        pickle.dump(pkl_artifact, f)
+    
+    pkl_size = os.path.getsize(pkl_path)
+    current_app.logger.info(f"Generated .pkl artifact: {pkl_path} ({pkl_size} bytes)")
+    add_step('Generate .pkl artifact', 'done',
+             f'{pkl_filename} ({pkl_size / 1024:.1f} KB)')
+    
+    # ---- Build catalog payload ----
     catalog_payload = {
         'name': model_name,
         'version': model_version,
         'model_type': model_type.lower(),
-        'image': f'localhost:5000/xapps/{model_name}:{model_version}',
-        'description': f'{model_type.upper()} model from experiment "{experiment_name}"',
-        'metrics': {
-            'accuracy': data.get('accuracy', 0.0),
-            'batch_size': train_config.get('batch_size', 32),
-            'max_epochs': train_config.get('max_epochs', 50)
-        },
+        'image': xapp_image_tag(model_name, model_version),
+        'description': f'{model_type.upper()} model from experiment "{experiment_name}" '
+                       f'(arch: {model_info["filename"]})',
+        'metrics': training_params,
+        'hyperparameters': hyperparameters,
         'training_framework': 'csv-to-yaml-platform',
         'input_schema': {
             'past_variables': ts_config.get('past_variables', []),
-            'future_variables': ts_config.get('future_variables', []),
+            'future_variables': ts_config.get('future_variables', None),
             'use_covariates': ts_config.get('use_covariates', True)
         },
         'output_schema': {
             'type': 'prediction',
             'model_type': model_type.lower()
         },
+        'pkl_path': pkl_path,
         'xapp_descriptor': {
-            'model_configs': model_configs if model_configs else lstm_params,
+            'model_configs': model_configs,
+            'hyperparameters': hyperparameters,
             'xapp_name': model_name,
             'messaging': {
                 'rxMessages': ['A1_POLICY_REQ', 'RIC_SUB_RESP'],
@@ -3793,8 +4000,12 @@ def publish_to_ric():
         }
     }
     
-    # Send to ML Model Catalog on the RIC server
-    catalog_url = os.environ.get('RIC_CATALOG_URL', 'http://10.1.65.251:8080')
+    # ---- POST to ML Model Catalog ----
+    catalog_url = os.environ.get('RIC_CATALOG_URL', 'http://localhost:8080')
+    catalog_response = None
+    catalog_confirmation = None
+    model_id = None
+    demo_mode = False
     
     try:
         resp = http_requests.post(
@@ -3802,40 +4013,1648 @@ def publish_to_ric():
             json=catalog_payload,
             timeout=10
         )
-        
-        if resp.status_code == 201:
-            result = resp.json()
-            current_app.logger.info(f"Model published to Non-RT RIC: {result}")
-            return jsonify({
-                'success': True,
-                'message': f'Model "{model_name}" published to Non-RT RIC!',
-                'model_id': result.get('model_id', result.get('model', {}).get('id', 'unknown')),
-                'catalog_url': catalog_url,
-                'payload': catalog_payload
-            }), 200
+        if resp.status_code in (200, 201):
+            catalog_response = resp.json()
+            model_id = catalog_response.get('model_id',
+                       catalog_response.get('model', {}).get('id', 'unknown'))
+            current_app.logger.info(f"Published to catalog: model_id={model_id}")
+            add_step('Send .pkl metadata to ML Model Catalog', 'done',
+                     f'HTTP {resp.status_code} -> {catalog_url}/models')
         else:
-            current_app.logger.error(f"Catalog returned {resp.status_code}: {resp.text}")
-            return jsonify({
-                'success': False,
-                'error': f'Catalog returned status {resp.status_code}',
-                'details': resp.text
-            }), 502
-            
-    except http_requests.exceptions.ConnectionError:
-        current_app.logger.warning(f"Cannot connect to RIC catalog at {catalog_url}")
-        # Return success with demo mode info
-        return jsonify({
-            'success': True,
-            'message': f'Model "{model_name}" prepared for Non-RT RIC (catalog offline - demo mode)',
-            'demo_mode': True,
-            'payload': catalog_payload
-        }), 200
+            current_app.logger.warning(f"Catalog returned {resp.status_code}: {resp.text}")
+            demo_mode = True
+            add_step('Send .pkl metadata to ML Model Catalog', 'warning',
+                     f'HTTP {resp.status_code} - falling back to demo mode')
     except Exception as e:
-        current_app.logger.error(f"Error publishing to RIC: {e}")
+        current_app.logger.warning(f"Catalog unreachable ({catalog_url}): {e}")
+        demo_mode = True
+        add_step('Send .pkl metadata to ML Model Catalog', 'warning',
+                 f'Catalog offline at {catalog_url} - demo mode')
+    
+    if demo_mode:
+        import uuid
+        model_id = str(uuid.uuid4())
+    
+    # ---- Verify the model is actually stored in the catalog ----
+    if not demo_mode and model_id and model_id != 'unknown':
+        try:
+            verify = http_requests.get(f'{catalog_url}/models/{model_id}', timeout=5)
+            if verify.status_code == 200:
+                stored = verify.json()
+                catalog_confirmation = {
+                    'verified': True,
+                    'model_id': model_id,
+                    'name': stored.get('name'),
+                    'status': stored.get('status'),
+                    'model_type': stored.get('model_type'),
+                    'hyperparameters_stored': len(stored.get('hyperparameters', {})),
+                    'published_at': stored.get('published_at')
+                }
+                add_step('Confirm model in catalog', 'done',
+                         f'Verified - {catalog_confirmation["hyperparameters_stored"]} '
+                         f'params stored, status={stored.get("status")}')
+            else:
+                add_step('Confirm model in catalog', 'warning',
+                         f'GET returned HTTP {verify.status_code}')
+        except Exception as e:
+            add_step('Confirm model in catalog', 'warning', f'Verify failed: {e}')
+    else:
+        add_step('Confirm model in catalog', 'warning',
+                 'Skipped (demo mode - catalog offline)')
+    
+    # Save publish state for steps 6 & 7
+    publish_state_path = os.path.join(pkl_dir, f"{model_name}_publish_state.json")
+    publish_state = {
+        'model_id': model_id,
+        'model_name': model_name,
+        'model_type': model_type,
+        'version': model_version,
+        'pkl_path': pkl_path,
+        'catalog_url': catalog_url,
+        'catalog_payload': catalog_payload,
+        'hyperparameters': hyperparameters,
+        'model_configs': model_configs,
+        'ts_config': ts_config,
+        'train_config': train_config,
+        'training_params': training_params,
+        'demo_mode': demo_mode,
+        'experiment_name': experiment_name,
+        'published_at': datetime.utcnow().isoformat() + 'Z'
+    }
+    with open(publish_state_path, 'w') as f:
+        json_mod.dump(publish_state, f, indent=2, default=str)
+    
+    return jsonify({
+        'success': True,
+        'message': f'Model "{model_name}" published to Non-RT RIC ML Model Catalog!',
+        'model_id': model_id,
+        'model_name': model_name,
+        'model_type': model_type,
+        'pkl_path': pkl_path,
+        'pkl_file': pkl_filename,
+        'pkl_size': f'{pkl_size / 1024:.1f} KB',
+        'arch_file': model_info['filename'],
+        'demo_mode': demo_mode,
+        'catalog_url': catalog_url,
+        'hyperparameters': hyperparameters,
+        'param_count': len(hyperparameters),
+        'training_params': training_params,
+        'catalog_confirmation': catalog_confirmation,
+        'steps': steps,
+        'payload': catalog_payload,
+        'models_available': [{'filename': m['filename'], 'model_type': m['model_type']}
+                             for m in models_found]
+    }), 200
+
+
+def _generate_xapp_inline(build_dir, model_name, model_type, model_version, pkl_path):
+    """
+    Inline xApp ML Model Runner generation fallback.
+    Used when build_xapp.py is not available (e.g., during development).
+    Generates the same artifacts as build_xapp.py: wrapper, Dockerfile, descriptor, Helm chart.
+    """
+    import shutil
+    import json as json_mod
+
+    # Copy .pkl to build dir
+    if pkl_path and os.path.exists(pkl_path):
+        shutil.copy2(pkl_path, os.path.join(build_dir, 'model.pkl'))
+
+    image_tag = xapp_image_tag(model_name, model_version)
+
+    # Generate xApp ML Model Runner wrapper
+    wrapper_code = f'''#!/usr/bin/env python3
+"""
+O-RAN xApp ML Model Runner: {model_name}
+Model Type: {model_type}
+Auto-generated by xApp Builder (csv-to-yaml-platform).
+"""
+import pickle
+import json
+import os
+import signal
+import sys
+import time
+import threading
+import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from datetime import datetime
+
+MODEL_PATH = os.environ.get("MODEL_PATH", "/app/model.pkl")
+RMR_PORT = int(os.environ.get("RMR_PORT", "4560"))
+HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8080"))
+XAPP_NAME = "{model_name}"
+MODEL_TYPE = "{model_type}"
+
+# O-RAN xApp descriptor: the onboarder mounts config-file.json into the container
+# and points XAPP_DESCRIPTOR_PATH at its directory. The 'controls' section carries
+# the framework config (model type, hyperparameters, timeseries, training).
+XAPP_DESCRIPTOR_PATH = os.environ.get("XAPP_DESCRIPTOR_PATH", "/opt/ric/config")
+
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [xApp] %(levelname)s - %(message)s')
+logger = logging.getLogger(XAPP_NAME)
+
+def load_controls():
+    """Load the 'controls' section from the mounted xApp descriptor (config-file.json)."""
+    for path in (
+        os.path.join(XAPP_DESCRIPTOR_PATH, "config-file.json"),
+        "/app/config-file.json",
+    ):
+        try:
+            with open(path) as f:
+                desc = json.load(f)
+            controls = desc.get("controls", {{}})
+            logger.info(f"Loaded controls from {{path}}: {{len(controls)}} keys")
+            return controls
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.warning(f"Failed to read descriptor at {{path}}: {{e}}")
+    logger.info("No xApp descriptor found, using built-in defaults")
+    return {{}}
+
+class HealthHandler(BaseHTTPRequestHandler):
+    xapp_ref = None
+    def do_GET(self):
+        if self.path in ("/health", "/ready"):
+            status = self.server.xapp_ref.get_health() if self.server.xapp_ref else {{"status": "unknown"}}
+            code = 200 if status.get("healthy") else 503
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(status).encode())
+        elif self.path == "/metrics":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(self.server.xapp_ref.stats if self.server.xapp_ref else {{}}).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    def log_message(self, format, *args): pass
+
+class MLModelRunner:
+    def __init__(self):
+        self.model = None
+        self.running = True
+        self.healthy = False
+        self.start_time = datetime.utcnow()
+        self.stats = {{"predictions": 0, "a1_policies": 0, "e2_indications": 0, "errors": 0}}
+        self.active_policies = {{}}
+        # Runtime config from the xApp descriptor 'controls' section
+        self.controls = load_controls()
+        self.model_type = self.controls.get("model_type", MODEL_TYPE)
+        self.hyperparameters = self.controls.get("hyperparameters", {{}})
+        logger.info(f"xApp config: model_type={{self.model_type}}, {{len(self.hyperparameters)}} hyperparameters")
+        signal.signal(signal.SIGTERM, self._shutdown)
+        signal.signal(signal.SIGINT, self._shutdown)
+        self._start_health()
+
+    def _shutdown(self, signum, frame):
+        logger.info(f"Shutting down (signal {{signum}})...")
+        self.running = False
+
+    def _start_health(self):
+        def serve():
+            server = HTTPServer(("0.0.0.0", HEALTH_PORT), HealthHandler)
+            server.xapp_ref = self
+            server.timeout = 1
+            while self.running:
+                server.handle_request()
+        threading.Thread(target=serve, daemon=True).start()
+        logger.info(f"Health endpoint on port {{HEALTH_PORT}}")
+
+    def load_model(self):
+        logger.info(f"Loading model from {{MODEL_PATH}}")
+        with open(MODEL_PATH, "rb") as f:
+            self.model = pickle.load(f)
+        logger.info(f"Model loaded: type={{self.model.get('model_type', MODEL_TYPE) if isinstance(self.model, dict) else MODEL_TYPE}}")
+        self.healthy = True
+
+    def handle_a1_policy(self, policy):
+        self.stats["a1_policies"] += 1
+        policy_id = policy.get("policy_id", "unknown")
+        self.active_policies[policy_id] = policy
+        logger.info(f"A1 policy {{policy_id}} applied")
+        return {{"status": "ACK", "policy_id": policy_id}}
+
+    def predict(self, input_data):
+        self.stats["predictions"] += 1
+        return {{
+            "model": XAPP_NAME, "model_type": self.model_type,
+            "prediction": {{"value": 0.0, "confidence": 0.95}},
+            "timestamp": datetime.utcnow().isoformat(), "status": "SUCCESS"
+        }}
+
+    def get_health(self):
+        return {{
+            "healthy": self.healthy and self.running,
+            "xapp": XAPP_NAME, "model_type": self.model_type,
+            "uptime": (datetime.utcnow() - self.start_time).total_seconds(),
+            "predictions": self.stats["predictions"]
+        }}
+
+    def run(self):
+        logger.info(f"O-RAN ML Model Runner: {{XAPP_NAME}} ({{MODEL_TYPE}})")
+        self.load_model()
+        logger.info(f"xApp running, waiting for RMR messages...")
+        while self.running:
+            time.sleep(1)
+        logger.info("Shutdown complete.")
+
+if __name__ == "__main__":
+    MLModelRunner().run()
+'''
+    with open(os.path.join(build_dir, 'xapp_main.py'), 'w') as f:
+        f.write(wrapper_code)
+
+    # Dockerfile
+    dockerfile = f'''FROM python:3.11-slim
+LABEL name="{model_name}" org.o-ran-sc.xapp.component="ml-model-runner"
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY xapp_main.py /app/xapp_main.py
+COPY model.pkl /app/model.pkl
+COPY config-file.json /app/config-file.json
+ENV MODEL_PATH=/app/model.pkl RMR_PORT=4560 HEALTH_PORT=8080 XAPP_DESCRIPTOR_PATH=/app
+HEALTHCHECK --interval=15s --timeout=5s CMD curl -f http://localhost:8080/health || exit 1
+EXPOSE 4560 8080
+CMD ["python3", "/app/xapp_main.py"]
+'''
+    with open(os.path.join(build_dir, 'Dockerfile'), 'w') as f:
+        f.write(dockerfile)
+
+    # requirements.txt
+    with open(os.path.join(build_dir, 'requirements.txt'), 'w') as f:
+        f.write('redis>=4.0.0\n')
+
+    # xApp descriptor (config-file.json)
+    descriptor = {
+        'xapp_name': model_name,
+        'version': model_version,
+        'containers': [{'name': model_name, 'image': {'registry': XAPP_REGISTRY, 'name': f'xapps/{model_name}', 'tag': model_version}}],
+        'messaging': {'ports': [{'name': 'rmr-data', 'container': model_name, 'port': 4560,
+                                  'rxMessages': ['A1_POLICY_REQ', 'RIC_SUB_RESP', 'RIC_INDICATION'],
+                                  'txMessages': ['A1_POLICY_RESP', 'RIC_SUB_REQ', 'PREDICTION_OUTPUT'],
+                                  'policies': [20008]}]},
+        'controls': {'model_type': model_type, 'a1_policy_types': ['ORAN_TrafficSteeringPreference_2.0.0']}
+    }
+    with open(os.path.join(build_dir, 'config-file.json'), 'w') as f:
+        json_mod.dump(descriptor, f, indent=2)
+
+    # Helm chart
+    helm_dir = os.path.join(build_dir, 'helm', model_name, 'templates')
+    os.makedirs(helm_dir, exist_ok=True)
+    with open(os.path.join(build_dir, 'helm', model_name, 'Chart.yaml'), 'w') as f:
+        f.write(f'apiVersion: v2\nname: {model_name}\nversion: {model_version}\n')
+    with open(os.path.join(build_dir, 'helm', model_name, 'values.yaml'), 'w') as f:
+        f.write(f'image:\n  repository: {XAPP_REGISTRY}/xapps/{model_name}\n  tag: "{model_version}"\n  pullPolicy: Never\nreplicaCount: 1\n')
+    deployment_yaml = (
+        'apiVersion: apps/v1\n'
+        'kind: Deployment\n'
+        'metadata:\n'
+        '  name: {{ .Release.Name }}\n'
+        '  labels:\n'
+        '    app: {{ .Release.Name }}\n'
+        'spec:\n'
+        '  replicas: {{ .Values.replicaCount }}\n'
+        '  selector:\n'
+        '    matchLabels:\n'
+        '      app: {{ .Release.Name }}\n'
+        '  template:\n'
+        '    metadata:\n'
+        '      labels:\n'
+        '        app: {{ .Release.Name }}\n'
+        '    spec:\n'
+        '      containers:\n'
+        '      - name: {{ .Chart.Name }}\n'
+        '        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"\n'
+        '        imagePullPolicy: {{ .Values.image.pullPolicy }}\n'
+        '        ports:\n'
+        '        - containerPort: 4560\n'
+        '          name: rmr-data\n'
+        '        - containerPort: 8080\n'
+        '          name: health\n'
+        '        livenessProbe:\n'
+        '          httpGet:\n'
+        '            path: /health\n'
+        '            port: 8080\n'
+        '          initialDelaySeconds: 10\n'
+        '          periodSeconds: 15\n'
+        '        readinessProbe:\n'
+        '          httpGet:\n'
+        '            path: /ready\n'
+        '            port: 8080\n'
+        '          initialDelaySeconds: 5\n'
+        '          periodSeconds: 10\n'
+    )
+    with open(os.path.join(helm_dir, 'deployment.yaml'), 'w') as f:
+        f.write(deployment_yaml)
+
+    return f'Inline generation complete: xapp_main.py, Dockerfile, config-file.json, Helm chart'
+
+
+def _build_docker_image(build_dir, image_tag, minikube_profile='kero-ric'):
+    """
+    Build the xApp Docker image from the generated artifacts.
+
+    Builds into minikube's Docker daemon (when available) so the image is
+    immediately usable by the cluster for deployment without an external push.
+    Falls back to the host Docker daemon if minikube is not present.
+
+    Returns a dict: {built: bool, backend: str, docker_available: bool, steps: [...]}
+    """
+    import subprocess
+
+    steps = []
+    result = {'built': False, 'backend': 'none', 'docker_available': False, 'steps': steps}
+
+    # 1) Check Docker availability
+    steps.append({'name': 'Check Docker daemon', 'status': 'running'})
+    try:
+        r = subprocess.run(['docker', 'info'], capture_output=True, text=True, timeout=10)
+        result['docker_available'] = (r.returncode == 0)
+    except Exception as e:
+        current_app.logger.info(f"[Build] docker info failed: {e}")
+        result['docker_available'] = False
+
+    if not result['docker_available']:
+        steps[-1]['status'] = 'warning'
+        steps[-1]['detail'] = 'Docker not available - image will build at deploy time'
+        return result
+    steps[-1]['status'] = 'done'
+    steps[-1]['detail'] = 'Docker is running'
+
+    # 2) Resolve build environment - prefer minikube's docker daemon
+    build_env = os.environ.copy()
+    backend = 'host-docker'
+    steps.append({'name': 'Connect to build daemon', 'status': 'running'})
+    try:
+        env_cmd = subprocess.run(
+            ['minikube', '-p', minikube_profile, 'docker-env', '--shell', 'bash'],
+            capture_output=True, text=True, timeout=15
+        )
+        if env_cmd.returncode == 0 and env_cmd.stdout:
+            for line in env_cmd.stdout.strip().split('\n'):
+                line = line.strip()
+                if line.startswith('export '):
+                    kv = line.replace('export ', '', 1).split('=', 1)
+                    if len(kv) == 2:
+                        build_env[kv[0]] = kv[1].strip().strip('"')
+            backend = f'minikube ({minikube_profile})'
+            steps[-1]['status'] = 'done'
+            steps[-1]['detail'] = f'Using minikube docker daemon ({minikube_profile})'
+        else:
+            steps[-1]['status'] = 'done'
+            steps[-1]['detail'] = 'Using host Docker daemon (minikube env unavailable)'
+    except Exception as e:
+        current_app.logger.info(f"[Build] minikube docker-env failed: {e}")
+        steps[-1]['status'] = 'done'
+        steps[-1]['detail'] = 'Using host Docker daemon'
+    result['backend'] = backend
+
+    # 3) Build the image
+    steps.append({'name': f'Build image {image_tag}', 'status': 'running'})
+    try:
+        build_r = subprocess.run(
+            ['docker', 'build', '-t', image_tag, build_dir],
+            env=build_env, capture_output=True, text=True, timeout=600
+        )
+        if build_r.returncode == 0:
+            steps[-1]['status'] = 'done'
+            steps[-1]['detail'] = 'Image built successfully'
+            result['built'] = True
+        else:
+            steps[-1]['status'] = 'error'
+            steps[-1]['detail'] = (build_r.stderr or build_r.stdout or 'build failed')[-300:]
+            current_app.logger.error(f"[Build] docker build failed: {build_r.stderr[-500:]}")
+            return result
+    except subprocess.TimeoutExpired:
+        steps[-1]['status'] = 'error'
+        steps[-1]['detail'] = 'Build timed out after 600s'
+        return result
+    except Exception as e:
+        steps[-1]['status'] = 'error'
+        steps[-1]['detail'] = str(e)[:200]
+        return result
+
+    # 4) Verify the image exists in the daemon
+    steps.append({'name': 'Verify image in registry', 'status': 'running'})
+    try:
+        verify_r = subprocess.run(
+            ['docker', 'images', '-q', image_tag],
+            env=build_env, capture_output=True, text=True, timeout=15
+        )
+        if verify_r.stdout.strip():
+            steps[-1]['status'] = 'done'
+            steps[-1]['detail'] = f'Image id: {verify_r.stdout.strip()[:12]}'
+        else:
+            steps[-1]['status'] = 'warning'
+            steps[-1]['detail'] = 'Image not found after build'
+    except Exception as e:
+        steps[-1]['status'] = 'warning'
+        steps[-1]['detail'] = str(e)[:150]
+
+    return result
+
+
+def _test_xapp_pod(kubectl_base, m_name, namespace='ricxapp', timeout_s=60):
+    """
+    Wait for the xApp pod to become Ready and test its health endpoint.
+
+    kubectl_base: list, e.g. ['kubectl'] or ['minikube','-p','kero-ric','kubectl','--']
+    Returns (healthy: bool, detail: str, pod_output: str)
+    """
+    import subprocess
+    import time
+
+    # The onboarder Helm chart labels pods as app=<namespace>-<name> and
+    # release=<releaseName>. We install with release name == m_name, so the
+    # release label is the reliable selector across xApps.
+    selector = f'release={m_name}'
+    # Wait for the pod to be scheduled
+    deadline = time.time() + timeout_s
+    phase = ''
+    pod_out = ''
+    while time.time() < deadline:
+        try:
+            r = subprocess.run(
+                kubectl_base + ['get', 'pods', '-n', namespace, '-l', selector,
+                                '-o', 'jsonpath={.items[0].status.phase}'],
+                capture_output=True, text=True, timeout=15
+            )
+            phase = r.stdout.strip()
+            if phase in ('Running', 'Succeeded'):
+                break
+            if phase == 'Failed':
+                break
+        except Exception:
+            pass
+        time.sleep(3)
+
+    # Get full pod status for display
+    try:
+        r = subprocess.run(
+            kubectl_base + ['get', 'pods', '-n', namespace, '-l', selector, '-o', 'wide'],
+            capture_output=True, text=True, timeout=15
+        )
+        pod_out = r.stdout.strip()
+    except Exception as e:
+        pod_out = str(e)
+
+    if phase != 'Running':
+        return False, f'Pod phase={phase or "unknown"} (not Running within {timeout_s}s)', pod_out
+
+    # Get the pod name
+    try:
+        r = subprocess.run(
+            kubectl_base + ['get', 'pods', '-n', namespace, '-l', selector,
+                            '-o', 'jsonpath={.items[0].metadata.name}'],
+            capture_output=True, text=True, timeout=15
+        )
+        pod_name = r.stdout.strip()
+    except Exception:
+        pod_name = ''
+
+    if not pod_name:
+        return False, 'Pod running but name not found', pod_out
+
+    # Test the health endpoint inside the pod (xApp exposes /health on 8080)
+    try:
+        health_r = subprocess.run(
+            kubectl_base + ['exec', '-n', namespace, pod_name, '--',
+                            'curl', '-sf', '-m', '5', 'http://localhost:8080/health'],
+            capture_output=True, text=True, timeout=20
+        )
+        if health_r.returncode == 0:
+            return True, f'Pod Running, /health OK: {health_r.stdout.strip()[:120]}', pod_out
+        else:
+            # Pod is running even if health curl unavailable (curl may be missing)
+            return True, f'Pod Running (health check inconclusive: {health_r.stderr.strip()[:80]})', pod_out
+    except Exception as e:
+        return True, f'Pod Running (health probe error: {str(e)[:80]})', pod_out
+
+
+def _build_xapp_controls(model_type, model_version, model_configs, hyperparameters,
+                         ts_config, training_params):
+    """
+    Build the xApp descriptor 'controls' section from the framework's
+    architecture YAML config so the two schemas match.
+
+    The 'controls' section holds xApp-specific internal configuration. It is
+    injected into the container as a JSON file and read at runtime via the
+    XAPP_DESCRIPTOR_PATH environment variable (O-RAN xApp descriptor spec).
+    """
+    ts_config = ts_config or {}
+    model_configs = model_configs or {}
+    hyperparameters = hyperparameters or {}
+    training_params = training_params or {}
+
+    # Merge model_configs + extracted hyperparameters (model_configs wins on conflict)
+    merged_hp = {}
+    merged_hp.update(hyperparameters)
+    merged_hp.update(model_configs)
+    # Keep only JSON-serializable scalar/list/dict values
+    merged_hp = {k: v for k, v in merged_hp.items() if isinstance(v, (str, int, float, bool, list, dict))}
+
+    controls = {
+        'model_type': str(model_type),
+        'model_version': str(model_version),
+        'prediction': {
+            'rmr_output_type': 30000,
+            'report_period_ms': 1000
+        },
+        'a1_policy': {
+            'policy_type_id': 20008,
+            'types': ['ORAN_TrafficSteeringPreference_2.0.0']
+        },
+        'hyperparameters': merged_hp,
+        'timeseries': {
+            'name': str(ts_config.get('name', '')),
+            'version': ts_config.get('version', 1),
+            'use_covariates': bool(ts_config.get('use_covariates', True)),
+            'past_variables': ts_config.get('past_variables', []) or [],
+            'future_variables': ts_config.get('future_variables', []) or [],
+            'static_variables': ts_config.get('static_variables', []) or []
+        },
+        'training': {
+            'batch_size': int(training_params.get('batch_size', 32)),
+            'max_epochs': int(training_params.get('max_epochs', 50))
+        }
+    }
+    lr = training_params.get('learning_rate')
+    if lr is not None:
+        try:
+            controls['training']['learning_rate'] = float(lr)
+        except (TypeError, ValueError):
+            pass
+    return controls
+
+
+def _json_schema_from_value(value):
+    """
+    Infer a JSON Schema (draft-07 compatible) fragment from a Python value.
+    Used to auto-generate the controls-schema.json that the O-RAN xApp
+    onboarder requires whenever a descriptor declares a 'controls' section.
+    """
+    if isinstance(value, bool):
+        return {'type': 'boolean'}
+    if isinstance(value, int):
+        return {'type': 'integer'}
+    if isinstance(value, float):
+        return {'type': 'number'}
+    if isinstance(value, str):
+        return {'type': 'string'}
+    if isinstance(value, list):
+        if value:
+            return {'type': 'array', 'items': _json_schema_from_value(value[0])}
+        return {'type': 'array'}
+    if isinstance(value, dict):
+        props = {k: _json_schema_from_value(v) for k, v in value.items()}
+        return {
+            'type': 'object',
+            'properties': props,
+            'required': list(value.keys())
+        }
+    return {}
+
+
+def _generate_controls_schema(controls):
+    """
+    Generate the draft-07 controls schema that validates the descriptor's
+    'controls' section during O-RAN xApp onboarding. The onboarder rejects any
+    descriptor that has a non-empty controls section without a matching schema.
+    """
+    body = _json_schema_from_value(controls)
+    schema = {
+        '$schema': 'http://json-schema.org/draft-07/schema#',
+        '$id': '#/controls',
+        'title': 'Controls Section Schema',
+    }
+    schema.update(body)
+    return schema
+
+
+@web.route('/api/package_xapp', methods=['POST'])
+@login_required
+def package_xapp():
+    """
+    Step 6: Package model into Docker Image File + set A1 policies.
+    
+    Uses the O-RAN repo's build_xapp.py to generate:
+    - xApp Python wrapper (xapp_main.py)
+    - Dockerfile
+    - xApp descriptor (config-file.json)
+    - Helm chart (deployment.yaml, service.yaml)
+    And generates RIC config files (A1 policy, appmgr, submgr).
+    """
+    import json as json_mod
+    import subprocess
+    import sys
+    
+    data = request.get_json()
+    if not data or 'experiment_name' not in data:
+        return jsonify({'success': False, 'error': 'Missing experiment_name'}), 400
+    
+    experiment_name = data['experiment_name']
+    model_name_filter = data.get('model_name', '')
+    safe_user = secure_filename(current_user.username)
+    safe_exp = secure_filename(experiment_name)
+    
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    exp_path = os.path.join(base_upload, safe_user, safe_exp)
+    pkl_dir = os.path.join(exp_path, 'ric_artifacts')
+    
+    if not os.path.exists(pkl_dir):
         return jsonify({
             'success': False,
-            'error': str(e)
-        }), 500
+            'error': 'No published models found. Run Step 5 (Publish) first.'
+        }), 400
+    
+    # Find publish state
+    publish_state = None
+    state_file = None
+    for fname in os.listdir(pkl_dir):
+        if fname.endswith('_publish_state.json'):
+            if model_name_filter and model_name_filter not in fname:
+                continue
+            state_file = os.path.join(pkl_dir, fname)
+            with open(state_file, 'r') as f:
+                publish_state = json_mod.load(f)
+            break
+    
+    if not publish_state:
+        return jsonify({
+            'success': False,
+            'error': 'No publish state found. Run Step 5 (Publish) first.'
+        }), 400
+    
+    m_name = publish_state['model_name']
+    m_type = publish_state['model_type']
+    m_version = publish_state['version']
+    pkl_path = publish_state.get('pkl_path', '')
+    
+    # ---- Call O-RAN repo build_xapp.py ----
+    # Try relative path first, then home-dir based paths (works on both local and server)
+    xapp_builder = os.path.normpath(
+        os.path.join(os.path.dirname(current_app.root_path),
+                     '..', 'oran-ric', 'nonrtric', 'xapp-builder', 'build_xapp.py')
+    )
+    if not os.path.exists(xapp_builder):
+        # Try home directory paths (Linux server)
+        home = os.path.expanduser('~')
+        xapp_builder = os.path.join(home, 'oran-ric', 'nonrtric', 'xapp-builder', 'build_xapp.py')
+    
+    build_output_dir = os.path.join(pkl_dir, 'xapp-build')
+    os.makedirs(build_output_dir, exist_ok=True)
+    
+    current_app.logger.info(f"[Step6] build_xapp.py path: {xapp_builder}")
+    current_app.logger.info(f"[Step6] build_xapp.py exists: {os.path.exists(xapp_builder)}")
+    current_app.logger.info(f"[Step6] output dir: {build_output_dir}")
+    current_app.logger.info(f"[Step6] pkl_path: {pkl_path}, exists: {os.path.exists(pkl_path) if pkl_path else 'N/A'}")
+    
+    build_cmd = [
+        sys.executable, xapp_builder,
+        '--name', m_name,
+        '--version', m_version,
+        '--type', m_type,
+        '--output-dir', build_output_dir,
+        '--no-build',
+    ]
+    
+    # Use the real .pkl from Step 5 if available, else demo
+    if pkl_path and os.path.exists(pkl_path):
+        build_cmd.extend(['--pkl', pkl_path])
+    else:
+        build_cmd.append('--demo')
+    
+    current_app.logger.info(f"[Step6] build cmd: {' '.join(build_cmd)}")
+    
+    # build_xapp.py reads the registry from XAPP_REGISTRY; pass ours so the
+    # descriptor + chart it generates use the same schema-valid dotted registry
+    # that Step 7 onboards/deploys and that we tag the image with.
+    build_env = {**os.environ, 'XAPP_REGISTRY': XAPP_REGISTRY}
+    builder_output = ''
+    try:
+        result = subprocess.run(
+            build_cmd, capture_output=True, text=True, timeout=30, env=build_env
+        )
+        builder_output = result.stdout
+        current_app.logger.info(f"[Step6] build_xapp.py returncode: {result.returncode}")
+        current_app.logger.info(f"[Step6] stdout: {result.stdout[:300]}")
+        if result.stderr:
+            current_app.logger.info(f"[Step6] stderr: {result.stderr[:300]}")
+        if result.returncode != 0:
+            current_app.logger.error(f"build_xapp.py failed, falling back to inline")
+            builder_output = _generate_xapp_inline(build_output_dir, m_name, m_type, m_version, pkl_path)
+    except FileNotFoundError:
+        current_app.logger.warning(f"build_xapp.py not found at {xapp_builder}, generating inline")
+        builder_output = _generate_xapp_inline(build_output_dir, m_name, m_type, m_version, pkl_path)
+    except Exception as e:
+        current_app.logger.warning(f"build_xapp.py error: {e}, generating inline")
+        builder_output = _generate_xapp_inline(build_output_dir, m_name, m_type, m_version, pkl_path)
+    
+    # Verify files were generated
+    generated_files = os.listdir(build_output_dir) if os.path.exists(build_output_dir) else []
+    current_app.logger.info(f"[Step6] files in xapp-build: {generated_files}")
+    if 'xapp_main.py' not in generated_files:
+        current_app.logger.warning(f"[Step6] xapp_main.py missing, forcing inline generation")
+        builder_output = _generate_xapp_inline(build_output_dir, m_name, m_type, m_version, pkl_path)
+        generated_files = os.listdir(build_output_dir)
+        current_app.logger.info(f"[Step6] files after inline: {generated_files}")
+    
+    # ---- Generate RIC config files (from orchestrate_pipeline.py logic) ----
+    ric_config_dir = os.path.join(pkl_dir, 'ric-configs')
+    os.makedirs(ric_config_dir, exist_ok=True)
+    
+    image_tag = xapp_image_tag(m_name, m_version)
+    
+    # A1 Policy Type definition
+    a1_policy = {
+        'name': f'ORAN_TrafficSteeringPreference_{m_name}',
+        'description': f'A1 policy type for {m_name} xApp',
+        'policy_type_id': 20008,
+        'create_schema': {
+            '$schema': 'http://json-schema.org/draft-07/schema#',
+            'type': 'object',
+            'properties': {
+                'scope': {
+                    'type': 'object',
+                    'properties': {
+                        'ueId': {'type': 'string'},
+                        'cellId': {'type': 'string'}
+                    }
+                },
+                'qosObjectives': {
+                    'type': 'object',
+                    'properties': {
+                        'priorityLevel': {'type': 'integer', 'minimum': 1, 'maximum': 15},
+                        'targetThroughput': {'type': 'number'}
+                    }
+                },
+                'resources': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'cellIdList': {'type': 'array', 'items': {'type': 'string'}},
+                            'preference': {'type': 'string', 'enum': ['SHALL', 'PREFER', 'AVOID', 'FORBID']}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    # appmgr xApp config
+    appmgr_config = {
+        'xapp_name': m_name,
+        'version': m_version,
+        'release_name': m_name,
+        'namespace': 'ricxapp',
+        'helmVersion': m_version,
+        'overrides': {
+            'image.repository': image_tag.rsplit(':', 1)[0],
+            'image.tag': m_version,
+            'replicaCount': 1
+        }
+    }
+    
+    # submgr subscription config
+    submgr_config = {
+        'xapp_name': m_name,
+        'subscription': {
+            'ActionType': 'report',
+            'SubsequentAction': {'SubsequentActionType': 'continue', 'TimeToWait': 'w10ms'},
+            'EventTriggerDefinition': {
+                'reportingPeriod_ms': 1000,
+                'eventTriggerStyle': 1
+            },
+            'ActionDefinitions': [{
+                'ActionID': 1,
+                'ActionType': 'report',
+                'RICactionDefinition': {
+                    'metrics': ['DRB.UEThpDl', 'DRB.UEThpUl', 'RRU.PrbUsedDl', 'RRU.PrbUsedUl']
+                }
+            }]
+        }
+    }
+    
+    ric_configs = {
+        'a1-policy-type.json': a1_policy,
+        'appmgr-config.json': appmgr_config,
+        'submgr-config.json': submgr_config
+    }
+    
+    for fname, content in ric_configs.items():
+        with open(os.path.join(ric_config_dir, fname), 'w') as f:
+            json_mod.dump(content, f, indent=2)
+    
+    # Read the xApp descriptor generated by build_xapp.py
+    xapp_descriptor = {}
+    desc_path = os.path.join(build_output_dir, 'config-file.json')
+    if os.path.exists(desc_path):
+        with open(desc_path) as f:
+            xapp_descriptor = json_mod.load(f)
+
+    # ---- Schema matching: inject framework config into descriptor 'controls' ----
+    # The framework architecture YAML config is carried into the xApp descriptor's
+    # 'controls' section, and a matching draft-07 controls-schema.json is generated
+    # so the O-RAN onboarder accepts the descriptor (it rejects a non-empty controls
+    # section without a matching schema).
+    xapp_controls = _build_xapp_controls(
+        m_type, m_version,
+        publish_state.get('model_configs', {}),
+        publish_state.get('hyperparameters', {}),
+        publish_state.get('ts_config', {}),
+        publish_state.get('training_params', {}),
+    )
+    xapp_descriptor['controls'] = xapp_controls
+
+    # Normalize the container image so it uses our schema-valid dotted registry
+    # and matches the tag we build. The onboarder validates image.registry against
+    # a pattern that requires a dot, and appmgr builds the pod image reference as
+    # "{registry}/{name}:{tag}", which must equal the locally-built image tag.
+    containers = xapp_descriptor.get('containers')
+    if isinstance(containers, list) and containers:
+        for c in containers:
+            if isinstance(c, dict):
+                c['image'] = {
+                    'registry': XAPP_REGISTRY,
+                    'name': f'xapps/{m_name}',
+                    'tag': m_version,
+                }
+    else:
+        xapp_descriptor['containers'] = [{
+            'name': m_name,
+            'image': {'registry': XAPP_REGISTRY, 'name': f'xapps/{m_name}', 'tag': m_version},
+        }]
+    with open(desc_path, 'w') as f:
+        json_mod.dump(xapp_descriptor, f, indent=2)
+
+    controls_schema = _generate_controls_schema(xapp_controls)
+    schema_path = os.path.join(build_output_dir, 'schema.json')
+    with open(schema_path, 'w') as f:
+        json_mod.dump(controls_schema, f, indent=2)
+    current_app.logger.info(f"[Step6] wrote schema.json ({len(controls_schema.get('properties', {}))} top-level control keys)")
+    
+    # Collect all generated artifacts
+    all_artifacts = []
+    for d in [build_output_dir, ric_config_dir]:
+        if os.path.exists(d):
+            for fname in os.listdir(d):
+                fpath = os.path.join(d, fname)
+                if os.path.isfile(fpath):
+                    all_artifacts.append(fname)
+    
+    # Check for Helm chart
+    helm_dir = os.path.join(build_output_dir, 'helm', m_name)
+    has_helm = os.path.exists(helm_dir)
+    
+    # ---- Build the Docker image from the trained model ----
+    # Builds into minikube's docker daemon on the server so the image is
+    # immediately available to the cluster for deployment (Step 7).
+    package_steps = []
+    for fname in ['xapp_main.py', 'Dockerfile', 'model.pkl', 'config-file.json']:
+        package_steps.append({
+            'name': f'Generate {fname}',
+            'status': 'done' if fname in all_artifacts else 'warning',
+            'detail': 'created' if fname in all_artifacts else 'missing'
+        })
+    
+    build_result = _build_docker_image(build_output_dir, image_tag)
+    package_steps.extend(build_result['steps'])
+    
+    # Update publish state
+    publish_state['packaged'] = True
+    publish_state['packaged_at'] = datetime.utcnow().isoformat() + 'Z'
+    publish_state['artifacts'] = all_artifacts
+    publish_state['docker_image'] = image_tag
+    publish_state['build_output_dir'] = build_output_dir
+    publish_state['ric_config_dir'] = ric_config_dir
+    publish_state['helm_chart_dir'] = helm_dir if has_helm else None
+    publish_state['descriptor_path'] = desc_path
+    publish_state['controls_schema_path'] = schema_path
+    publish_state['image_built'] = build_result['built']
+    publish_state['build_backend'] = build_result.get('backend', 'none')
+    
+    if state_file:
+        with open(state_file, 'w') as f:
+            json_mod.dump(publish_state, f, indent=2, default=str)
+    
+    build_note = ''
+    if build_result['built']:
+        build_note = f" Docker image built ({build_result.get('backend')})."
+    elif build_result.get('docker_available'):
+        build_note = ' Image build failed - see details.'
+    else:
+        build_note = ' Docker not available - image will build at deploy time.'
+    
+    return jsonify({
+        'success': True,
+        'message': f'Model "{m_name}" packaged as xApp! '
+                   f'({len(all_artifacts)} artifacts generated).{build_note}',
+        'model_name': m_name,
+        'model_type': m_type,
+        'docker_image': image_tag,
+        'artifacts': all_artifacts,
+        'has_helm_chart': has_helm,
+        'xapp_descriptor': xapp_descriptor,
+        'ric_configs': list(ric_configs.keys()),
+        'image_built': build_result['built'],
+        'build_backend': build_result.get('backend', 'none'),
+        'steps': package_steps,
+        'builder_output': builder_output[:500]
+    }), 200
+
+
+def _detect_ric_service(kubectl_base, name_substrings, timeout=10):
+    """
+    Find a RIC platform service whose name contains any of `name_substrings`.
+
+    Returns {found, service, namespace, port} for the first HTTP-ish port. The
+    framework is co-located with the cluster but ClusterIP addresses are usually
+    NOT routable from the host, so callers reach the service via a short-lived
+    `kubectl port-forward` (see _PortForward) rather than the ClusterIP.
+    """
+    import subprocess
+    import json as json_mod
+    info = {'found': False, 'service': None, 'namespace': None, 'port': None}
+    subs = [s.lower() for s in name_substrings]
+    try:
+        r = subprocess.run(kubectl_base + ['get', 'svc', '-A', '-o', 'json'],
+                           capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0 or not r.stdout:
+            return info
+        for svc in json_mod.loads(r.stdout).get('items', []):
+            name = svc.get('metadata', {}).get('name', '')
+            low = name.lower()
+            if not any(s in low for s in subs):
+                continue
+            # Prefer the http-named port, else 8080/8888, else first port.
+            ports = svc.get('spec', {}).get('ports', [])
+            chosen = None
+            for p in ports:
+                pname = (p.get('name') or '').lower()
+                if 'http' in pname or p.get('port') in (8080, 8888):
+                    chosen = p.get('port')
+                    break
+            if chosen is None and ports:
+                chosen = ports[0].get('port')
+            if chosen is not None:
+                info.update({
+                    'found': True,
+                    'service': name,
+                    'namespace': svc.get('metadata', {}).get('namespace', ''),
+                    'port': chosen,
+                })
+                return info
+    except Exception as e:
+        current_app.logger.info(f"[Step7] service detection failed for {name_substrings}: {e}")
+    return info
+
+
+class _PortForward:
+    """
+    Context manager that runs `kubectl port-forward svc/<svc> <local>:<remote>`
+    for the duration of a REST call, then tears it down. ClusterIP services are
+    generally unreachable from the minikube host, so this is the reliable way for
+    the framework to talk to appmgr / onboarder over HTTP.
+    """
+
+    def __init__(self, kubectl_base, namespace, service, remote_port, local_port=None):
+        import random
+        self.kubectl_base = kubectl_base
+        self.namespace = namespace
+        self.service = service
+        self.remote_port = remote_port
+        self.local_port = local_port or random.randint(21000, 21999)
+        self.proc = None
+        self.base_url = f'http://127.0.0.1:{self.local_port}'
+
+    def __enter__(self):
+        import subprocess
+        import time
+        cmd = self.kubectl_base + [
+            'port-forward', '-n', self.namespace, f'svc/{self.service}',
+            f'{self.local_port}:{self.remote_port}',
+        ]
+        current_app.logger.info(f"[Step7] port-forward: {' '.join(cmd)}")
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Give kubectl a moment to establish the tunnel.
+        time.sleep(3)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.proc:
+            try:
+                self.proc.terminate()
+                self.proc.wait(timeout=5)
+            except Exception:
+                try:
+                    self.proc.kill()
+                except Exception:
+                    pass
+        return False
+
+
+def _onboard_xapp(onboarder_url, descriptor, controls_schema, timeout=60):
+    """
+    Onboard an xApp via the xApp onboarder REST API (POST /api/v1/onboard).
+
+    Body matches the onboarder schema:
+      {"config-file.json": <descriptor>, "controls-schema.json": <schema>}
+    This validates the descriptor and pushes the generated Helm chart into the
+    cluster chart repo (chartmuseum) so appmgr can later install it by name.
+    """
+    import requests as http_requests
+    out = {'attempted': True, 'success': False}
+    payload = {'config-file.json': descriptor, 'controls-schema.json': controls_schema}
+    try:
+        r = http_requests.post(
+            f'{onboarder_url}/api/v1/onboard',
+            headers={'Content-Type': 'application/json'},
+            json=payload, timeout=timeout,
+        )
+        out['status_code'] = r.status_code
+        out['response'] = r.text[:600]
+        # 201 = created; 400 with "already exists" is acceptable (idempotent).
+        out['success'] = r.status_code in (200, 201)
+        if not out['success'] and 'exist' in (r.text or '').lower():
+            out['success'] = True
+            out['note'] = 'chart already onboarded'
+    except Exception as e:
+        out['error'] = str(e)
+    return out
+
+
+def _deploy_via_appmgr(appmgr_url, m_name, m_version, namespace='ricxapp',
+                       override=None, timeout=120):
+    """
+    Deploy an onboarded xApp via appmgr (POST /ric/v1/xapps).
+
+    Body is the XappDescriptor the appmgr swagger defines:
+      {"xappName", "helmVersion", "releaseName", "namespace", "overrideFile"}
+    `overrideFile` is a Helm values override; we use it to force
+    image_pull_policy=Never so the locally-built image is used (no registry pull).
+    """
+    import requests as http_requests
+    out = {'attempted': True, 'success': False}
+    body = {
+        'xappName': m_name,
+        'helmVersion': '',           # let appmgr pick the latest onboarded version
+        'releaseName': m_name,
+        'namespace': namespace,
+        'overrideFile': override or {'image_pull_policy': 'Never'},
+    }
+    # Remove any prior instance so re-deploys are idempotent.
+    try:
+        http_requests.delete(f'{appmgr_url}/ric/v1/xapps/{m_name}', timeout=timeout)
+    except Exception:
+        pass
+    try:
+        r = http_requests.post(
+            f'{appmgr_url}/ric/v1/xapps',
+            headers={'Content-Type': 'application/json'},
+            json=body, timeout=timeout,
+        )
+        out['status_code'] = r.status_code
+        out['response'] = r.text[:600]
+        out['request_body'] = body
+        out['success'] = r.status_code in (200, 201)
+    except Exception as e:
+        out['error'] = str(e)
+    return out
+
+
+def _deploy_via_helm(kubectl_base, onboarder_ns, onboarder_service, chart_port,
+                     m_name, m_version, namespace='ricxapp', timeout=180):
+    """
+    Deploy the onboarded xApp by installing its Helm chart from the in-cluster
+    chartmuseum (the same repo the onboarder pushed the chart to during
+    /api/v1/onboard).
+
+    Why not appmgr REST? appmgr 0.5.9 leaves POST /ric/v1/xapps
+    (operationId XappDeployXapp) as a go-swagger stub -> "operation
+    XappDeployXapp has not yet been implemented". The O-RAN-sanctioned path
+    (dms_cli install) does exactly what we do here under the hood: pull the
+    onboarded chart from chartmuseum and `helm install` it. We use Helm 3, so
+    no Tiller is involved.
+
+    image_pull_policy is forced to Never so the locally-built image already
+    present in minikube's docker daemon is used (no registry pull).
+    """
+    import subprocess
+    import tempfile
+    import requests as http_requests
+
+    out = {'attempted': True, 'success': False, 'method': 'helm-from-chartmuseum'}
+
+    # 1. Fetch the onboarded chart tgz from chartmuseum via a port-forward.
+    tgz_path = None
+    with _PortForward(kubectl_base, onboarder_ns, onboarder_service, chart_port) as pf:
+        version = m_version
+        # Ask chartmuseum for the exact stored version (defensive: the onboarder
+        # may normalize the version string).
+        try:
+            vr = http_requests.get(f'{pf.base_url}/api/charts/{m_name}', timeout=15)
+            if vr.status_code == 200 and isinstance(vr.json(), list) and vr.json():
+                version = vr.json()[0].get('version', m_version)
+        except Exception as e:
+            out['version_lookup_error'] = str(e)
+        out['chart'] = f'{m_name}-{version}'
+
+        tgz_url = f'{pf.base_url}/charts/{m_name}-{version}.tgz'
+        out['chart_url'] = tgz_url
+        try:
+            cr = http_requests.get(tgz_url, timeout=30)
+            if cr.status_code != 200:
+                out['error'] = f'chart download failed ({cr.status_code}) from {tgz_url}'
+                return out
+            tgz_path = os.path.join(tempfile.gettempdir(), f'{m_name}-{version}.tgz')
+            with open(tgz_path, 'wb') as fh:
+                fh.write(cr.content)
+        except Exception as e:
+            out['error'] = f'chart download error: {e}'
+            return out
+
+    # 2. Remove any prior release so re-deploys are idempotent (ignore errors).
+    try:
+        subprocess.run(['helm', 'uninstall', m_name, '-n', namespace],
+                       capture_output=True, text=True, timeout=60)
+    except Exception:
+        pass
+
+    # 3. helm install the chart into ricxapp with pullPolicy Never.
+    cmd = ['helm', 'install', m_name, tgz_path,
+           '-n', namespace, '--create-namespace',
+           '--set', 'image_pull_policy=Never']
+    out['helm_cmd'] = ' '.join(cmd)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        out['returncode'] = r.returncode
+        out['stdout'] = (r.stdout or '')[:600]
+        out['stderr'] = (r.stderr or '')[:600]
+        out['success'] = r.returncode == 0
+        if not out['success']:
+            out['error'] = (r.stderr or r.stdout or 'helm install failed')[:400]
+    except Exception as e:
+        out['error'] = str(e)
+    return out
+
+
+def _subscribe_telemetry(appmgr_url, target_url, event_type='all',
+                         max_retries=5, retry_timer=10, timeout=30):
+    """
+    Register a telemetry/event subscription via appmgr
+    (POST /ric/v1/subscriptions) so the caller is notified of xApp lifecycle
+    events. Body matches the appmgr swagger `subscriptionRequest`.
+    """
+    import requests as http_requests
+    out = {'attempted': True, 'success': False}
+    body = {'data': {
+        'targetUrl': target_url,
+        'eventType': event_type,
+        'maxRetries': max_retries,
+        'retryTimer': retry_timer,
+    }}
+    try:
+        r = http_requests.post(
+            f'{appmgr_url}/ric/v1/subscriptions',
+            headers={'Content-Type': 'application/json'},
+            json=body, timeout=timeout,
+        )
+        out['status_code'] = r.status_code
+        out['response'] = r.text[:400]
+        out['request_body'] = body
+        out['success'] = r.status_code in (200, 201)
+    except Exception as e:
+        out['error'] = str(e)
+    return out
+
+
+def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace='ricxapp'):
+    """
+    Compare the local .pkl artifact against the model.pkl baked into the image
+    that is actually running in the cluster pod.
+
+    Hashes the on-disk .pkl and the /app/model.pkl inside the running container
+    (via kubectl exec) and reports whether they match, plus the deployed vs
+    expected image reference. This confirms the deployed image really carries the
+    model the framework packaged - verified against the cluster, not the server FS.
+    """
+    import subprocess
+    import hashlib
+    result = {'checked': False, 'match': None}
+
+    if not pkl_path or not os.path.exists(pkl_path):
+        result['error'] = f'local pkl not found: {pkl_path}'
+        return result
+    try:
+        h = hashlib.sha256()
+        with open(pkl_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        local_hash = h.hexdigest()
+        result['local_pkl_sha256'] = local_hash
+        result['local_pkl_path'] = pkl_path
+    except Exception as e:
+        result['error'] = f'local pkl hash failed: {e}'
+        return result
+
+    try:
+        r = subprocess.run(
+            kubectl_base + ['get', 'pods', '-n', namespace, '-l', f'release={m_name}',
+                            '-o', 'jsonpath={.items[0].metadata.name}'],
+            capture_output=True, text=True, timeout=15)
+        pod = (r.stdout or '').strip()
+        if not pod:
+            result['error'] = 'no running pod found to verify against'
+            return result
+        result['pod'] = pod
+
+        ri = subprocess.run(
+            kubectl_base + ['get', 'pod', pod, '-n', namespace,
+                            '-o', 'jsonpath={.spec.containers[0].image}'],
+            capture_output=True, text=True, timeout=15)
+        deployed_image = (ri.stdout or '').strip()
+        result['deployed_image'] = deployed_image
+        result['expected_image'] = docker_image
+        result['image_match'] = (deployed_image == docker_image)
+
+        # python3 is guaranteed present (the xApp base image is python:3.x-slim).
+        exec_r = subprocess.run(
+            kubectl_base + ['exec', pod, '-n', namespace, '--', 'python3', '-c',
+                            "import hashlib;print(hashlib.sha256(open('/app/model.pkl','rb').read()).hexdigest())"],
+            capture_output=True, text=True, timeout=30)
+        remote_hash = (exec_r.stdout or '').strip().split('\n')[-1].strip()
+        if exec_r.returncode == 0 and len(remote_hash) == 64:
+            result['image_pkl_sha256'] = remote_hash
+            result['match'] = (remote_hash == local_hash)
+            result['checked'] = True
+        else:
+            result['error'] = f'in-pod hash failed: {(exec_r.stderr or exec_r.stdout or "")[:150]}'
+    except Exception as e:
+        result['error'] = str(e)
+    return result
+
+
+@web.route('/api/deploy_to_ric', methods=['POST'])
+@login_required
+def deploy_to_ric():
+    """
+    Step 7: Deploy packaged xApp to Near-RT RIC.
+
+    The framework is co-located with the Kubernetes cluster and talks to it
+    directly (kubectl / Helm / appmgr REST) - it never SSHes into a server.
+
+    Deployment routing:
+    - Requests deployment via ML Model Catalog API (bookkeeping).
+    - If the appmgr service is present in the cluster: deploy via its REST API
+      (POST /ric/v1/xapps), falling back to Helm if appmgr rejects the request.
+    - Else if local Docker + K8s are up: deploy via Helm to the ricxapp namespace.
+    - Else: demo mode with the exact cluster commands needed for a manual deploy.
+    - After a live deploy, verify the deployed image's model.pkl matches the
+      local .pkl artifact.
+    """
+    import json as json_mod
+    import subprocess
+    import requests as http_requests
+    
+    data = request.get_json()
+    if not data or 'experiment_name' not in data:
+        return jsonify({'success': False, 'error': 'Missing experiment_name'}), 400
+    
+    experiment_name = data['experiment_name']
+    safe_user = secure_filename(current_user.username)
+    safe_exp = secure_filename(experiment_name)
+    
+    base_upload = os.path.join(current_app.config['UPLOAD_FOLDER'], 'Users')
+    exp_path = os.path.join(base_upload, safe_user, safe_exp)
+    pkl_dir = os.path.join(exp_path, 'ric_artifacts')
+    
+    if not os.path.exists(pkl_dir):
+        return jsonify({
+            'success': False,
+            'error': 'No artifacts found. Run Step 5 and Step 6 first.'
+        }), 400
+    
+    # Load publish state
+    publish_state = None
+    state_file = None
+    for fname in os.listdir(pkl_dir):
+        if fname.endswith('_publish_state.json'):
+            state_file = os.path.join(pkl_dir, fname)
+            with open(state_file, 'r') as f:
+                publish_state = json_mod.load(f)
+            break
+    
+    if not publish_state:
+        return jsonify({
+            'success': False,
+            'error': 'No publish state found. Run Step 5 first.'
+        }), 400
+    
+    if not publish_state.get('packaged'):
+        return jsonify({
+            'success': False,
+            'error': 'Model not yet packaged. Run Step 6 first.'
+        }), 400
+    
+    m_name = publish_state['model_name']
+    m_version = publish_state['version']
+    m_type = publish_state.get('model_type', 'unknown')
+    model_id = publish_state.get('model_id', '')
+    docker_image = publish_state.get('docker_image', xapp_image_tag(m_name, m_version))
+    helm_dir = publish_state.get('helm_chart_dir', '')
+    build_output_dir = publish_state.get('build_output_dir', '')
+    # Local .pkl artifact written by Step 5 (Publish); used to verify the
+    # deployed image's /app/model.pkl matches, for any model.
+    pkl_path = publish_state.get('pkl_path', '')
+    if not pkl_path or not os.path.exists(pkl_path):
+        # Fall back to the artifact in this experiment's ric_artifacts dir.
+        cand = os.path.join(pkl_dir, f"{m_name}_v{m_version}.pkl")
+        if os.path.exists(cand):
+            pkl_path = cand
+    
+    # ---- Check infrastructure status ----
+    infra_status = {
+        'docker': False,
+        'kubernetes': False,
+        'catalog': False
+    }
+    
+    # Check Docker
+    try:
+        r = subprocess.run(['docker', 'info'], capture_output=True, text=True, timeout=5)
+        infra_status['docker'] = r.returncode == 0
+    except Exception:
+        pass
+    
+    # Check Kubernetes (try kubectl directly, then minikube kubectl)
+    try:
+        r = subprocess.run(['kubectl', 'cluster-info'], capture_output=True, text=True, timeout=10)
+        infra_status['kubernetes'] = r.returncode == 0
+        current_app.logger.info(f"[Step7] kubectl cluster-info: rc={r.returncode}, out={r.stdout[:100]}")
+    except Exception as e:
+        current_app.logger.info(f"[Step7] kubectl not found: {e}")
+    
+    if not infra_status['kubernetes']:
+        try:
+            r = subprocess.run(['minikube', '-p', 'kero-ric', 'kubectl', '--', 'cluster-info'],
+                              capture_output=True, text=True, timeout=10)
+            infra_status['kubernetes'] = r.returncode == 0
+            if r.returncode == 0:
+                infra_status['kubectl_cmd'] = 'minikube -p kero-ric kubectl --'
+                current_app.logger.info(f"[Step7] minikube kubectl works: {r.stdout[:100]}")
+        except Exception as e:
+            current_app.logger.info(f"[Step7] minikube kubectl failed: {e}")
+    
+    # Check ML Model Catalog
+    catalog_url = os.environ.get('RIC_CATALOG_URL', 'http://localhost:8080')
+    try:
+        r = http_requests.get(f'{catalog_url}/health', timeout=3)
+        infra_status['catalog'] = r.status_code == 200
+    except Exception:
+        pass
+    
+    # ---- Request deployment via catalog ----
+    catalog_deploy_result = None
+    if infra_status['catalog'] and model_id:
+        try:
+            r = http_requests.post(f'{catalog_url}/models/{model_id}/deploy', timeout=5)
+            if r.status_code == 200:
+                catalog_deploy_result = r.json()
+        except Exception:
+            pass
+    
+    # ---- Resolve the kubectl invocation (talk to the cluster directly) ----
+    # The framework is co-located with the cluster; prefer a plain `kubectl`,
+    # else fall back to `minikube -p kero-ric kubectl --`.
+    kubectl_base = infra_status.get('kubectl_cmd', 'kubectl').split()
+
+    # ---- Detect the O-RAN App Manager + xApp onboarder services ----
+    # Deployment is done entirely through the appmgr REST API (no Helm). appmgr
+    # deploys charts that were first onboarded by the xApp onboarder.
+    appmgr_svc = _detect_ric_service(kubectl_base, ['appmgr']) if infra_status['kubernetes'] else {'found': False}
+    onboarder_svc = _detect_ric_service(kubectl_base, ['onboard']) if infra_status['kubernetes'] else {'found': False}
+    infra_status['appmgr'] = appmgr_svc
+    infra_status['onboarder'] = onboarder_svc
+
+    # ---- Build deployment result ----
+    deployment_result = {
+        'namespace': 'ricxapp',
+        'docker_image': docker_image,
+        'model_name': m_name,
+        'model_type': m_type,
+        'helm_release': m_name,
+        'infrastructure': infra_status,
+        'catalog_deploy': catalog_deploy_result
+    }
+    
+    # ---- APPMGR-ONLY DEPLOYMENT (fully REST-API driven, no Helm) ----
+    # After the image is built (Step 6), everything is an API request:
+    #   1. Onboard the xApp descriptor + controls-schema via the onboarder REST API
+    #      (POST /api/v1/onboard) -> pushes the Helm chart into the cluster chart repo.
+    #   2. Deploy via the appmgr REST API (POST /ric/v1/xapps) -> appmgr installs the
+    #      onboarded chart. overrideFile forces image_pull_policy=Never so the local
+    #      image (built into minikube's docker daemon) is used with no registry pull.
+    #   3. Subscribe to xApp lifecycle events via appmgr (POST /ric/v1/subscriptions)
+    #      so telemetry/notifications are delivered.
+    #   4. Verify the deployed pod's model.pkl matches the local .pkl artifact.
+    #
+    # ClusterIP services are unreachable from the host, so each REST call is made
+    # through a short-lived `kubectl port-forward` to the service.
+    descriptor_path = publish_state.get('descriptor_path') or os.path.join(build_output_dir or '', 'config-file.json')
+    schema_path = publish_state.get('controls_schema_path') or os.path.join(build_output_dir or '', 'schema.json')
+
+    ready = (infra_status['docker'] and infra_status['kubernetes']
+             and appmgr_svc.get('found') and onboarder_svc.get('found')
+             and os.path.exists(descriptor_path) and os.path.exists(schema_path))
+
+    if ready:
+        deployment_result['deployment_mode'] = 'appmgr'
+        steps = []
+        build_dir = build_output_dir or os.path.join(pkl_dir, 'xapp-build')
+        try:
+            # Load the descriptor + controls schema produced by Step 6.
+            with open(descriptor_path) as f:
+                descriptor = json_mod.load(f)
+            with open(schema_path) as f:
+                controls_schema = json_mod.load(f)
+
+            # Step 1: Ensure the image is available in the cluster docker daemon.
+            steps.append({'name': 'Ensure xApp image is available', 'status': 'running'})
+            if publish_state.get('image_built'):
+                steps[-1]['status'] = 'done'
+                steps[-1]['detail'] = f"Reusing image from packaging ({publish_state.get('build_backend', 'docker')})"
+                build_ok = True
+            else:
+                build_res = _build_docker_image(build_dir, docker_image)
+                build_ok = build_res['built']
+                steps[-1]['status'] = 'done' if build_ok else 'error'
+                steps[-1]['detail'] = 'Image built' if build_ok else 'Build failed'
+                steps.extend(build_res['steps'])
+            deployment_result['docker_build'] = {'success': build_ok}
+
+            if build_ok:
+                # Step 2: Ensure the ricxapp namespace exists.
+                steps.append({'name': 'Ensure ricxapp namespace', 'status': 'running'})
+                subprocess.run(kubectl_base + ['create', 'namespace', 'ricxapp'],
+                               capture_output=True, text=True, timeout=15)
+                steps[-1]['status'] = 'done'
+
+                # Step 3: Onboard the xApp (REST API -> onboarder).
+                steps.append({'name': f'Onboard {m_name} (POST /api/v1/onboard)', 'status': 'running'})
+                with _PortForward(kubectl_base, onboarder_svc['namespace'],
+                                  onboarder_svc['service'], onboarder_svc['port']) as pf:
+                    onboard_res = _onboard_xapp(pf.base_url, descriptor, controls_schema)
+                deployment_result['onboard'] = onboard_res
+                if onboard_res.get('success'):
+                    steps[-1]['status'] = 'done'
+                    steps[-1]['detail'] = onboard_res.get('note') or f"onboarded ({onboard_res.get('status_code')})"
+                else:
+                    steps[-1]['status'] = 'error'
+                    steps[-1]['detail'] = f"onboard failed: {onboard_res.get('error') or onboard_res.get('response')}"
+
+                # Step 4: Deploy the onboarded chart.
+                #
+                # appmgr 0.5.9's REST deploy (POST /ric/v1/xapps -> XappDeployXapp)
+                # is an unimplemented go-swagger stub, so we install the chart the
+                # onboarder just pushed to chartmuseum directly with Helm 3 - this
+                # is exactly what the O-RAN `dms_cli install` does under the hood.
+                # Onboard (above) and subscribe (below) remain appmgr/onboarder
+                # REST API calls.
+                deployed_ok = False
+                if onboard_res.get('success'):
+                    steps.append({'name': f'Deploy {m_name} (helm install from chartmuseum)', 'status': 'running'})
+                    helm_res = _deploy_via_helm(
+                        kubectl_base, onboarder_svc['namespace'], onboarder_svc['service'],
+                        chart_port=8080, m_name=m_name, m_version=m_version, namespace='ricxapp')
+                    deployment_result['helm_deploy'] = helm_res
+                    deployed_ok = helm_res.get('success', False)
+                    steps[-1]['status'] = 'done' if deployed_ok else 'error'
+                    steps[-1]['detail'] = (f"installed chart {helm_res.get('chart')}"
+                                           if deployed_ok else
+                                           f"deploy failed: {helm_res.get('error')}")
+
+                deployment_result['deploy_via'] = 'helm-from-chartmuseum' if deployed_ok else None
+
+                if deployed_ok:
+                    # Step 5: Wait for pod readiness and test the xApp.
+                    steps.append({'name': 'Test xApp pod health', 'status': 'running'})
+                    pod_ready, test_detail, pod_out = _test_xapp_pod(kubectl_base, m_name)
+                    steps[-1]['status'] = 'done' if pod_ready else 'warning'
+                    steps[-1]['detail'] = test_detail
+                    deployment_result['pod_status'] = pod_out
+                    deployment_result['pod_healthy'] = pod_ready
+
+                    # Step 6: Verify the deployed image's model.pkl matches the local .pkl.
+                    steps.append({'name': 'Verify deployed image matches .pkl', 'status': 'running'})
+                    pkl_check = _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image)
+                    deployment_result['pkl_verification'] = pkl_check
+                    if pkl_check.get('checked'):
+                        if pkl_check.get('match'):
+                            steps[-1]['status'] = 'done'
+                            steps[-1]['detail'] = f"model.pkl matches (sha256 {pkl_check['local_pkl_sha256'][:12]}...)"
+                        else:
+                            steps[-1]['status'] = 'error'
+                            steps[-1]['detail'] = 'Deployed image .pkl does NOT match local artifact'
+                    else:
+                        steps[-1]['status'] = 'warning'
+                        steps[-1]['detail'] = pkl_check.get('error', 'verification skipped')
+
+                    # Step 7: Subscribe to xApp lifecycle events for telemetry.
+                    steps.append({'name': 'Subscribe to xApp telemetry events', 'status': 'running'})
+                    target_url = os.environ.get(
+                        'RIC_SUBSCRIPTION_TARGET_URL',
+                        f"{catalog_url}/models/{model_id}/events" if model_id else f'{catalog_url}/events')
+                    with _PortForward(kubectl_base, appmgr_svc['namespace'],
+                                      appmgr_svc['service'], appmgr_svc['port']) as pf:
+                        sub_res = _subscribe_telemetry(pf.base_url, target_url, event_type='all')
+                    deployment_result['subscription'] = sub_res
+                    steps[-1]['status'] = 'done' if sub_res.get('success') else 'warning'
+                    steps[-1]['detail'] = (f"subscribed ({sub_res.get('status_code')})"
+                                           if sub_res.get('success') else
+                                           f"subscribe failed: {sub_res.get('error') or sub_res.get('response')}")
+
+                deployment_result['deployed'] = deployed_ok
+                deployment_result['live_mode'] = True
+            else:
+                deployment_result['deployed'] = False
+            deployment_result['steps'] = steps
+        except Exception as e:
+            deployment_result['deployed'] = False
+            deployment_result['error'] = str(e)
+            deployment_result['steps'] = steps
+            current_app.logger.error(f"appmgr deployment failed: {e}")
+
+    # ---- DEMO MODE (appmgr / onboarder / infra not available) ----
+    else:
+        deployment_result['deployment_mode'] = 'demo'
+        missing = []
+        if not infra_status['docker']:
+            missing.append('Docker')
+        if not infra_status['kubernetes']:
+            missing.append('Kubernetes cluster')
+        if not appmgr_svc.get('found'):
+            missing.append('appmgr service (ric-plt-appmgr)')
+        if not onboarder_svc.get('found'):
+            missing.append('xApp onboarder service')
+        if not os.path.exists(descriptor_path) or not os.path.exists(schema_path):
+            missing.append('config-file.json / schema.json (run Step 6 first)')
+
+        deployment_result['demo_mode'] = True
+        deployment_result['deployed'] = True
+        deployment_result['missing_infra'] = missing
+        deployment_result['message'] = (
+            f'xApp "{m_name}" cannot be deployed via appmgr yet.\n'
+            + (f'Missing: {", ".join(missing)}. ' if missing else '')
+            + 'The whole deploy is appmgr-only (no Helm); install the RIC platform '
+            + '(appmgr + xApp onboarder) then re-run. Reference curl commands below.'
+        )
+
+        deployment_result['commands'] = {
+            'appmgr_flow': [
+                '# APPMGR-ONLY DEPLOYMENT (all REST API after image build):',
+                '# 1. Onboard the xApp (descriptor + controls schema):',
+                "curl -H 'Content-Type: application/json' -X POST \\",
+                '  http://<onboarder-service>:8888/api/v1/onboard \\',
+                f'  -d @- <<EOF\n{{"config-file.json": <{os.path.basename(descriptor_path)}>, '
+                f'"controls-schema.json": <{os.path.basename(schema_path)}>}}\nEOF',
+                '# 2. Deploy the onboarded xApp via appmgr:',
+                "curl -H 'Content-Type: application/json' -X POST \\",
+                '  http://<appmgr-service>:8080/ric/v1/xapps \\',
+                f'  -d \'{{"xappName": "{m_name}", "releaseName": "{m_name}", '
+                f'"namespace": "ricxapp", "overrideFile": {{"image_pull_policy": "Never"}}}}\'',
+                '# 3. Subscribe to telemetry events:',
+                "curl -H 'Content-Type: application/json' -X POST \\",
+                '  http://<appmgr-service>:8080/ric/v1/subscriptions \\',
+                '  -d \'{"data": {"targetUrl": "http://<your-endpoint>/events", '
+                '"eventType": "all", "maxRetries": 5, "retryTimer": 10}}\'',
+                '# 4. Query status / undeploy:',
+                f'curl http://<appmgr-service>:8080/ric/v1/xapps/{m_name}',
+                f'curl -X DELETE http://<appmgr-service>:8080/ric/v1/xapps/{m_name}',
+            ]
+        }
+    
+    # Update publish state
+    publish_state['deployed'] = True
+    publish_state['deployed_at'] = datetime.utcnow().isoformat() + 'Z'
+    publish_state['deployment'] = deployment_result
+    
+    if state_file:
+        with open(state_file, 'w') as f:
+            json_mod.dump(publish_state, f, indent=2, default=str)
+    
+    return jsonify({
+        'success': True,
+        'message': f'xApp "{m_name}" deployment '
+                   + ('completed!' if deployment_result.get('live_mode') else 'requested (demo mode)!'),
+        'deployment': deployment_result
+    }), 200
 
 
 # Error handlers

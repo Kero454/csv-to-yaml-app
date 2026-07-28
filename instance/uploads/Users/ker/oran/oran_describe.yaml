@@ -1,0 +1,10 @@
+architecture_files:
+- description: YAML training configuration 1 for oran
+  filename: autotransformer_1_1.yaml
+  type: yaml_training_config
+configuration_method: yaml_training_configured
+csv_file: Traffic.csv
+experiment: oran
+experiment_config_file: config_exp.yaml
+timestamp: '2026-06-09T11:49:08.697212'
+user: ker#

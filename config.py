@@ -9,3 +9,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = os.path.join(basedir, 'instance', 'uploads')
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+    
+    # Session cookie settings for cross-origin access (browser preview proxy)
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS

@@ -1,0 +1,38 @@
+{
+  "xapp_name": "oran-autoformer",
+  "version": "1.0.0",
+  "containers": [
+    {
+      "name": "oran-autoformer",
+      "image": {
+        "registry": "localhost:5000",
+        "name": "xapps/oran-autoformer",
+        "tag": "1.0.0"
+      }
+    }
+  ],
+  "messaging": {
+    "ports": [
+      {
+        "name": "rmr-data",
+        "container": "oran-autoformer",
+        "port": 4560,
+        "rxMessages": [
+          "A1_POLICY_REQ",
+          "RIC_SUB_RESP"
+        ],
+        "txMessages": [
+          "A1_POLICY_RESP",
+          "RIC_SUB_REQ",
+          "RIC_INDICATION"
+        ]
+      }
+    ]
+  },
+  "controls": {
+    "model_type": "autoformer",
+    "a1_policy_types": [
+      "ORAN_TrafficSteeringPreference_2.0.0"
+    ]
+  }
+}

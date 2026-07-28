@@ -112,20 +112,80 @@
                                         {% endfor %}
                                     </ul>
                                     
-                                    <!-- Publish to Non-RT RIC -->
+                                    <!-- O-RAN ML Lifecycle Pipeline (Steps 5, 6, 7) -->
                                     <hr class="my-3">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <h5><i class="bi bi-broadcast me-2"></i>O-RAN Non-RT RIC</h5>
-                                        <button class="btn btn-success publish-ric-btn" 
-                                                data-experiment="{{ experiment.name }}"
-                                                onclick="publishToRIC(this)">
-                                            <i class="bi bi-cloud-upload me-2"></i>Publish to Non-RT RIC
-                                        </button>
-                                    </div>
-                                    <div id="ric-result-{{ loop.index }}" class="mt-2" style="display:none;">
-                                        <div class="alert" role="alert">
-                                            <div class="ric-result-message"></div>
-                                            <pre class="ric-result-details mt-2 mb-0" style="font-size:0.8em; max-height:300px; overflow-y:auto; display:none;"></pre>
+                                    <h5><i class="bi bi-broadcast me-2"></i>O-RAN ML Lifecycle Pipeline</h5>
+                                    <div class="ric-pipeline" data-experiment="{{ experiment.name }}">
+                                        {% if experiment.arch_files %}
+                                        <div class="row g-2 align-items-center mb-1">
+                                            <div class="col-md-8">
+                                                <label class="form-label mb-1" style="font-size:0.8em;"><i class="bi bi-diagram-3 me-1"></i>Select model to publish</label>
+                                                <select class="form-select form-select-sm arch-select">
+                                                    {% for file in experiment.arch_files %}
+                                                        {% if file.name.lower().endswith(('.yaml', '.yml')) %}
+                                                        <option value="{{ file.name }}">{{ file.name }}</option>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4 text-md-end">
+                                                <small class="text-muted">Each model is published with its own parameters</small>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                        <div class="row g-2 mt-2">
+                                            <!-- Step 5: Publish -->
+                                            <div class="col-md-4">
+                                                <div class="card h-100 border-primary">
+                                                    <div class="card-body text-center p-2">
+                                                        <span class="badge bg-primary rounded-circle mb-1" style="width:28px;height:28px;line-height:20px;font-size:14px;">5</span>
+                                                        <h6 class="card-title mb-1">Publish to Catalog</h6>
+                                                        <p class="card-text text-muted" style="font-size:0.75em;">Generate .pkl + register in ML Model Catalog</p>
+                                                        <button class="btn btn-sm btn-primary w-100 step-btn step5-btn"
+                                                                onclick="runPipelineStep(this, 'publish')">
+                                                            <i class="bi bi-cloud-upload me-1"></i>Publish
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Step 6: Package -->
+                                            <div class="col-md-4">
+                                                <div class="card h-100 border-warning">
+                                                    <div class="card-body text-center p-2">
+                                                        <span class="badge bg-warning text-dark rounded-circle mb-1" style="width:28px;height:28px;line-height:20px;font-size:14px;">6</span>
+                                                        <h6 class="card-title mb-1">Package xApp</h6>
+                                                        <p class="card-text text-muted" style="font-size:0.75em;">Docker image + A1 policies + xApp descriptor</p>
+                                                        <button class="btn btn-sm btn-warning w-100 step-btn step6-btn" disabled
+                                                                onclick="runPipelineStep(this, 'package')">
+                                                            <i class="bi bi-box-seam me-1"></i>Package
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Step 7: Deploy -->
+                                            <div class="col-md-4">
+                                                <div class="card h-100 border-success">
+                                                    <div class="card-body text-center p-2">
+                                                        <span class="badge bg-success rounded-circle mb-1" style="width:28px;height:28px;line-height:20px;font-size:14px;">7</span>
+                                                        <h6 class="card-title mb-1">Deploy to RIC</h6>
+                                                        <p class="card-text text-muted" style="font-size:0.75em;">Deploy xApp to Near-RT RIC (ricxapp)</p>
+                                                        <button class="btn btn-sm btn-success w-100 step-btn step7-btn" disabled
+                                                                onclick="runPipelineStep(this, 'deploy')">
+                                                            <i class="bi bi-rocket-takeoff me-1"></i>Deploy
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- Pipeline result area -->
+                                        <div class="pipeline-result mt-2" style="display:none;">
+                                            <div class="alert" role="alert">
+                                                <div class="pipeline-msg"></div>
+                                                <ul class="pipeline-steps list-unstyled mt-2 mb-0" style="font-size:0.82em;"></ul>
+                                                <div class="pipeline-hyperparams mt-2" style="display:none;"></div>
+                                                <button class="btn btn-sm btn-outline-secondary mt-2 toggle-details-btn" onclick="toggleDetails(this)" style="display:none;">Show Details</button>
+                                                <pre class="pipeline-details mt-2 mb-0" style="font-size:0.78em; max-height:250px; overflow-y:auto; display:none;"></pre>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -179,60 +239,276 @@
 
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
-async function publishToRIC(button) {
-    const experimentName = button.dataset.experiment;
-    const resultDiv = button.closest('.accordion-body').querySelector('[id^="ric-result-"]');
+function toggleDetails(btn) {
+    const pre = btn.closest('.alert').querySelector('.pipeline-details');
+    if (pre.style.display === 'none') {
+        pre.style.display = 'block';
+        btn.textContent = 'Hide Details';
+    } else {
+        pre.style.display = 'none';
+        btn.textContent = 'Show Details';
+    }
+}
+
+function stepIcon(status) {
+    if (status === 'done') return '<i class="bi bi-check-circle-fill text-success me-1"></i>';
+    if (status === 'warning') return '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>';
+    if (status === 'error') return '<i class="bi bi-x-circle-fill text-danger me-1"></i>';
+    return '<span class="spinner-border spinner-border-sm me-1"></span>';
+}
+
+// Reveal each step one-by-one so the user sees the .pkl being built and sent
+function renderStepsProgressive(ul, steps) {
+    ul.innerHTML = '';
+    if (!steps || !steps.length) return Promise.resolve();
+    return new Promise(function(resolve) {
+        let i = 0;
+        function next() {
+            if (i >= steps.length) { resolve(); return; }
+            const s = steps[i];
+            const li = document.createElement('li');
+            li.className = 'mb-1';
+            li.style.opacity = '0';
+            li.style.transition = 'opacity 0.25s ease';
+            // Show a spinner first, then swap to the final icon for a "working" feel
+            li.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span><strong>' +
+                           s.name + '</strong>';
+            ul.appendChild(li);
+            requestAnimationFrame(function() { li.style.opacity = '1'; });
+            setTimeout(function() {
+                li.innerHTML = stepIcon(s.status) + '<strong>' + s.name + '</strong>' +
+                               (s.detail ? ' <span class="text-muted">- ' + s.detail + '</span>' : '');
+                i++;
+                setTimeout(next, 180);
+            }, 260);
+        }
+        next();
+    });
+}
+
+function renderHyperparams(container, hp, modelType) {
+    if (!hp || !Object.keys(hp).length) { container.style.display = 'none'; return; }
+    const keys = Object.keys(hp);
+    let html = '<div class="card border-info"><div class="card-header bg-info text-white py-1" style="font-size:0.8em;">' +
+               '<i class="bi bi-sliders me-1"></i>' + (modelType ? modelType.toUpperCase() + ' ' : '') +
+               'parameters saved to catalog (' + keys.length + ')</div>' +
+               '<div class="card-body p-2"><div class="row g-1">';
+    keys.forEach(function(k) {
+        const v = hp[k];
+        const val = Array.isArray(v) ? '[' + v.join(', ') + ']' : String(v);
+        html += '<div class="col-md-6"><code style="font-size:0.78em;">' + k +
+                '</code>: <span class="text-dark">' + val + '</span></div>';
+    });
+    html += '</div></div></div>';
+    container.innerHTML = html;
+    container.style.display = 'block';
+}
+
+async function runPipelineStep(button, step) {
+    console.log('runPipelineStep called:', step);
+    const pipeline = button.closest('.ric-pipeline');
+    if (!pipeline) { console.error('No .ric-pipeline found'); return; }
+    const experimentName = pipeline.dataset.experiment;
+    console.log('Experiment:', experimentName);
+    const resultDiv = pipeline.querySelector('.pipeline-result');
+    if (!resultDiv) { console.error('No .pipeline-result found'); return; }
     const alertDiv = resultDiv.querySelector('.alert');
-    const msgDiv = resultDiv.querySelector('.ric-result-message');
-    const detailsPre = resultDiv.querySelector('.ric-result-details');
+    const msgDiv = resultDiv.querySelector('.pipeline-msg');
+    const detailsPre = resultDiv.querySelector('.pipeline-details');
+    const toggleBtn = resultDiv.querySelector('.toggle-details-btn');
+    const stepsUl = resultDiv.querySelector('.pipeline-steps');
+    const hyperDiv = resultDiv.querySelector('.pipeline-hyperparams');
+    const archSelect = pipeline.querySelector('.arch-select');
+    console.log('archSelect:', archSelect, 'value:', archSelect ? archSelect.value : 'N/A');
     
-    // Disable button and show loading
+    const endpoints = {
+        'publish': '/api/publish_to_ric',
+        'package': '/api/package_xapp',
+        'deploy': '/api/deploy_to_ric'
+    };
+    const labels = {
+        'publish': 'Publishing to ML Model Catalog...',
+        'package': 'Packaging xApp (Docker image + A1 policies)...',
+        'deploy': 'Deploying xApp to Near-RT RIC...'
+    };
+    const icons = {
+        'publish': '<i class="bi bi-cloud-upload me-1"></i>',
+        'package': '<i class="bi bi-box-seam me-1"></i>',
+        'deploy': '<i class="bi bi-rocket-takeoff me-1"></i>'
+    };
+    
+    // Show loading
     button.disabled = true;
-    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Publishing...';
+    const origHTML = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Working...';
     resultDiv.style.display = 'block';
     alertDiv.className = 'alert alert-info';
-    msgDiv.textContent = 'Connecting to Non-RT RIC ML Model Catalog...';
+    msgDiv.innerHTML = '<strong>' + labels[step] + '</strong>';
     detailsPre.style.display = 'none';
+    toggleBtn.style.display = 'none';
+    if (stepsUl) stepsUl.innerHTML = '';
+    if (hyperDiv) { hyperDiv.style.display = 'none'; hyperDiv.innerHTML = ''; }
     
     try {
-        const response = await fetch('/api/publish_to_ric', {
+        const body = { experiment_name: experimentName };
+        // Pass model_name from step 5 result if available
+        if (pipeline.dataset.modelName) {
+            body.model_name = pipeline.dataset.modelName;
+        }
+        // Publish the specific model the user selected
+        if (step === 'publish' && archSelect && archSelect.value) {
+            body.arch_file = archSelect.value;
+        }
+        
+        console.log('Sending request to:', endpoints[step], 'body:', body);
+        const response = await fetch(endpoints[step], {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ experiment_name: experimentName })
+            credentials: 'include',
+            body: JSON.stringify(body)
         });
         
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
         
         if (data.success) {
             alertDiv.className = 'alert alert-success';
-            msgDiv.innerHTML = '<strong>' + data.message + '</strong>';
-            if (data.model_id) {
-                msgDiv.innerHTML += '<br><small>Model ID: ' + data.model_id + '</small>';
+            let msg = '<strong>' + data.message + '</strong>';
+            
+            if (step === 'publish') {
+                if (data.model_id) msg += '<br><small>Model ID: <code>' + data.model_id + '</code></small>';
+                if (data.model_type) msg += ' &middot; <small>Type: ' + data.model_type.toUpperCase() + '</small>';
+                if (data.pkl_file) msg += '<br><small><i class="bi bi-file-earmark-binary me-1"></i>.pkl sent: <code>' + data.pkl_file + '</code>' + (data.pkl_size ? ' (' + data.pkl_size + ')' : '') + '</small>';
+                if (data.param_count !== undefined) msg += ' &middot; <small>' + data.param_count + ' params</small>';
+                if (data.catalog_confirmation && data.catalog_confirmation.verified) {
+                    msg += '<br><small class="text-success"><i class="bi bi-patch-check-fill me-1"></i>Catalog confirmed: status=' + data.catalog_confirmation.status + ', ' + data.catalog_confirmation.hyperparameters_stored + ' params stored</small>';
+                } else if (data.demo_mode) {
+                    msg += '<br><small class="text-muted">Catalog offline - demo mode. Payload ready for server.</small>';
+                }
+                if (data.arch_file) msg += '<br><small>Source: ' + data.arch_file + '</small>';
+                // Save model_name for next steps
+                if (data.model_name) pipeline.dataset.modelName = data.model_name;
+                // Enable step 6
+                pipeline.querySelector('.step6-btn').disabled = false;
             }
-            if (data.demo_mode) {
-                msgDiv.innerHTML += '<br><small class="text-muted">Demo mode: RIC catalog is offline. Payload prepared for when server is available.</small>';
+            
+            if (step === 'package') {
+                if (data.docker_image) msg += '<br><small><i class="bi bi-hdd-stack me-1"></i>Image: <code>' + data.docker_image + '</code></small>';
+                if (data.image_built) {
+                    msg += '<br><small class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Docker image built into ' + (data.build_backend || 'docker') + '</small>';
+                } else {
+                    msg += '<br><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Image not built yet (' + (data.build_backend || 'docker unavailable') + ') - will build at deploy</small>';
+                }
+                if (data.artifacts) msg += '<br><small>Artifacts: ' + data.artifacts.join(', ') + '</small>';
+                // Enable step 7
+                pipeline.querySelector('.step7-btn').disabled = false;
             }
-            // Show payload details
-            detailsPre.style.display = 'block';
-            detailsPre.textContent = JSON.stringify(data.payload, null, 2);
-            button.innerHTML = '<i class="bi bi-check-circle me-2"></i>Published!';
-            button.className = 'btn btn-outline-success publish-ric-btn';
+            
+            if (step === 'deploy') {
+                const dep = data.deployment || {};
+                // Deployment mode badge
+                if (dep.deployment_mode) {
+                    const modeColors = {'remote_server': 'success', 'local': 'primary', 'demo': 'secondary'};
+                    const modeLabels = {'remote_server': 'Remote Server', 'local': 'Local', 'demo': 'Demo Mode'};
+                    msg += '<br><span class="badge bg-' + (modeColors[dep.deployment_mode] || 'secondary') + '">' + 
+                           (modeLabels[dep.deployment_mode] || dep.deployment_mode) + '</span>';
+                    if (dep.remote_host) msg += ' <small class="text-muted">(' + dep.remote_host + ')</small>';
+                }
+                // Infrastructure status
+                if (dep.infrastructure) {
+                    const inf = dep.infrastructure;
+                    msg += '<br><small>';
+                    msg += 'Docker: ' + (inf.docker ? '<span class="text-success">Running</span>' : '<span class="text-danger">Down</span>') + ' | ';
+                    msg += 'K8s: ' + (inf.kubernetes ? '<span class="text-success">Running</span>' : '<span class="text-danger">Down</span>') + ' | ';
+                    msg += 'Catalog: ' + (inf.catalog ? '<span class="text-success">Connected</span>' : '<span class="text-danger">Offline</span>');
+                    if (inf.remote_server) {
+                        const rs = inf.remote_server;
+                        msg += '<br>Remote: ' + (rs.connected ? '<span class="text-success">Connected</span>' : '<span class="text-danger">' + (rs.error || 'Not configured') + '</span>');
+                        if (rs.connected) msg += ' | K8s: ' + (rs.kubernetes ? '<span class="text-success">Ready</span>' : '<span class="text-warning">Not ready</span>');
+                    }
+                    msg += '</small>';
+                }
+                if (dep.catalog_deploy) {
+                    msg += '<br><small class="text-success">Catalog status: ' + (dep.catalog_deploy.status || 'deployment_requested') + '</small>';
+                }
+                // Local deployment results (server build + deploy + test)
+                if (dep.deployment_mode === 'local') {
+                    if (dep.docker_build) {
+                        msg += '<br><small>' + (dep.docker_build.success
+                            ? '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Image ready</span>'
+                            : '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Image build failed</span>') + '</small>';
+                    }
+                    if (dep.helm_install) {
+                        msg += '<br><small>' + (dep.helm_install.success
+                            ? '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Helm release installed</span>'
+                            : '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Helm install failed</span>') + '</small>';
+                    }
+                    if (dep.pod_healthy !== undefined) {
+                        msg += '<br><small>' + (dep.pod_healthy
+                            ? '<span class="text-success"><i class="bi bi-heart-pulse-fill me-1"></i>xApp pod Running & healthy</span>'
+                            : '<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Pod not ready yet</span>') + '</small>';
+                    }
+                    if (dep.pod_status) msg += '<br><small><i class="bi bi-box me-1"></i><code style="font-size:0.72em;">' + dep.pod_status.substring(0, 160) + '</code></small>';
+                }
+                // Remote deployment results
+                if (dep.deployment_mode === 'remote_server') {
+                    if (dep.transferred_files) msg += '<br><small><i class="bi bi-upload me-1"></i>Transferred: ' + dep.transferred_files.length + ' files</small>';
+                    if (dep.kubectl_apply && dep.kubectl_apply.success) {
+                        msg += '<br><small class="text-success"><i class="bi bi-check-circle me-1"></i>kubectl apply: ' + dep.kubectl_apply.file + '</small>';
+                    }
+                    if (dep.pod_status) msg += '<br><small><i class="bi bi-box me-1"></i>Pods: ' + dep.pod_status.substring(0, 100) + '</small>';
+                }
+                if (dep.demo_mode) {
+                    msg += '<br><small class="text-muted">Demo mode — configure server or see commands in details below</small>';
+                    if (dep.server_config_hint) {
+                        msg += '<br><small class="text-info"><i class="bi bi-info-circle me-1"></i>Set env vars: RIC_SERVER_HOST, RIC_SERVER_USER, RIC_SERVER_PASSWORD</small>';
+                    }
+                }
+                if (dep.namespace) msg += '<br><small>Target namespace: <code>' + dep.namespace + '</code></small>';
+                // Show deployment steps for remote
+                if (dep.steps && dep.steps.length && stepsUl) {
+                    await renderStepsProgressive(stepsUl, dep.steps);
+                }
+            }
+            
+            msgDiv.innerHTML = msg;
+            
+            // Dynamic step-by-step feedback (reveals .pkl build + send + confirm)
+            if (data.steps && data.steps.length && stepsUl) {
+                await renderStepsProgressive(stepsUl, data.steps);
+            }
+            // Show the model's own saved hyperparameters
+            if (step === 'publish' && data.hyperparameters && hyperDiv) {
+                renderHyperparams(hyperDiv, data.hyperparameters, data.model_type);
+            }
+            
+            // Build details JSON
+            const detailData = data.payload || data.xapp_descriptor || data.deployment || data;
+            detailsPre.textContent = JSON.stringify(detailData, null, 2);
+            toggleBtn.style.display = 'inline-block';
+            
+            // Mark button as done
+            button.innerHTML = '<i class="bi bi-check-circle me-1"></i>Done';
+            button.className = button.className.replace('btn-primary', 'btn-outline-primary')
+                                               .replace('btn-warning', 'btn-outline-warning')
+                                               .replace('btn-success', 'btn-outline-success');
         } else {
             alertDiv.className = 'alert alert-danger';
-            msgDiv.innerHTML = '<strong>Failed:</strong> ' + (data.error || 'Unknown error');
+            msgDiv.innerHTML = '<strong>Error:</strong> ' + (data.error || 'Unknown error');
             if (data.details) {
-                detailsPre.style.display = 'block';
                 detailsPre.textContent = data.details;
+                detailsPre.style.display = 'block';
             }
-            button.innerHTML = '<i class="bi bi-cloud-upload me-2"></i>Retry Publish';
+            button.innerHTML = origHTML;
             button.disabled = false;
         }
     } catch (error) {
         alertDiv.className = 'alert alert-danger';
         msgDiv.innerHTML = '<strong>Network error:</strong> ' + error.message;
-        button.innerHTML = '<i class="bi bi-cloud-upload me-2"></i>Retry Publish';
+        button.innerHTML = origHTML;
         button.disabled = false;
     }
 }

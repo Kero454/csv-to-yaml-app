@@ -1,0 +1,75 @@
+{
+  "model_id": "12487331-c879-49bc-8559-a331dd998fd4",
+  "model_name": "kfa-nlinear",
+  "model_type": "nlinear",
+  "version": "1.0.0",
+  "pkl_path": "C:\\Users\\wwwke\\csv-to-yaml-app\\instance\\uploads\\Users\\ghatas\\kfa\\ric_artifacts\\kfa-nlinear_v1.0.0.pkl",
+  "catalog_url": "http://localhost:8080",
+  "catalog_payload": {
+    "name": "kfa-nlinear",
+    "version": "1.0.0",
+    "model_type": "nlinear",
+    "image": "localhost:30500/xapps/kfa-nlinear:1.0.0",
+    "description": "NLINEAR model from experiment \"kfa\" (arch: nlinear_1_1.yaml)",
+    "metrics": {
+      "batch_size": 32,
+      "max_epochs": 20
+    },
+    "hyperparameters": {
+      "cat_emb_dim": 16,
+      "kernel_size": 3,
+      "sum_emb": true,
+      "hidden_size": 12,
+      "kind": "lstm"
+    },
+    "training_framework": "csv-to-yaml-platform",
+    "input_schema": {
+      "past_variables": [],
+      "future_variables": [],
+      "use_covariates": true
+    },
+    "output_schema": {
+      "type": "prediction",
+      "model_type": "nlinear"
+    },
+    "pkl_path": "C:\\Users\\wwwke\\csv-to-yaml-app\\instance\\uploads\\Users\\ghatas\\kfa\\ric_artifacts\\kfa-nlinear_v1.0.0.pkl",
+    "xapp_descriptor": {
+      "model_configs": {
+        "cat_emb_dim": 16,
+        "hidden_size": 12,
+        "kernel_size": 3,
+        "kind": "lstm",
+        "sum_emb": true
+      },
+      "hyperparameters": {
+        "cat_emb_dim": 16,
+        "kernel_size": 3,
+        "sum_emb": true,
+        "hidden_size": 12,
+        "kind": "lstm"
+      },
+      "xapp_name": "kfa-nlinear",
+      "messaging": {
+        "rxMessages": [
+          "A1_POLICY_REQ",
+          "RIC_SUB_RESP"
+        ],
+        "txMessages": [
+          "A1_POLICY_RESP",
+          "RIC_SUB_REQ",
+          "RIC_INDICATION"
+        ]
+      }
+    }
+  },
+  "hyperparameters": {
+    "cat_emb_dim": 16,
+    "kernel_size": 3,
+    "sum_emb": true,
+    "hidden_size": 12,
+    "kind": "lstm"
+  },
+  "demo_mode": false,
+  "experiment_name": "kfa",
+  "published_at": "2026-06-09T00:35:27.586052Z"
+}

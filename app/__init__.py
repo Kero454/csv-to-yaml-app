@@ -3,6 +3,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
+from flask_cors import CORS
 from config import Config
 
 db = SQLAlchemy()
@@ -14,6 +15,16 @@ login.login_message = 'Please log in to access this page.'
 def create_app(config_class=Config):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config_class)
+    
+    # Enable CORS for local dev and server deployment
+    CORS(app, supports_credentials=True, origins=[
+        'http://localhost:5000',
+        'http://127.0.0.1:5000',
+        'http://localhost:*',
+        'http://127.0.0.1:*',
+        'http://10.1.65.251:*',
+        'http://smartgridwks6:*',
+    ])
 
     # Ensure the instance folder exists
     try:

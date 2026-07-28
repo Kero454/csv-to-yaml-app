@@ -63,14 +63,14 @@ dsipts_p:
       run:
       - /bin/sh
       - -c
-      modelsToTrain: name,model
+      modelsToTrain: autotransformer_1_1
       args: 
           - |
           python train.py {{ if .Values.dsipts_p.defaults.command.modelsToTrain }}-m architecture={{ .Values.dsipts_p.defaults.command.modelsToTrain }}{{ end }} --config-dir=config_milan --config-name=config_milan;
           sleep infinity
     configFiles:
       enabled: true
-      name: kfa_config.yaml
+      name: config_kfa.yaml
       fromDirectory: Users/ker#/kfa
       mountPath: /DSIPTS-P/bash_examples/config_milan
   workerGroups:
