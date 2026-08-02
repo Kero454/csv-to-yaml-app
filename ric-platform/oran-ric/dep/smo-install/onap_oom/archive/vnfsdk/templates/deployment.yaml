@@ -1,0 +1,75 @@
+{{/*
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications © 2023 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      initContainers:
+      - command:
+        - sh
+        args:
+        - -c
+        - "cd /config-input && for PFILE in `find . -not -type d | grep -v -F ..`; do envsubst <${PFILE} >/config/${PFILE}; done"
+        env:
+        - name: PG_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "pg-user-creds" "key" "login") | indent 10 }}
+        - name: PG_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "pg-user-creds" "key" "password") | indent 10 }}
+        volumeMounts:
+        - mountPath: /config-input
+          name: init-data-input
+        - mountPath: /config
+          name: init-data
+        image: {{ include "repositoryGenerator.image.envsubst" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-update-config
+      {{ include "common.readinessCheck.waitFor" . | nindent 6 }}
+      containers:
+      - image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}
+        ports: {{ include "common.containerPorts" . | nindent 8  }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+        volumeMounts:
+        - mountPath: /service/webapps/ROOT/WEB-INF/classes/mybatis/configuration/configuration.xml
+          name: init-data
+          subPath: configuration.xml
+        - mountPath: /etc/nginx/nginx.conf
+          name: nginx
+          subPath: nginx.conf
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.service.internalPort }}
+          initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readiness.periodSeconds }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      volumes:
+      - name: init-data-input
+        configMap:
+          name: {{ include "common.fullname" . }}
+      - name: nginx
+        configMap:
+          name: {{ include "common.fullname" . }}-nginx
+      - name: init-data
+        emptyDir:
+          medium: Memory

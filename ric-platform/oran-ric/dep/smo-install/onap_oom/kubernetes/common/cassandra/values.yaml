@@ -1,0 +1,307 @@
+# Copyright © 2022 Amdocs, Bell Canada, AT&T, Bitnami
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Default values for cassandra.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global: # global defaults
+  nodePortPrefix: 302
+  persistence:
+    mountPath: /dockerdata-nfs
+    backup:
+      mountPath: /dockerdata-nfs/backup
+  cassandra:
+    # flag to enable the DB creation via k8ssandra-operator
+    useOperator: true
+    # if useOperator set to "true", set "enableServiceAccount to "false"
+    # as the SA is created by the Operator
+    enableServiceAccount: false
+
+k8ssandraOperator:
+  cassandraVersion: 4.1.8
+  persistence:
+    #storageClassName: default
+    size: 10Gi
+  config:
+    clusterName: cassandra
+    secretName: &secretName cassandra-default-user
+    superuserName: &superusername cassandra
+    superuserPassword: &superuserpassword cassandra
+    casOptions:
+      authenticator: PasswordAuthenticator
+      authorizer: AllowAllAuthorizer
+      read_request_timeout: 15000ms
+      write_request_timeout: 15000ms
+      counter_write_request_timeout: 15000ms
+      request_timeout: 15000ms
+      auto_snapshot: false
+      commitlog_segment_size: 128MiB
+      commitlog_sync_period: 15000ms
+      concurrent_reads: 16
+      concurrent_writes: 16
+      counter_cache_size: 16MiB
+    jvmOptions:
+      heap_initial_size: 512M
+      heap_max_size: 4096M
+    hostNetwork: false
+  datacenters:
+    - name: dc1
+      size: 3
+      resources:
+        requests:
+          cpu: 2
+          memory: 8Gi
+        limits:
+          cpu: 8
+          memory: 8Gi
+  reaper:
+    enabled: true
+    tag: 3.8.0
+  stargate:
+    enabled: false
+    tag: v1.0.77
+    size: 1
+    jvmOptions:
+      heapSize: 384Mi
+
+#################################################################
+# Secrets metaconfig
+# used to store the default superuser for k8ssandra-operator
+#################################################################
+secrets:
+  - uid: *secretName
+    type: genericKV
+    externalSecret: '{{ tpl (default "" .Values.k8ssandraOperator.config.userCredentialsExternalSecret) . }}'
+    envs:
+      - name: username
+        value: *superusername
+      - name: password
+        value: *superuserpassword
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "reaper-dc1"
+      path: "/webui"
+      name: "cassandra-dc1-reaper-service"
+      port: 8080
+
+# application image
+image: cassandra:3.11.4
+pullPolicy: Always
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# application configuration
+config:
+  cluster_domain: cluster.local
+  heap:
+    max: 4096M
+    min: 200M
+  jvmOpts: -Dcassandra.consistent.rangemovement=false
+  clusterName: cassandra
+  dataCenter: Pod
+  rackName: Rack
+  autoBootstrap: true
+  # If hostNetwork is true then provide the comma separated list of seeds.
+  #seeds:seed1,seed2
+
+# default number of instances
+replicaCount: 3
+
+hostNetwork: false
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+
+startup:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 90
+
+service:
+  name: cassandra
+  headless:
+    suffix: ""
+    annotations:
+      service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+    publishNotReadyAddresses: true
+  headlessPorts:
+  - name: tcp-intra
+    port: 7000
+  - name: tls
+    port: 7001
+  - name: tcp-jmx
+    port: 7199
+  - name: tcp-cql
+    port: 9042
+    ## thrift protocol is  deprecated . Should be removed. Being left until all project removes it.
+  - name: tcp-thrift
+    port: 9160
+  - name: tcp-agent
+    port: 61621
+
+podAnnotations:
+  #  sidecar.istio.io/inject: "false"
+  traffic.sidecar.istio.io/excludeInboundPorts: "7000,7001,7199,50051"
+  traffic.sidecar.istio.io/includeInboundPorts: '*'
+  traffic.sidecar.istio.io/excludeOutboundPorts: "7000,7001,7199,50051"
+
+podManagementPolicy: OrderedReady
+updateStrategy:
+  type: RollingUpdate
+
+persistence:
+  enabled: true
+
+  ## A manually managed Persistent Volume and Claim
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # existingClaim:
+  volumeReclaimPolicy: Retain
+
+  ## database data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  ## storageClass: "-"
+  ## Not set as it depends of the backup enabledment or not.
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  mountPath: /dockerdata-nfs
+  mountSubPath: cassandra
+  storageType: local
+  backup:
+      mountPath: /dockerdata-nfs/backup
+
+configOverrides: {}
+
+# resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  #
+  # Example:
+  # Configure resource requests and limits
+  # ref: http://kubernetes.io/docs/user-guide/compute-resources/
+  # Minimum memory for development is 2 CPU cores and 4GB memory
+  # Minimum memory for production is 4 CPU cores and 8GB memory
+resources:
+  limits:
+    cpu: "2"
+    memory: "16Gi"
+  requests:
+    cpu: "0.2"
+    memory: "2.5Gi"
+backup:
+  enabled: false
+  cron: "00 00 * * *"
+  retentionPeriod: 3
+  dbSize: 1
+  keyspacesToSkip:
+  - name: system_traces
+  - name: system_auth
+  - name: system_distributed
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: cassandra
+  roles:
+    - nothing
+
+# Cassandra Metrics
+metrics:
+  enabled: false
+  image: bitnami/cassandra-exporter:2.3.4-debian-10-r641
+  pullPolicy: IfNotPresent
+  ports:
+  - name: tcp-metrics
+    port: 8080
+  podAnnotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/port: '8080'
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /metrics
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /metrics
+      port: 8080
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+  serviceMonitor:
+    enabled: false
+    targetPort: 8080
+    path: /metrics
+    basicAuth:
+      enabled: false
+    ## Namespace in which Prometheus is running
+    ##
+    # namespace: monitoring
+
+    ## Interval at which metrics should be scraped.
+    #interval: 30s
+
+    ## Timeout after which the scrape is ended
+    # scrapeTimeout: 10s
+
+    ## ServiceMonitor selector labels
+    selector:
+      app.kubernetes.io/name: '{{ include "common.name" . }}'
+      helm.sh/chart: '{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}'
+      app.kubernetes.io/instance: '{{ include "common.release" . }}'
+      app.kubernetes.io/managed-by: '{{ .Release.Service }}'
+
+    ## RelabelConfigs to apply to samples before scraping
+    relabelings: []
+
+    ## MetricRelabelConfigs to apply to samples before ingestion
+    metricRelabelings: []

@@ -1,0 +1,179 @@
+# ================================ LICENSE_START =============================
+# ============================================================================
+# Copyright (c) 2021-2023 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2022-2023 J. F. Lucas. All rights reserved.
+# ============================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ================================= LICENSE_END ==============================
+
+#################################################################
+# Global Configuration Defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Filebeat Configuration Defaults.
+#################################################################
+filebeatConfig:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+#################################################################
+# Secrets Configuration.
+#################################################################
+secrets:
+  - uid: &pgUserCredsSecretUid pg-user-creds
+    name: &pgUserCredsSecretName '{{ include "common.release" . }}-heartbeat-pg-user-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgUserExternalSecret) .) (hasSuffix "heartbeat-pg-user-creds" .Values.postgres.config.pgUserExternalSecret) }}'
+    login: '{{ .Values.postgres.config.pgUserName }}'
+    password: '{{ .Values.postgres.config.pgUserPassword }}'
+    passwordPolicy: generate
+
+#################################################################
+# Application Configuration Defaults.
+#################################################################
+# Application Image
+image: onap/org.onap.dcaegen2.services.heartbeat:2.6.1
+pullPolicy: Always
+
+# Log directory where logging sidecar should look for log files
+# if path is set to null sidecar won't be deployed in spite of
+# global.centralizedLoggingEnabled setting.
+log:
+  path: /var/log/ONAP/dcaegen2/services/heartbeat
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+# Probe Configuration
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 1
+  path: /
+  scheme: HTTP
+  port: 10002
+
+# Service Configuration
+service:
+  type: ClusterIP
+  name: dcae-heartbeat
+  ports:
+    - name: http
+      port: 10002
+      port_protocol: http
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+    authorizedPrincipalsPostgres:
+      - serviceAccount: dcae-heartbeat-read
+
+credentials:
+- name: HEARTBEAT_PG_USERNAME
+  uid: *pgUserCredsSecretUid
+  key: login
+- name: HEARTBEAT_PG_PASSWORD
+  uid: *pgUserCredsSecretUid
+  key: password
+
+
+# Initial Application Configuration
+applicationConfig:
+   CBS_polling_allowed: "True"
+   CBS_polling_interval: "300"
+   consumerID: "1"
+   groupID: "hbgrpID"
+   pg_ipAddress: dcae-heartbeat-pg-primary
+   pg_passwd: ${HEARTBEAT_PG_PASSWORD}
+   pg_portNum: 5432
+   pg_userName: ${HEARTBEAT_PG_USERNAME}
+   pg_dbName: heartbeat
+   heartbeat_config: '{"vnfs": [{"eventName": "Heartbeat_vDNS","heartbeatcountmissed": 3,"heartbeatinterval": 60,"closedLoopControlName": "ControlLoopEvent1",     "policyVersion": "1.0.0.5",     "policyName":"vFireWall","policyScope": "resource=sampleResource,type=sampletype,CLName=sampleCLName","target_type": "VNF",        "target": "genVnfName", "version": "1.0"}, {"eventName": "Heartbeat_vFW","heartbeatcountmissed": 3,     "heartbeatinterval": 60,"closedLoopControlName": "ControlLoopEvent1","policyVersion": "1.0.0.5","policyName": "vFireWall","policyScope": "resource=sampleResource,type=sampletype,CLName=sampleCLName",    "target_type":"VNF",    "target": "genVnfName",    "version": "1.0"}, {"eventName": "Heartbeat_xx","heartbeatcountmissed": 3,      "heartbeatinterval": 60,"closedLoopControlName": "ControlLoopEvent1","policyVersion": "1.0.0.5","policyName": "vFireWall",      "policyScope": "resource=sampleResource,type=sampletype,CLName=sampleCLName","target_type": "VNF","target": "genVnfName","version": "1.0"}]}'
+   streams_publishes:
+     dcae_cl_out:
+       dmaap_info:
+         topic_url: "http://message-router.onap.svc.cluster.local:3904/events/unauthenticated.DCAE_CL_OUTPUT"
+       type: message_router
+   streams_subscribes:
+     ves-heartbeat:
+       dmaap_info:
+         topic_url: "http://message-router:3904/events/unauthenticated.SEC_HEARTBEAT_OUTPUT"
+       type: message_router
+
+#applicationEnv:
+#  HEARTBEAT_PG_URL: &dcaeheartbeatPgPrimary dcae-heartbeat-pg-primary
+#  HEARTBEAT_PG_USERNAME:
+#     secretUid: *pgUserCredsSecretUid
+#     key: login
+#  HEARTBEAT_PG_PASSWORD:
+#     secretUid: *pgUserCredsSecretUid
+#     key: password
+
+# Resource Limit Flavor -By Default Using Small
+flavor: small
+
+# Segregation for Different Environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+  unlimited: {}
+
+#################################################################
+# Application configuration Overriding Defaults in the Postgres.
+#################################################################
+postgres:
+  nameOverride: &postgresName dcae-heartbeat-postgres
+  service:
+    name: *postgresName
+    name2: dcae-heartbeat-pg-primary
+    name3: dcae-heartbeat-pg-replica
+  container:
+    name:
+      primary: dcae-heartbeat-pg-primary
+      replica: dcae-heartbeat-pg-replica
+  persistence:
+    mountSubPath: heartbeat/data
+    mountInitPath: heartbeat
+  config:
+    pgUserName: heartbeat
+    pgDatabase: heartbeat
+    pgUserExternalSecret: *pgUserCredsSecretName
+
+# Dependencies
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ .Values.postgres.service.name2 }}'
+      - message-router
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dcae-heartbeat
+  roles:
+    - read

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-registry
+  namespace: nonrtric
+  labels:
+    app: model-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-registry
+  template:
+    metadata:
+      labels:
+        app: model-registry
+    spec:
+      containers:
+      - name: registry
+        image: registry:2
+        ports:
+        - containerPort: 5000
+        env:
+        - name: REGISTRY_STORAGE_DELETE_ENABLED
+          value: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-registry
+  namespace: nonrtric
+spec:
+  type: NodePort
+  selector:
+    app: model-registry
+  ports:
+  - port: 5000
+    targetPort: 5000
+    nodePort: 30500

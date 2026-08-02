@@ -1,0 +1,106 @@
+{{/*
+#  ============LICENSE_START=======================================================
+#   Copyright (C) 2018 Ericsson. All rights reserved.
+#   Modifications Copyright © 2020 Nokia
+#  ================================================================================
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+#  SPDX-License-Identifier: Apache-2.0
+#  ============LICENSE_END=========================================================
+#  @author: gareth.roper@ericsson.com
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  minReadySeconds: {{ index .Values.minReadySeconds }}
+  strategy:
+    type: {{ index .Values.updateStrategy.type }}
+    rollingUpdate:
+      maxUnavailable: {{ index .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ index .Values.updateStrategy.maxSurge }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      initContainers:
+      - name: so-chown
+        image: {{ include "repositoryGenerator.image.busybox" . }}
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command: ["/bin/sh", "-c", "chown -Rf 1000:1000 /app/logs"]
+      restartPolicy: Always
+      containers:
+      - name: {{ include "common.name" . }}
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+        command:
+        - /bin/sh
+        args:
+        - -c
+        - |
+          export SO_COCKPIT_PASSWORD=`htpasswd -bnBC 10 "" $SO_COCKPIT_PASS | tr -d ':\n' | sed 's/\$2y/\$2a/'`
+          /app/start-app.sh
+        env:
+        - name: DB_HOST
+          value: {{ include "common.mariadbService" . }}
+        - name: DB_PORT
+          value: {{ include "common.mariadbPort" . | quote }}
+        - name: DB_USERNAME
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-user-creds" "key" "login") | indent 10 }}
+        - name: DB_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-user-creds" "key" "password") | indent 10 }}
+        - name: DB_ADMIN_USERNAME
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-admin-creds" "key" "login") | indent 10 }}
+        - name: DB_ADMIN_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-admin-creds" "key" "password") | indent 10 }}
+        - name: SO_COCKPIT_USERNAME
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "app-user-creds" "key" "login") | indent 10 }}
+        - name: SO_COCKPIT_PASS
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "app-user-creds" "key" "password") | indent 10 }}
+
+        envFrom:
+        - configMapRef:
+            name: {{ include "common.fullname" . }}
+        imagePullPolicy:  {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        readinessProbe:
+          tcpSocket:
+            port: {{ index .Values.readinessProbe.port }}
+          initialDelaySeconds: {{ index .Values.readinessProbe.initialDelaySeconds}}
+          periodSeconds: {{ index .Values.readinessProbe.periodSeconds}}
+        livenessProbe:
+          tcpSocket:
+            port: {{ index .Values.livenessProbe.port }}
+          initialDelaySeconds: {{ index .Values.livenessProbe.initialDelaySeconds}}
+          periodSeconds: {{ index .Values.livenessProbe.periodSeconds}}
+          successThreshold: {{ index .Values.livenessProbe.successThreshold}}
+          failureThreshold: {{ index .Values.livenessProbe.failureThreshold}}
+
+        ports: {{ include "common.containerPorts" . | nindent 10  }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: config
+        configMap:
+            name: {{ include "common.fullname" . }}-app
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

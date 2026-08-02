@@ -1,0 +1,249 @@
+{{/*
+# Copyright © 2020 Bitnami, AT&T, Amdocs, Bell Canada, highstreet technologies
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+{{ $role := "coordinating-only" -}}
+{{ $suffix := $role -}}
+{{ $labels := (dict "role" $role "discovery" (include "elasticsearch.clustername" .)) -}}
+metadata: {{- include "common.resourceMetadata" (dict "suffix" $suffix "labels" $labels "dot" . )| nindent 2 }}
+spec:
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if (eq "Recreate" .Values.updateStrategy.type) }}
+    rollingUpdate: null
+    {{- end }}
+  selector: {{- include "common.selectors" (dict "matchLabels" $labels "dot" .) | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" (dict "labels" $labels "dot" .) | nindent 6 }}
+    spec:
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      {{- if .Values.affinity }}
+      affinity: {{- include "common.tplValue" (dict "value" .Values.affinity "context" $) | nindent 8 }}
+      {{- end }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{- include "common.tplValue" (dict "value" .Values.nodeSelector "context" $) | nindent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations: {{- include "common.tplValue" (dict "value" .Values.tolerations "context" $) | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ template "elasticsearch.serviceAccountName" . }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      ## Image that performs the sysctl operation to modify Kernel settings (needed sometimes to avoid boot errors)
+      initContainers:
+       {{- if .Values.sysctlImage.enabled }}
+        ## Image that performs the sysctl operation to modify Kernel settings (needed sometimes to avoid boot errors)
+        - name: sysctl
+          image: {{ include "repositoryGenerator.image.busybox" . }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          resources:
+            limits:
+              cpu: 20m
+              memory: 50Mi
+            requests:
+              cpu: 5m
+              memory: 20Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -o errexit
+              set -o pipefail
+              set -o nounset
+          volumeMounts:
+            - mountPath: /etc/sysctl.conf
+              name: config
+              subPath: sysctl.conf
+        {{- end }}
+        - name: {{ include "common.name" . }}-config-copy
+          image: {{ include "repositoryGenerator.dockerHubRepository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          resources:
+            limits:
+              cpu: 20m
+              memory: 50Mi
+            requests:
+              cpu: 5m
+              memory: 20Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cp -R /opt/bitnami/elasticsearch/config/. /opt/bitnami/elasticsearch/config_rw
+          volumeMounts:
+            - mountPath: /opt/bitnami/elasticsearch/config_rw
+              name: bitnami-config
+        - name: {{ include "common.name" . }}-nginx-config-copy
+          image: {{ include "repositoryGenerator.image.nginx" . }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.nginx.pullPolicy | quote }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          resources:
+            limits:
+              cpu: 20m
+              memory: 50Mi
+            requests:
+              cpu: 5m
+              memory: 20Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cp -R /opt/bitnami/nginx/conf/. /opt/bitnami/nginx/conf_rw;
+              cp -R /opt/bitnami/nginx/logs/. /opt/bitnami/nginx/logs_rw
+          volumeMounts:
+            - mountPath: /opt/bitnami/nginx/conf_rw
+              name: nginx-config
+            - mountPath: /opt/bitnami/nginx/logs_rw
+              name: nginx-logs
+      containers:
+        - name: {{ include "common.name" . }}-nginx
+          image: {{ include "repositoryGenerator.image.nginx" . }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.nginx.pullPolicy | quote }}
+          ports: {{- include "common.containerPorts" . | indent 12 -}}
+          {{- if .Values.nginx.livenessProbe }}
+          livenessProbe: {{- toYaml .Values.nginx.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.nginx.readinessProbe }}
+          readinessProbe: {{- toYaml .Values.nginx.readinessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.nginx.resources }}
+          resources: {{- toYaml .Values.nginx.resources | nindent 12 }}
+          {{- end }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          volumeMounts:
+          - mountPath: /opt/bitnami/nginx/conf
+            name: nginx-config
+          - mountPath: /opt/bitnami/nginx/tmp
+            name: nginx-tmp
+          - mountPath: /opt/bitnami/nginx/logs
+            name: nginx-logs
+          {{- if .Values.nginx.serverBlock }}
+          - name: nginx-server-block
+            mountPath: /opt/bitnami/nginx/conf/server_blocks
+          {{- end }}
+
+        - name: {{ include "common.name" . }}-elasticsearch
+          image: {{ include "repositoryGenerator.dockerHubRepository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          env:
+            - name: BITNAMI_DEBUG
+              value: {{ ternary "true" "false" .Values.debug | quote }}
+            - name: ELASTICSEARCH_CLUSTER_NAME
+              value: {{ include "elasticsearch.clustername" .}}
+            - name: ELASTICSEARCH_CLUSTER_HOSTS
+              value: {{ include "common.name" . }}-discovery
+            {{- if .Values.plugins }}
+            - name: ELASTICSEARCH_PLUGINS
+              value: {{ .Values.plugins | quote }}
+            {{- end }}
+            - name: ELASTICSEARCH_HEAP_SIZE
+              value: {{ .Values.heapSize | quote }}
+            - name: ELASTICSEARCH_IS_DEDICATED_NODE
+              value: "yes"
+            - name: ELASTICSEARCH_NODE_TYPE
+              value: "coordinating"
+            - name: ELASTICSEARCH_PORT_NUMBER
+              value: "9000"
+            - name: network.bind_host
+              value: 127.0.0.1
+            - name: network.publish_host
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          {{/*ports: {{- include "common.containerPorts" . | indent 12 -}} */}}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            httpGet:
+              path: /_cluster/health?local=true
+              port: http
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled}}
+          readinessProbe:
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            httpGet:
+              path: /_cluster/health?local=true
+              port: http
+          {{- end }}
+          {{- if .Values.resources }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          {{- end}}
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /opt/bitnami/elasticsearch/logs
+              name: bitnami-logs
+            - mountPath: /opt/bitnami/elasticsearch/tmp
+              name: bitnami-tmp
+            - mountPath: /opt/bitnami/elasticsearch/config
+              name: bitnami-config
+            {{- if .Values.config }}
+            - mountPath: /opt/bitnami/elasticsearch/config/elasticsearch.yml
+              name: config
+              subPath: elasticsearch.yml
+            {{- end }}
+            - name: data
+              mountPath: "/bitnami/elasticsearch/data/"
+            {{- if .Values.extraVolumeMounts }}
+            {{- toYaml .Values.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "common.fullname" . }}
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.tmpSizeLimit }}
+          name: tmp
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.bitnamiLogsSizeLimit }}
+          name: bitnami-logs
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.bitnamiTmpSizeLimit }}
+          name: bitnami-tmp
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.bitnamiConfigSizeLimit }}
+          name: bitnami-config
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.nginxLogsSizeLimit }}
+          name: nginx-logs
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.nginxTmpSizeLimit }}
+          name: nginx-tmp
+        - emptyDir:
+            sizeLimit: {{ .Values.volumes.nginxConfigSizeLimit }}
+          name: nginx-config
+        - name: data
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.dataSizeLimit }}
+        {{- if .Values.extraVolumes }}
+        {{- toYaml .Values.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.nginx.serverBlock }}
+        - name: nginx-server-block
+          configMap:
+            name: {{ include "common.fullname" . }}-nginx-server-block
+        {{- end }}

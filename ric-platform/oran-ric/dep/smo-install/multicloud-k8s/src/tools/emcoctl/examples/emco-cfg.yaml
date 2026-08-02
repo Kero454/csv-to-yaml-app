@@ -1,0 +1,15 @@
+  orchestrator:
+    host: localhost
+    port: 9015
+  clm:
+    host: localhost
+    port: 9019
+  ncm:
+    host: localhost
+    port: 9016
+  ovnaction:
+    host: localhost
+    port: 9018
+  dcm:
+    host: localhost
+    port: 9017

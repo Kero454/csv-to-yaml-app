@@ -1,0 +1,138 @@
+# ============= LICENSE_START ================================================
+# ============================================================================
+# Copyright (C) 2021-2022 Wipro Limited.
+# Copyright (c) 2022-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2023 Deutsche Telekom AG. All rights reserved.
+# ============================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============= LICENSE_END ==================================================
+
+#################################################################
+# Global Configuration Defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Filebeat Configuration Defaults.
+#################################################################
+filebeatConfig:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+#################################################################
+# Application Configuration Defaults.
+#################################################################
+# Application Image
+image: onap/org.onap.dcaegen2.services.components.kpi-ms:1.2.1
+pullPolicy: Always
+
+# Log directory where logging sidecar should look for log files
+# if path is set to null sidecar won't be deployed in spite of
+# global.centralizedLoggingEnabled setting.
+log:
+  path: /var/log/ONAP/dcaegen2/services/kpims
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+# Optional Policy configuration properties
+# if present, policy-sync side car will be deployed
+#dcaePolicySyncImage: onap/org.onap.dcaegen2.deployments.dcae-services-policy-sync:1.0.1
+#policies:
+#  policyID: |
+#    '["com.Config_KPIMS_CONFIG_POLICY"]'
+
+# Dependencies
+readinessCheck:
+  wait_for:
+    services:
+      - message-router
+
+# Probe Configuration
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 1
+  path: /healthcheck
+  scheme: HTTP
+  port: 8080
+
+# Service Configuration
+service:
+  type: ClusterIP
+  name: dcae-kpi-ms
+  ports:
+    - name: http
+      port: 8080
+      port_protocol: http
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+
+# Initial Application Configuration
+applicationConfig:
+  trust_store_path: '/opt/app/kpims/etc/cert/trust.jks'
+  trust_store_pass_path: '/opt/app/kpims/etc/cert/trust.pass'
+  pollingInterval: 20
+  pollingTimeout: 60
+  cbsPollingInterval: 60
+  dmaap.server: ["message-router"]
+  cg: kpi-cg
+  cid: kpi-cid
+  streams_subscribes:
+    performance_management_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/unauthenticated.PERFORMANCE_MEASUREMENTS
+  streams_publishes:
+    kpi_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/unauthenticated.DCAE_KPI_OUTPUT
+  kpi.policy: '{"domain":"measurementsForKpi","methodForKpi":[{"eventName":"perf3gpp_CORE-AMF_pmMeasResult","controlLoopSchemaType":"SLICE","policyScope":"resource=networkSlice;type=configuration","policyName":"configuration.dcae.microservice.kpi-computation","policyVersion":"v0.0.1","kpis":[{"measType":"AMFRegNbr","operation":"SUM","operands":"RM.RegisteredSubNbrMean"}]},{"eventName":"perf3gpp_CORE-UPF_pmMeasResult","controlLoopSchemaType":"SLICE","policyScope":"resource=networkSlice;type=configuration","policyName":"configuration.dcae.microservice.kpi-computation","policyVersion":"v0.0.1","kpis":[{"measType":"UpstreamDownstreamThr","operation":"SUM","operands":["GTP.InDataOctN3UPF","GTP.OutDataOctN3UPF"]}]}]'
+
+applicationEnv:
+  CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  #Temporary Dummy CBS Port Value until internal SDK library is updated
+  CONFIG_BINDING_SERVICE_SERVICE_PORT: '0000'
+  STANDALONE: 'false'
+
+# Resource Limit Flavor -By Default Using Small
+flavor: small
+
+# Segregation for Different Environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "500Mi"
+    requests:
+      cpu: "1"
+      memory: "500Mi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "1Gi"
+    requests:
+      cpu: "2"
+      memory: "1Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dcae-kpi-ms
+  roles:
+    - read

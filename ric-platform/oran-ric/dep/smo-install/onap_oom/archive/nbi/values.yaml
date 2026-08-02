@@ -1,0 +1,193 @@
+# Copyright © 2018 Orange
+# Modifications Copyright © 2018  Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  mariadbGalera: &mariadbGalera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows NBI to instantiate its own mariadb-galera cluster
+    #When changing it to "true", also set "globalCluster: false"
+    #as the dependency check will not work otherwise (Chart.yaml)
+    localCluster: false
+    globalCluster: true
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+  msbEnabled: false
+  # Docker Repository used by RepositoryGenerator
+  dockerHubRepository: docker.io
+  # Additions for MongoDB****************************
+  # If dockerHubRepository is changes the following entry needs
+  # to be changed as well
+  imageRegistry: docker.io
+  imagePullSecrets:
+    - '{{ include "common.names.namespace" . }}-docker-registry-key'
+  # *************************************************
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: nbi-db-secret
+    name: &dbUserSecretName '{{ include "common.release" . }}-nbi-db-secret'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.db.userCredentialsExternalSecret) . }}'
+    login: '{{ .Values.config.db.userName }}'
+    password: '{{ .Values.config.db.userPassword }}'
+
+subChartsOnly:
+  enabled: true
+
+# application image
+repository: nexus3.onap.org:10001
+image: onap/externalapi/nbi:10.0.0
+pullPolicy: IfNotPresent
+sdc_authorization: Basic YWFpOktwOGJKNFNYc3pNMFdYbGhhazNlSGxjc2UyZ0F3ODR2YW9HR21KdlV5MlU=
+aai_authorization: Basic QUFJOkFBSQ==
+so_authorization:
+
+# application configuration
+config:
+  loglevel: INFO
+  logstashServiceName: log-ls
+  logstashPort: 5044
+  cloudOwner: CloudOwner
+  k8sCloudRegionId: k8sregionfour
+  k8sCloudOwner: k8scloudowner4
+  ecompInstanceId: OOM
+  openStackRegion: RegionOne
+  openStackVNFTenantId: 31047205ce114b60833b23e400d6a535
+  db:
+    userName: &dbuser rene
+    # userPassword: password
+    # userCredentialsExternalSecret: some-secret
+
+mariadb-galera:
+  db:
+    user: *dbuser
+    externalSecret: *dbUserSecretName
+    name: &mysqlDbName nbi
+  service:
+    name: nbi-galera
+    portName: nbi-galera
+    internalPort: 3306
+  nameOverride: &nbi-galera nbi-galera
+  replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
+  persistence:
+    enabled: true
+    mountSubPath: nbi/maria/data
+  serviceAccount:
+    nameOverride: *nbi-galera
+
+mariadb-init:
+  config:
+    userCredentialsExternalSecret: *dbUserSecretName
+    mysqlDatabase: *mysqlDbName
+  nameOverride: nbi-config
+  serviceAccount:
+    nameOverride: nbi-config
+
+mongodb:
+  nameOverride: nbi-mongo
+  config:
+    dbName: &mongoDBName ServiceOrderDB
+  auth:
+    enabled: false
+    databases:
+    - *mongoDBName
+    usernames:
+    - "nbi"
+  service:
+    nameOverride: nbi-mongohost
+    internalPort: 27017
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  path: /nbi/api/v4/status
+  initialDelaySeconds: 180
+  periodSeconds: 30
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  path: /nbi/api/v4/status
+  initialDelaySeconds: 185
+  periodSeconds: 30
+
+service:
+  type: NodePort
+  portName: api
+  name: nbi
+  internalPort: 8080
+  ports:
+    - name: http
+      port: 8080
+      nodePort: '74'
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "nbi-api"
+      name: "nbi"
+      port: 8080
+  config:
+    ssl: "redirect"
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: nbi
+  roles:
+    - read

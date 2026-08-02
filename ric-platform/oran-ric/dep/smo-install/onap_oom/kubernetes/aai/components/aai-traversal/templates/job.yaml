@@ -1,0 +1,123 @@
+{{/*
+# Copyright (c) 2017-2018 AT&T
+# Modifications Copyright (c) 2018 Amdocs, Bell Canada
+# Modifications Copyright (c) 2020 Nokia, Orange
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+{{ if .Values.global.jobs.updateQueryData.enabled }}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.fullname" . }}-update-query-data
+  namespace: {{ include "common.namespace" . }}
+  labels: {{- include "common.labels" . | nindent 4 }}
+{{ if .Values.global.jobs.migration.enabled }}
+  {{- if .Values.jobAnnotations }}
+  annotations:  {{- include "common.tplValue" (dict "value" .Values.jobAnnotations "context" $) | nindent 4 }}
+  {{- end }}
+{{ end }}
+spec:
+  template:
+    metadata:
+      labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "job") | nindent 8 }}
+      name: {{ include "common.name" . }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      initContainers:
+      {{ include "common.readinessCheck.waitFor" (dict "dot" . "wait_for" .Values.readinessCheck.wait_for_traversal) | nindent 6 }}
+      - name: {{ include "common.name" . }}-wait-for-aai-haproxy
+        image: {{ include "repositoryGenerator.image.readiness" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        securityContext:
+          runAsUser: 100
+          runAsGroup: 65533
+          readOnlyRootFilesystem: true
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+              - CAP_NET_RAW
+        command:
+        - sh
+        - "-c"
+        - |
+           set -x;
+
+           until nc -w10 -z -v aai.{{.Release.Namespace}} 80; do
+            echo "Retrying to reach aai on port 80";
+            sleep 1;
+           done;
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
+      containers:
+      - name: {{ include "common.name" . }}-job
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
+        - sh
+        - "-c"
+        - |
+           set -x;
+           if [ ! -d /opt/aai/logroot/AAI-GQ/misc ];
+            then mkdir -p /opt/aai/logroot/AAI-GQ/misc;
+           fi
+
+           sh -x /opt/app/aai-traversal/bin/install/updateQueryData.sh ;
+
+           {{ include "common.serviceMesh.killSidecar" . | indent 11 | trim }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+        volumeMounts:
+        - mountPath: /opt/app/aai-traversal/resources/etc/appprops/janusgraph-realtime.properties
+          name: {{ include "common.fullname" . }}-config
+          subPath: janusgraph-realtime.properties
+        - mountPath: /opt/app/aai-traversal/resources/etc/appprops/aaiconfig.properties
+          name: {{ include "common.fullname" . }}-config
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-GQ/
+          name: {{ include "common.fullname" . }}-logs
+        - mountPath: /opt/aai/logroot/AAI-GQ/misc
+          name: {{ include "common.fullname" . }}-logs-misc
+        - mountPath: /opt/app/aai-traversal/resources/logback.xml
+          name: {{ include "common.fullname" . }}-config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-traversal/resources/application.properties
+          name: {{ include "common.fullname" . }}-config
+          subPath: application.properties
+        # disable liveness probe when breakpoints set in debugger
+        # so K8s doesn't restart unresponsive container
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: {{ include "common.fullname" . }}-logs
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logSizeLimit }}
+      - name: {{ include "common.fullname" . }}-logs-misc
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logmiscSizeLimit }}
+      {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
+      - name: {{ include "common.fullname" . }}-config
+        configMap:
+          name: {{ include "common.fullname" . }}
+      restartPolicy: OnFailure
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+{{ end }}

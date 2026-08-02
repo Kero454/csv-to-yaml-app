@@ -1,0 +1,122 @@
+# Copyright © 2017 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+global:
+  config:
+    ssl_enabled: false
+    msbprotocol: http
+    msbServiceName: msb-iag
+    msbPort: 443
+    redisServiceName: vfc-redis
+    redisPort: 6379
+# Becaue now oom can register the microservice to msb automatically,
+# If it is set to false, vfc contanier will not register again, if it is
+# set to true, vfc will register by itself.
+# we use this flag to determine who is responbile for serice registeration
+# and it can reduce duplicate registration.
+    reg_to_msb_when_start: False
+    mariadb_admin: &mariadbAdmin root
+  persistence:
+    mountPath: /dockerdata-nfs
+  mariadbGalera: &mariadbGalera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows VFC to instantiate its own mariadb-galera cluster
+    localCluster: false
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: db-root-pass
+    name: &dbRootPassSecret '{{ include "common.release" . }}-vfc-db-root-pass'
+    externalSecret: '{{ ternary "" (tpl (default "" (index .Values "mariadb-galera" "rootUser" "externalSecret")) .) (hasSuffix "db-root-pass" (index .Values "mariadb-galera" "rootUser" "externalSecret"))}}'
+    login: '{{ index .Values "mariadb-galera" "rootUser" "user"  }}'
+    password: '{{ index .Values "mariadb-galera" "rootUser" "password"  }}'
+    type: password
+
+# application configuration
+config:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+mariadb-galera: &localMariadb
+  rootUser:
+    user: *mariadbAdmin
+  # password:
+    externalSecret: *dbRootPassSecret
+  nameOverride: &dbServer vfc-mariadb
+  service:
+    name: *dbServer
+    portName: *dbServer
+    internalPort: 3306
+  nfsprovisionerPrefix: vfc
+  persistence:
+    mountSubPath: vfc/data
+    enabled: true
+  disableNfsProvisioner: true
+  serviceAccount:
+    nameOverride: *dbServer
+  replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
+
+vfc-generic-vnfm-driver:
+  enabled: true
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'
+
+vfc-huawei-vnfm-driver:
+  enabled: true
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'
+
+vfc-nslcm:
+  enabled: true
+  mariadb-galera: *localMariadb
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'
+
+vfc-redis:
+  enabled: true
+
+vfc-vnflcm:
+  enabled: true
+  mariadb-galera: *localMariadb
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'
+
+vfc-vnfmgr:
+  enabled: true
+  mariadb-galera: *localMariadb
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'
+
+vfc-vnfres:
+  enabled: true
+  mariadb-galera: *localMariadb
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'
+
+# sub-chart configuration
+vfc-workflow:
+  service:
+    externalPort: 10550
+
+vfc-workflow-engine:
+  config:
+    workflowPort: 10550
+
+vfc-zte-vnfm-driver:
+  enabled: true
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-vfc'

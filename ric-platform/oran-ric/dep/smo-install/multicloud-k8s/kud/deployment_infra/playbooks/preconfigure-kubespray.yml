@@ -1,0 +1,16 @@
+---
+# On some distributions (i.e. Ubuntu 18.04), the default version of
+# python is python3 and there is no /usr/bin/python executable.
+#
+# When not present a failure message similar to "bash:
+# /usr/bin/python: No such file or directory" will be reported.
+#
+# Note the use of "strategy: linear" below to temporarily bypass
+# mitogen.
+#
+- name: Install python3 as preferred alternative
+  hosts: k8s-cluster
+  strategy: linear
+  tasks:
+    - name: Install python3 as preferred alternative
+      command: update-alternatives --install /usr/bin/python python /usr/bin/python3 1

@@ -1,0 +1,175 @@
+osdf_system:
+    libpath: /opt/app/osdf/libs
+    osdf_ports:
+        internal: 8699  # inside the Docker container, the app listens to this port
+        external: 8698  # clients use this port on DockerHost
+    osdf_ip_default: 0.0.0.0
+
+osdf_temp:  # special configuration required for "workarounds" or testing
+    local_policies:
+        global_disabled: True
+        local_placement_policies_enabled: True
+        local_slice_selection_policies_enabled: True
+        local_nst_selection_policies_enabled: True
+        placement_policy_dir_vcpe: "./test/policy-local-files/"
+        placement_policy_files_vcpe: # workaroud for policy platform glitches (or "work-arounds" for other components)
+            - Affinity_vCPE_1.json
+            - Attribute_vNS_1.json
+            #- Capacity_vGMuxInfra.json
+            #- Capacity_vG_1.json
+            - Distance_vG_1.json
+            - Distance_vGMuxInfra_1.json
+            - hpa_policy_vG_1.json
+            - hpa_policy_vGMuxInfra_1.json
+            - Placement_Optimization_1.json
+            - QueryPolicy_vCPE.json
+            - vnfPolicy_vG.json
+            - vnfPolicy_vGMuxInfra.json
+        placement_policy_dir_vfw: "./test/policy-local-files/"
+        placement_policy_files_vfw: # workaroud for policy platform glitches (or "work-arounds" for other components)
+            #- Capacity_vFW_1.json
+            - Distance_vFW_1.json
+            - hpa_policy_vFW_1.json
+            - Placement_Optimization_1.json
+            - QueryPolicy_vFW.json
+            - vnfPolicy_vFW.json
+        placement_policy_dir_vfw_td: "./test/policy-local-files/"
+        placement_policy_files_vfw_td:
+            - vnfPolicy_vFW_TD.json
+            - vnfPolicy_vPGN_TD.json
+            - affinity_vFW_TD.json
+            - QueryPolicy_vFW_TD.json
+        slice_selection_policy_dir_embb-nst: "./test/policy-local-files/slice-selection-files/"
+        slice_selection_policy_files_embb-nst:
+            - query_policy_nsi.json
+            - threshold_policy_nsi.json
+            - vnf_policy_nsi_shared_case.json
+        nst_selection_policy_dir_nst: "./test/policy-local-files/nst-selection-files/"
+        nst_selection_policy_files_nst:
+            - query_policy_nst.json
+            - attribute_policy_nst.json
+            - vnf_policy_nst.json
+            - optimization_policy_nst.json
+
+service_info:
+    vCPE:
+        vcpeHostName: requestParameters.vcpeHostName
+        e2eVpnKey: requestParameters.e2eVpnKey
+    vFW:
+        vcpeHostName: requestParameters.vcpeHostName
+        e2eVpnKey: requestParameters.e2eVpnKey
+
+references:
+    service_name:
+        source: request
+        value: serviceInfo.serviceName
+    resource:
+        source: request
+        value: placementInfo.placementDemands.resourceModuleName
+    subscriber_role:
+        source: onap.policies.optimization.SubscriberPolicy
+        value: properties.properties.subscriberRole
+    resource_sharing_level:
+        source: request
+        value: serviceProfile.resourceSharingLevel
+    slice_scope:
+        source: request
+        value: slice_scope
+    reuse_preference:
+        source: request
+        value: preferReuse
+
+policy_info:
+    prioritization_attributes:
+        policy_type:
+            - type
+        resources:
+            - properties.resources
+            - properties.objectiveParameter.parameterAttributes.resources
+        service_name:
+            - properties.services
+
+    slice_selection:
+        policy_fetch: by_scope
+        policy_scope:
+            -
+                scope:
+                    - get_param: slice_scope
+                services:
+                    - get_param: service_name
+                resources:
+                    - get_param: service_name
+
+    nst_selection:
+        policy_fetch: by_scope
+        policy_scope:
+            -
+                scope:
+                    - OSDF_GUILIN
+                services:
+                    - nst
+                resources:
+                    - nst
+
+    nsst_selection:
+        policy_fetch: by_scope
+        policy_scope:
+            -
+                scope:
+                    - OSDF_GUILIN
+                services:
+                    - nsst
+                resources:
+                    - nsst
+
+    subnet_selection:
+        policy_fetch: by_scope
+        policy_scope:
+            - scope:
+                  - OSDF_GUILIN
+              services:
+                  - get_param: service_name
+              resources:
+                  - get_param: service_name
+
+    placement:
+        policy_fetch: by_scope
+        policy_scope:
+            -
+                scope:
+                    - OSDF_FRANKFURT
+                geography:
+                    - US
+                services:
+                    - get_param: service_name
+                resources:
+                    - get_param: resource
+    #            -
+    #                - get_param: service_name
+    #                - get_param: subscriber_role
+    default:  # if no explicit service related information is needed
+        policy_fetch: by_name
+        policy_scope: none
+
+PCI:
+    ML:
+        average_ho_threshold: 10000
+        latest_ho_threshold: 500
+    DES:
+        service_id: ho_metric
+        filter:
+            interval: 10
+    ml_enabled: false
+
+nxi_termination:
+        query_templates:
+                nsi: "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}') > service-instance*('service-role','e2eserviceprofile-service')"
+                nsi_with_profile: "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}') > service-instance*('service-role','e2eserviceprofile-service')('service-instance-id','{{ printf "{{profile_id}}" }}')"
+                nssi:
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'CN') > service-instance*('service-role','nsi')"
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'TN_BH') > service-instance*('service-role','nsi')"
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'AN') > service-instance*('service-role','nsi')"
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'AN_NF') > service-instance*('workload-context','AN')"
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'TN_MH') > service-instance*('workload-context','AN')"
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'TN_FH') > service-instance*('workload-context','AN')"
+                    - "service-instance*('service-instance-id','{{ printf "{{instance_id}}" }}')('workload-context', 'AN_NF') > service-instance*('workload-context','AN')"

@@ -1,0 +1,216 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T, ZTE
+# Modifications Copyright © 2025 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  sdc_cassandra:
+    # This flag allows SDC to instantiate its own cluster, serviceName
+    # should be sdc-cs if this flag is enabled
+    localCluster: false
+    # The cassandra service name to connect to
+    # (default: shared cassandra service)
+    serviceName: cassandra
+    # Shared cassandra cluster replicaCount, should be changed if
+    # localCluster is enabled to match with its own cluster replica
+    replicaCount: 3
+    clusterName: cassandra
+    dataCenter: Pod
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/sdc-workflow-backend:1.14.1
+configInitImage: onap/sdc-workflow-init:1.14.1
+pullPolicy: Always
+
+initJob:
+  enabled: true
+
+config:
+  javaOptions: "-Xmx1536m -Xms1536m"
+  cassandraAuthenticationEnabled: true
+  cassandraClientPort: 9042
+  cassandraDataCenter: dc1
+  sdcEndpoint:
+    http: sdc-be:8080
+  sdcExternalUser: workflow
+  serverSSLKeyStoreType: jks
+  serverSSLTrustStoreType: jks
+  cassandraSSLEnabled: false
+  cassandraTrustStorePath: /home/sdc/etc/truststore
+  tracing:
+    samplingProbability: 1.0
+    skipPattern: ""
+
+# environment file
+env:
+  name: AUTO
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+#liveness:
+#  initialDelaySeconds: 60
+#  periodSeconds: 10
+#  # necessary to disable liveness probe when setting breakpoints
+#  # in debugger so K8s doesn't restart unresponsive container
+#  enabled: true
+
+#readiness:
+#  initialDelaySeconds: 60
+#  periodSeconds: 10
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+
+startup:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  successThreshold: 1
+  failureThreshold: 60
+
+service:
+  type: NodePort
+  internalPort: 8080
+  ports:
+    - name: http
+      port: &port 8080
+      nodePort: "57"
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    targetPort: *port
+    path: /actuator/prometheus
+    basicAuth:
+      enabled: false
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "sdc-wfd-be-api"
+      name: "sdc-wfd-be"
+      port: 8080
+  config:
+    ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: sdc-wfd-fe-read
+      - serviceAccount: so-sdc-controller-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+
+# Resource Limit flavor -By Default using small
+# Segregation for Different environment (Small and Large)
+flavor: small
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+    requests:
+      cpu: "0.5"
+      memory: "2Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "3Gi"
+    requests:
+      cpu: "1"
+      memory: "3Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: sdc-wfd-be
+  roles:
+    - read
+
+wait_for_job_container:
+  containers:
+    - '{{ include "common.name" . }}-job'
+
+readinessCheck:
+  wait_for:
+    jobs:
+      - '{{ include "common.fullname" . }}'
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 75
+
+# number of ReplicaSets that should be retained for the Deployment
+revisionHistoryLimit: 1
+
+# the minimum number of seconds that a newly created Pod should be ready
+minReadySeconds: 30
+updateStrategy:
+  type: RollingUpdate
+  # The number of pods that can be unavailable during the update process
+  maxUnavailable: 0
+  # The number of pods that can be created above the desired amount of pods during an update
+  maxSurge: 1
+
+# Annotations to control the execution and deletion of the job
+# Can be used to delete a job before an Upgrade
+#
+# jobAnnotations:
+#   # In case of an ArgoCD deployment this Hook deletes the job before syncing
+#   argocd.argoproj.io/hook: Sync
+#   argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+#
+#   # In case of an Helm/Flux deployment this Hook deletes the job
+#   # This is what defines this resource as a hook. Without this line, the
+#   # job is considered part of the release.
+#   "helm.sh/hook": "pre-upgrade,pre-rollback,post-install"
+#   "helm.sh/hook-delete-policy": "before-hook-creation"
+#   "helm.sh/hook-weight": "1"

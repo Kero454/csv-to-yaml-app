@@ -1,0 +1,80 @@
+# Copyright © 2017 Amdocs, AT&T, Bell Canada, VMware
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+global:
+  image:
+    optf_has: onap/optf-has:2.3.1
+
+#################################################################
+# secrets metaconfig
+#################################################################
+secrets:
+  - uid: oof-has-etcd-secret
+    name: &user-creds '{{ include "common.release" . }}-oof-has-etcd-secret'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.etcd.userCredentialsExternalSecret) . }}'
+    login: '{{ .Values.config.etcd.appUser }}'
+    password: '{{ .Values.config.etcd.appPassword }}'
+    passwordPolicy: required
+
+config:
+  etcd:
+    appUser: user
+    appPassword: pass
+
+ingress:
+  enabled: false
+replicaCount: 1
+nodeSelector: {}
+affinity: {}
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+  unlimited: {}
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessCheck:
+  wait_for:
+    jobs:
+      - '{{ include "common.release" . }}-{{ .Values.config.etcd.configJobNameOverride }}-job'
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: oof-has-data
+  roles:
+    - read

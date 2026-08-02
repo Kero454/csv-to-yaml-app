@@ -1,0 +1,71 @@
+{{/*
+# Copyright © 2020 Orange
+# Modifications Copyright © 2023 Deutsche Telekom AG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+{{- $dot := . -}}
+{{- range $role_type := $dot.Values.roles }}
+{{/* Default roles are already created, just creating specific ones */}}
+{{-   if not (has $role_type $dot.Values.defaultRoles) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "common.fullname" (dict "suffix" $role_type "dot" $dot ) }}
+  namespace: {{ include "common.namespace" $dot }}
+rules:
+{{-     if hasKey $dot.Values.new_roles_definitions $role_type  }}
+{{ include "common.tplValue" ( dict "value" (index $dot.Values.new_roles_definitions $role_type ) "context" $dot) }}
+{{-     else}}
+# if no rules are provided, you're back to 'nothing' role
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - selfsubjectaccessreviews
+  - selfsubjectrulesreviews
+  verbs:
+  - create
+{{-     end }}
+{{-   else if or ($dot.Values.global.createDefaultRoles) ($dot.Values.createDefaultRoles) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "common.fullname" (dict "suffix" $role_type "dot" $dot ) }}
+  namespace: {{ include "common.namespace" $dot }}
+rules:
+{{-     if eq $role_type "read" }}
+{{- with $dot.Values.role.read }}
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{-     else  }}
+{{-       if eq $role_type "create" }}
+{{- with $dot.Values.role.create }}
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{-       else }}
+# if you don't match read or create, then you're not allowed to use API
+# except to see basic information about yourself
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - selfsubjectaccessreviews
+  - selfsubjectrulesreviews
+  verbs:
+  - create
+{{-       end }}
+{{-     end }}
+{{-   end }}
+{{- end }}

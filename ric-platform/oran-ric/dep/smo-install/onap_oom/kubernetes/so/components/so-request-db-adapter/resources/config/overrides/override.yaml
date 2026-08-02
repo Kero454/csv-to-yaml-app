@@ -1,0 +1,75 @@
+{{/*
+# Copyright © 2018 AT&T USA
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# will be used as entry in DB to say SITE OFF/ON for healthcheck
+*/}}
+server:
+    {{- if include "common.onServiceMesh" . }}
+    forward-headers-strategy: none
+    {{- end }}
+    port: {{ index .Values.containerPort }}
+    tomcat:
+        max-threads: 50
+ssl-enable: false
+mso:
+  logPath: logs
+  site-name: localSite
+  adapters:
+    requestDb:
+      auth: {{ .Values.mso.adapters.requestDb.auth }}
+      endpoint: http://so-request-db-adapter.{{ include "common.namespace" . }}:8083
+spring:
+  application:
+    name: so-request-db-adapter
+  datasource:
+    hikari:
+      jdbcUrl: jdbc:mariadb://${DB_HOST}:${DB_PORT}/requestdb
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: org.mariadb.jdbc.Driver
+      pool-name: reqdb-pool
+      registerMbeans: true
+  security:
+    rbacEnabled: {{ .Values.global.so.auth.rbacEnabled }}
+    usercredentials:
+    -
+      username: bpel
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: BPEL-Client
+    -
+      username: mso_admin
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: ACTUATOR
+  sleuth:
+    enabled: {{ .Values.global.tracing.enabled }}
+    messaging:
+      jms:
+        enabled: false
+    trace-id128: true
+    sampler:
+      probability: {{ .Values.global.tracing.sampling.probability }}
+    supports-join: false
+    web:
+      skip-pattern: {{ join "," .Values.tracing.skipPatterns }}
+    scheduled:
+      skip-pattern: .*({{ join "|" .Values.tracing.scheduled.skipClasses }})
+  zipkin:
+    base-url: {{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.zipkin }}
+#Actuator
+management:
+  context-path: /manage
+
+logging:
+  request-status:
+    exclusions: {{ join "," .Values.logging.requestStatus.excludedPatterns }}

@@ -1,0 +1,53 @@
+---
+# SPDX-license-identifier: Apache-2.0
+##############################################################################
+# Copyright (c) 2018
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of the Apache License, Version 2.0
+# which accompanies this distribution, and is available at
+# http://www.apache.org/licenses/LICENSE-2.0
+##############################################################################
+- import_playbook: configure-ovn.yml
+- import_playbook: configure-multus.yml
+
+- hosts: localhost
+  pre_tasks:
+    - name: Load kud variables
+      include_vars:
+        file: kud-vars.yml
+  tasks:
+    - name: define a CRD network object specification
+      blockinfile:
+        path: /tmp/ovn4nfvnetwork.yml
+        create: yes
+        block: |
+          apiVersion: k8s.cni.cncf.io/v1
+          kind: NetworkAttachmentDefinition
+          metadata:
+            name: ovn-networkobj
+          spec:
+            config: '{
+               "cniVersion": "0.3.1",
+               "name": "ovn4nfv-k8s-plugin",
+               "type": "ovn4nfvk8s-cni"
+            }'
+
+    - name: create network objects
+      shell: "/usr/local/bin/kubectl apply -f /tmp/ovn4nfvnetwork.yml"
+      ignore_errors: True
+
+    - name: create operator namespace
+      shell: "/usr/local/bin/kubectl create namespace operator"
+      ignore_errors: True
+
+    - name: create pod security policy role bindings
+      shell: "/usr/local/bin/kubectl -n operator create rolebinding psp:default:privileged --clusterrole=psp:privileged --serviceaccount=operator:default --serviceaccount=operator:k8s-nfn-sa"
+      ignore_errors: True
+
+    - name: apply nfn operator label
+      command: "/usr/local/bin/kubectl label node {{ item }} nfnType=operator --overwrite"
+      with_inventory_hostnames: ovn-central
+
+    - name: Apply NFN operator, operator roles, CRD's and ovn4nfv Daemonset
+      shell: "/usr/local/bin/kubectl apply -f {{ playbook_dir }}/../images/nfn.yml"
+      ignore_errors: True

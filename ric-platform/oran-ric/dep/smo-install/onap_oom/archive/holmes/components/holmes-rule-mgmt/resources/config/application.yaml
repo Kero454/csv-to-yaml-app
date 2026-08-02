@@ -1,0 +1,18 @@
+server:
+  port: 9101
+  servlet:
+    context-path: /api/holmes-rule-mgmt/v1
+
+logging:
+  config: classpath:logback-spring.xml
+
+spring:
+  application:
+    name: Holmes Rule Management
+  datasource:
+    dirver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${URL_JDBC}:${DB_PORT}/${DB_NAME}
+    username: ${JDBC_USERNAME}
+    password: ${JDBC_PASSWORD}
+  mvc:
+    throw-exception-if-no-handler-found: true

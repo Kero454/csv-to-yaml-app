@@ -1,0 +1,117 @@
+{{/*
+# Copyright © 2018 AT&T USA
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+aai:
+  auth: {{.Values.aai.auth}}
+server:
+  {{- if include "common.onServiceMesh" . }}
+  forward-headers-strategy: none
+  {{- end }}
+  port: {{ index .Values.containerPort }}
+spring:
+  application:
+    name: so-sdc-controller
+  datasource:
+    hikari:
+      jdbcUrl: jdbc:mariadb://${DB_HOST}:${DB_PORT}/catalogdb
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: org.mariadb.jdbc.Driver
+      pool-name: catdb-pool
+      registerMbeans: false
+  security:
+    usercredentials:
+    -
+      username: asdc
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: Asdc-Client
+    -
+      username: mso_admin
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: ACTUATOR
+  sleuth:
+    enabled: {{ .Values.global.tracing.enabled }}
+    messaging:
+      jms:
+        enabled: false
+    trace-id128: true
+    sampler:
+      probability: {{ .Values.global.tracing.sampling.probability }}
+    supports-join: false
+    web:
+      skip-pattern: {{ join "," .Values.tracing.skipPatterns }}
+    scheduled:
+      skip-pattern: .*({{ join "|" .Values.tracing.scheduled.skipClasses }})
+  zipkin:
+    base-url: {{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.zipkin }}
+request:
+  datasource:
+    hikari:
+      jdbcUrl: jdbc:mariadb://${DB_HOST}:${DB_PORT}/requestdb
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: org.mariadb.jdbc.Driver
+      pool-name: reqdb-pool
+      registerMbeans: false
+mso:
+  msoKey: {{ index .Values.mso.msoKey }}
+  logPath: ./logs/sdc
+  catalog:
+    db:
+      spring:
+        endpoint: http://so-catalog-db-adapter.{{ include "common.namespace" . }}:8082
+  db:
+    auth: {{ .Values.mso.requestDb.auth }}
+  site-name: onapheat
+  camundaURL: http://so-bpmn-infra.{{ include "common.namespace" . }}:8081/
+  adapters:
+    requestDb:
+      endpoint: http://so-request-db-adapter.{{ include "common.namespace" . }}:8083
+      auth: {{ .Values.mso.requestDb.auth }}
+  aai:
+    endpoint: http://aai.{{ include "common.namespace" . }}:80
+  asdc-connections:
+    asdc-controller1:
+      user: mso
+      {{ with (first .Values.kafkaUser.acls) }}
+      consumerId: {{ .name }}-sdc-controller
+      consumerGroup: {{ .name }}
+      {{ end }}
+      environmentName: AUTO
+      sdcAddress: sdc-be.{{ include "common.namespace" . }}:8080
+      password: {{ index .Values "mso" "asdc-connections" "asdc-controller1" "password" }}
+      pollingInterval: 15
+      pollingTimeout: 15
+      relevantArtifactTypes: HEAT,HEAT_ENV,HEAT_VOL
+      useHttpsWithSdc: false
+      activateServerTLSAuth: false
+      keyStorePassword:
+      keyStorePath:
+      watchDogTimeout: 300
+      isFitlerInEmptyResources: true
+      httpsProxyHost:
+      httpProxyHost:
+      httpsProxyPort: 0
+      httpProxyPort: 0
+  asdc:
+    config:
+      activity:
+        endpoint: http://sdc-wfd-be:8080
+      key: {{ .Values.mso.asdc.config.key }}
+      components:
+        count: 3,
+        componentNames: SO,AAI,SDNC
+  scheduling:
+    enabled: false

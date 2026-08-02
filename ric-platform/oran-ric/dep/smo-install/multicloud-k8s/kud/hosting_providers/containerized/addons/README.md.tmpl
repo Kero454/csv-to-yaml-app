@@ -1,0 +1,67 @@
+# Installing KUD addons with emcoctl
+
+1. Customize values.yaml as needed
+
+To create a customized profile for a specific addon, edit the profile
+as needed, and then (for example, cpu-manager):
+
+```
+    tar -czf /opt/kud/multi-cluster/addons/cpu-manager.tar.gz -C /opt/kud/multi-cluster/addons/cpu-manager/helm .
+    tar -czf /opt/kud/multi-cluster/addons/cpu-manager_profile.tar.gz -C /opt/kud/multi-cluster/addons/cpu-manager/profile .
+```
+
+2. Create prerequisites to deploy addons
+
+Apply prerequisites.  This step is optional.  If there are existing
+resources in the cluster, it is sufficient to customize values.yaml
+with the values of those resources.  The supplied YAML files creates
+the controllers, one or more clusters, one project, and one logical
+cloud.
+
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply -f 00-controllers.yaml -v values.yaml\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply -f 01-cluster.yaml -v values.yaml\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply -f 02-project.yaml -v values.yaml\`
+
+3. Create addons project
+
+This creates the project with the addons listed `CompositeApps` value.
+
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply -f 03-addons-app.yaml -v values.yaml\`
+
+4. Instantiate the addons
+
+This instantiates each composite app listed in the `CompositeApps`
+value.
+
+NOTE: The ordering is important when both the sriov-network and
+kubevirt addons are enabled.  The sriov-network addon will trigger a
+drain of the nodes and kubevirt will prevent the drain from
+completing, so kubevirt must be instantiated after sriov-network has
+completed the drain.
+
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply projects/kud/composite-apps/addons/v1/deployment-intent-groups/deployment/instantiate\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply projects/kud/composite-apps/networks/v1/deployment-intent-groups/deployment/instantiate\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply projects/kud/composite-apps/kubevirt/v1/deployment-intent-groups/deployment/instantiate\`
+
+# Uninstalling KUD addons with emcoctl
+
+1. Terminate the addons
+
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply projects/kud/composite-apps/kubevirt/v1/deployment-intent-groups/deployment/terminate\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply projects/kud/composite-apps/networks/v1/deployment-intent-groups/deployment/terminate\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh apply projects/kud/composite-apps/addons/v1/deployment-intent-groups/deployment/terminate\`
+
+2. Delete addons
+
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh delete -f 03-addons-app.yaml -v values.yaml\`
+
+3. Cleanup prerequisites
+
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh delete -f 02-project.yaml -v values.yaml\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh delete -f 01-cluster.yaml -v values.yaml\`
+    \`$ /opt/kud/multi-cluster/${CLUSTER_NAME}/artifacts/emcoctl.sh delete -f 00-controllers.yaml -v values.yaml\`
+
+#### NOTE: Known issue: deletion of the resources fails sometimes as
+some resources can't be deleted before others are deleted. This can
+happen due to timing issue. In that case try deleting again and the
+deletion should succeed.

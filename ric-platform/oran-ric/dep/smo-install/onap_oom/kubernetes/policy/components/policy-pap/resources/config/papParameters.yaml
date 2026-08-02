@@ -1,0 +1,138 @@
+#  ============LICENSE_START=======================================================
+#   Copyright (C) 2022 Bell Canada. All rights reserved.
+#   Modifications Copyright © 2022-2025 Nordix Foundation
+#  ================================================================================
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+#  SPDX-License-Identifier: Apache-2.0
+#  ============LICENSE_END=========================================================
+
+spring:
+  security:
+    user:
+      name: "${RESTSERVER_USER}"
+      password: "${RESTSERVER_PASSWORD}"
+  http:
+    converters:
+      preferred-json-mapper: gson
+  datasource:
+    url: jdbc:postgresql://{{ .Values.global.postgres.service.name2 }}:{{ .Values.global.postgres.service.port }}/policyadmin
+    driverClassName: org.postgresql.Driver
+    username: "${SQL_USER}"
+    password: "${SQL_PASSWORD}"
+    hikari:
+      connectionTimeout: 30000
+      idleTimeout: 600000
+      maxLifetime: 1800000
+      maximumPoolSize: 10
+  jpa:
+    hibernate:
+      ddl-auto: none
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+        implicit-strategy: org.onap.policy.common.spring.utils.CustomImplicitNamingStrategy
+
+server:
+  port: 6969
+  ssl:
+    enabled: false
+  servlet:
+    context-path: /policy/pap/v1
+
+pap:
+  name: PapGroup
+  topic:
+    pdp-pap.name: {{ .Values.config.kafka.topics.policyPdpPap }}
+    notification.name: {{ .Values.config.kafka.topics.policyNotification }}
+    heartbeat.name: {{ .Values.config.kafka.topics.policyHeartbeat }}
+  pdpParameters:
+    heartBeatMs: 120000
+    updateParameters:
+      maxRetryCount: 1
+      maxWaitMs: 36000
+    stateChangeParameters:
+      maxRetryCount: 1
+      maxWaitMs: 36000
+  savePdpStatisticsInDb: true
+  topicParameterGroup:
+    topicSources:
+      - useHttps: false
+        fetchTimeout: 15000
+        topic: {{ .Values.config.kafka.topics.policyPdpPap }}
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        topicCommInfrastructure: kafka
+        additionalProps:
+          group.id : {{ .Values.config.kafka.consumer.groupId }}
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${JAASLOGIN}
+      - useHttps: false
+        fetchTimeout: 15000
+        topic: {{ .Values.config.kafka.topics.policyHeartbeat }}
+        effectiveTopic: {{ .Values.config.kafka.topics.policyPdpPap }}
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        topicCommInfrastructure: kafka
+        additionalProps:
+          group.id : {{ .Values.config.kafka.consumer.groupId }}
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${JAASLOGIN}
+    topicSinks:
+      - useHttps: false
+        topic: {{ .Values.config.kafka.topics.policyPdpPap }}
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        topicCommInfrastructure: kafka
+        additionalProps:
+          group.id : {{ .Values.config.kafka.consumer.groupId }}
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${JAASLOGIN}
+      - useHttps: false
+        topic: {{ .Values.config.kafka.topics.policyNotification }}
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        topicCommInfrastructure: kafka
+        additionalProps:
+          group.id : {{ .Values.config.kafka.consumer.groupId }}
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${JAASLOGIN}
+
+# If Strimzi Kafka to be used for communication, replace following configuration for topicSources and topicSinks
+#          servers:
+#            - {{ include "common.release" . }}-{{ .Values.config.kafkaBootstrap }}:9092
+#          topicCommInfrastructure: kafka
+#          additionalProps:
+#            security.protocol: SASL_PLAINTEXT
+#            sasl.mechanism: SCRAM-SHA-512
+#            sasl.jaas.config: ${JAASLOGIN}
+
+  healthCheckRestClientParameters:
+  - clientName: api
+    hostname: policy-api
+    port: 6969
+    userName: "${API_USER}"
+    password: "${API_PASSWORD}"
+    useHttps: false
+    basePath: policy/api/v1/healthcheck
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health, metrics, prometheus
+      path-mapping.prometheus: metrics

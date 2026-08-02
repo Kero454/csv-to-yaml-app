@@ -1,0 +1,67 @@
+{{/*
+# Copyright © 2024 Deutsche Telekom AG.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- include "common.templateMetadata" . | indent 6 }}
+    spec:
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image.imageName }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          env:
+            - name: PREFERENCES_DB_USERNAME
+              {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "pg-user-creds" "key" "login") | indent 14 }}
+            - name: PREFERENCES_DB_PASSWORD
+              {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "pg-user-creds" "key" "password") | indent 14 }}
+            - name: PREFERENCES_DB_HOST
+              value: {{ ternary .Values.postgres.service.name2 .Values.global.postgres.service.name2 .Values.global.postgres.localCluster }}
+            - name: PREFERENCES_DB_PORT
+              value: {{ ternary .Values.postgres.service.externalPort2 .Values.global.postgres.service.externalPort2 .Values.global.postgres.localCluster | quote }}
+            - name: PREFERENCES_DB
+              value: {{ .Values.postgres.config.pgDatabase }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "common.fullname" . }}-configmap
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.service.port }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.service.port }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ .Values.service.port }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources: {{ include "common.resources" . | nindent 12 }}

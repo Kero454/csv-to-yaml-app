@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Cascade-generated documentation (keep README.md)
+APPMGR_API_FLOW.md
+Thesis/

@@ -1,0 +1,112 @@
+{{/*
+# Copyright © 2018 Orange
+# Modifications Copyright © 2018  Amdocs, Bell Canada
+# Modifications Copyright © 2020 Nokia
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          ports: {{ include "common.containerPorts" . | nindent 12 }}
+          # disable liveness probe when breakpoints set in debugger
+          # so K8s doesn't restart unresponsive container
+          {{ if .Values.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              port: {{ .Values.service.internalPort }}
+              path: {{ .Values.liveness.path }}
+              scheme: HTTP
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+          {{ end }}
+          readinessProbe:
+            httpGet:
+              port: {{ .Values.service.internalPort }}
+              path: {{ .Values.readiness.path }}
+              scheme: HTTP
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:mariadb://{{ include "common.mariadbService" . }}:{{ include "common.mariadbPort" . }}/{{ index .Values "mariadb-galera" "db" "name" }}
+            - name: SPRING_DATASOURCE_USERNAME
+              {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "nbi-db-secret" "key" "login") | indent 14 }}
+            - name: SPRING_DATASOURCE_PASSWORD
+              {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "nbi-db-secret" "key" "password") | indent 14 }}
+            - name: SPRING_DATA_MONGODB_HOST
+              value: {{ .Values.mongodb.service.nameOverride }}.{{ include "common.namespace" . }}
+            - name: SPRING_DATA_MONGODB_PORT
+              value: "{{ .Values.mongodb.service.port }}"
+            - name: SPRING_DATA_MONGODB_DATABASE
+              value: {{ .Values.mongodb.config.dbName }}
+            - name: ONAP_LCPCLOUDREGIONID
+              value: {{ .Values.config.openStackRegion }}
+            - name: ONAP_TENANTID
+              value: {{ .Values.config.openStackVNFTenantId | quote }}
+            - name: ONAP_CLOUDOWNER
+              value: {{ .Values.config.cloudOwner }}
+            - name: ONAP_K8SCLOUDREGIONID
+              value: {{ .Values.config.k8sCloudRegionId }}
+            - name: ONAP_K8SCLOUDOWNER
+              value: {{ .Values.config.k8sCloudOwner }}
+            - name: NBI_URL
+              value: "http://nbi.{{ include "common.namespace" . }}:{{ .Values.service.internalPort }}/nbi/api/v4"
+            - name: SDC_HOST
+              value: "http://sdc-be.{{ include "common.namespace" . }}:8080"
+            - name: SDC_HEADER_ECOMPINSTANCEID
+              value: {{ .Values.config.ecompInstanceId }}
+            - name: SDC_HEADER_AUTHORIZATION
+              value: {{ .Values.sdc_authorization }}
+            - name: AAI_HOST
+              value: "http://aai.{{ include "common.namespace" . }}:80"
+            - name: AAI_HEADER_AUTHORIZATION
+              value: {{ .Values.aai_authorization }}
+            - name: SO_HOST
+              value: http://so.{{ include "common.namespace" . }}:8080
+            {{- if .Values.so_authorization }}
+            - name: SO_HEADER_AUTHORIZATION
+              value: {{ .Values.so_authorization }}
+            {{- end }}
+            - name: DMAAP_HOST
+              value: "http://message-router.{{ include "common.namespace" . }}:3904"
+            - name: LOGGING_LEVEL_ORG_ONAP_NBI
+              value: {{ .Values.config.loglevel }}
+            - name: MSB_ENABLED
+              value: "{{ .Values.global.msbEnabled }}"
+            - name: MSB_DISCOVERY_HOST
+              value: "msb-discovery.{{ include "common.namespace" . }}"
+            - name: MSB_DISCOVERY_PORT
+              value: "10081"
+          resources: {{ include "common.resources" . | nindent 12 }}
+        {{- if .Values.nodeSelector }}
+        nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 10 }}
+        {{- end -}}
+        {{- if .Values.affinity }}
+        affinity:
+{{ toYaml .Values.affinity | indent 10 }}
+        {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

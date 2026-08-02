@@ -1,0 +1,162 @@
+# Copyright © 2018 Amdocs, AT&T
+# Modifications Copyright © 2018 Bell Canada
+# Modifications Copyright © 2020, 2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+
+# application image
+image: onap/babel:1.13.5
+
+flavor: small
+
+# default number of instances
+replicaCount: 1
+
+# number of ReplicaSets that should be retained for the Deployment
+revisionHistoryLimit: 1
+
+updateStrategy:
+  type: RollingUpdate
+  maxUnavailable: 0
+  maxSurge: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: false
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+service:
+  type: NodePort
+  internalPort: 9516
+  ports:
+  - name: http
+    port: 9516
+    nodePort: 79
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "aai-babel-api"
+      name: "aai-babel"
+      port: 9516
+  config:
+    ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: aai-modelloader-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "2500Mi"
+    requests:
+      cpu: "100m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "4Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  unlimited: {}
+
+# adds jvm args for remote debugging the application
+debug:
+  enabled: false
+  args: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"
+  port: 5005
+  portName: debug
+
+# adds jvm args for remote profiling the application
+profiling:
+  enabled: false
+  args:
+    - "-Dcom.sun.management.jmxremote"
+    - "-Dcom.sun.management.jmxremote.ssl=false"
+    - "-Dcom.sun.management.jmxremote.authenticate=false"
+    - "-Dcom.sun.management.jmxremote.local.only=false"
+    - "-Dcom.sun.management.jmxremote.port=9999"
+    - "-Dcom.sun.management.jmxremote.rmi.port=9999"
+    - "-Djava.rmi.server.hostname=127.0.0.1"
+  port: 9999
+  portName: jmx
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    targetPort: 9516
+    path: /services/babel-service/actuator/prometheus
+    basicAuth:
+      enabled: false
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: aai-babel
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap
+  level:
+    root: INFO
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+volumes:
+  artifactDataSizeLimit: 50Mi
+  babelLogsSizeLimit: 100Mi
+  tmpSizeLimit: 100Mi
+
+securityContext:
+  user_id: 1000
+  group_id: 1000
+
+podAnnotations:
+  checksum/config: '{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}'

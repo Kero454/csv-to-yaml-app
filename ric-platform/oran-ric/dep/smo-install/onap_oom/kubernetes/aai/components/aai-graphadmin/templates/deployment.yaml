@@ -1,0 +1,248 @@
+{{/*
+#
+# ============LICENSE_START=======================================================
+# org.onap.aai
+# ================================================================================
+# Copyright (c) 2018 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2020 Nokia Intellectual Property. All rights reserved.
+# Copyright (c) 2020-2021 Orange Intellectual Property. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" (dict "annotations" .Values.annotations "dot" .) | nindent 2 }}
+spec:
+  {{- if .Values.config.debug.enabled }}
+  replicas: 1
+  {{- else }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+  selector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      hostname: aai-graphadmin
+      terminationGracePeriodSeconds: {{ .Values.service.terminationGracePeriodSeconds }}
+      {{- if .Values.global.initContainers.enabled }}
+      initContainers:
+        {{ include "common.readinessCheck.waitFor" (dict "dot" . "wait_for" .Values.readinessCheck.waitForCassandraService ) | indent 8 | trim }}
+        {{- if not .Values.createDbSchemaViaJob.enabled }}
+        {{- include "aai.waitForSchemaService" . | nindent 8 }}
+        - name: {{ include "common.name" . }}-create-db-schema
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | nindent 10 | trim }}
+          command:
+          - sh
+          args:
+          - -c
+          - |
+            {{- if include "common.onServiceMesh" . }}
+            echo "waiting 15s for istio side cars to be up"; sleep 15s;{{- end }}
+            sh docker-entrypoint.sh createDBSchema.sh;
+            {{ include "common.serviceMesh.killSidecar" . | indent 11 | trim }}
+          env:
+          {{- if .Values.config.debug.enabled }}
+          - name: JVM_OPTS
+            value: {{ .Values.config.debug.args | quote }}
+          {{- end }}
+          {{- if .Values.config.env }}
+          {{- range $key,$value := .Values.config.env }}
+          - name: {{ $key | upper | quote}}
+            value: {{ $value | quote}}
+          {{- end }}
+          {{- end }}
+          - name: BOOTSTRAP_SERVERS
+            value: {{ include "common.release" . }}-strimzi-kafka-bootstrap:9092
+          - name: JAAS_CONFIG
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "common.release" . }}-{{ .Values.global.aaiGraphKafkaUser }}
+                key: sasl.jaas.config
+          {{- if .Values.config.debug.enabled }}
+          ports:
+          - containerPort: {{ .Values.service.debugPort }}
+            name: {{ .Values.service.debugPortName }}
+          {{- end }}
+          volumeMounts:
+          - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
+            name: config
+            subPath: janusgraph-realtime.properties
+          - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/aaiconfig.properties
+            name: properties
+            subPath: aaiconfig.properties
+          - mountPath: /opt/aai/logroot/AAI-GA
+            name: logs
+          - mountPath: /opt/app/aai-graphadmin/resources/logback.xml
+            name: config
+            subPath: logback.xml
+          - mountPath: /opt/app/aai-graphadmin/resources/localhost-access-logback.xml
+            name: config
+            subPath: localhost-access-logback.xml
+          - mountPath: /opt/app/aai-graphadmin/resources/application.properties
+            name: properties
+            subPath: application.properties
+          resources: {{ include "common.resources" . | nindent 12 }}
+        {{- end }}
+      {{- end }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+      - name: {{ include "common.name" . }}
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
+        env:
+        {{- if .Values.config.env }}
+        {{- range $key,$value := .Values.config.env }}
+        - name: {{ $key | upper | quote}}
+          value: {{ $value | quote}}
+        {{- end }}
+        {{- end }}
+        - name: INTERNAL_PORT_1
+          value: {{ .Values.service.appPort | quote }}
+        - name: INTERNAL_PORT_2
+          value: {{ .Values.service.debugPort | quote }}
+        - name: INTERNAL_PORT_3
+          value: {{ .Values.service.actuatorPort | quote }}
+        - name: BOOTSTRAP_SERVERS
+          value: {{ include "common.release" . }}-strimzi-kafka-bootstrap:9092
+        - name: JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.release" . }}-{{ .Values.global.aaiGraphKafkaUser }}
+              key: sasl.jaas.config
+        {{- if .Values.config.profiling.enabled }}
+        - name: PRE_JVM_ARGS
+          value: '{{ join " " .Values.config.profiling.args }}'
+        {{- end }}
+        {{- if .Values.config.debug.enabled }}
+        - name: POST_JVM_ARGS
+          value: {{ .Values.config.debug.args | quote }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
+          name: config
+          subPath: janusgraph-realtime.properties
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/aaiconfig.properties
+          name: properties
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-RES
+          name: logs
+        - mountPath: /opt/app/aai-graphadmin/logs
+          name: script-logs
+        - mountPath: /opt/app/aai-graphadmin/resources/logback.xml
+          name: config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/localhost-access-logback.xml
+          name: config
+          subPath: localhost-access-logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/application.properties
+          name: properties
+          subPath: application.properties
+        - mountPath: /tmp
+          name: tmp-volume
+        ports:
+        - containerPort: {{ .Values.service.appPort }}
+          name: {{ .Values.service.appPortName }}
+        {{- if .Values.config.debug.enabled }}
+        - containerPort: {{ .Values.service.debugPort }}
+          name: {{ .Values.service.debugPortName }}
+        {{- end }}
+        {{- if .Values.config.profiling.enabled }}
+        - containerPort: {{ .Values.service.profilingPort }}
+          name: {{ .Values.service.profilingPortName }}
+        {{- end }}
+        - containerPort: {{ .Values.service.actuatorPort }}
+          name: {{ .Values.service.actuatorPortName }}
+        lifecycle:
+          # wait for active requests (long-running tasks) to be finished
+          # Before the SIGTERM is invoked, Kubernetes exposes a preStop hook in the Pod.
+          preStop:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  while (netstat -an | grep ESTABLISHED | grep -e $INTERNAL_PORT_1 -e $INTERNAL_PORT_2) do
+                    echo "Still active connections. Waiting for active requests to be finished"
+                    sleep 3
+                  done
+        # disable liveness probe when
+        # debugging.enabled=true or profiling.enabled=true
+        {{- if and .Values.liveness.enabled (not (or .Values.config.debug.enabled .Values.config.profiling.enabled)) }}
+        livenessProbe:
+          httpGet:
+            port: {{ .Values.service.actuatorPort }}
+            path: {{ .Values.liveness.path }}
+          {{- if .Values.liveness.initialDelaySeconds }}
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          {{- end }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            port: {{ .Values.service.actuatorPort }}
+            path: {{ .Values.readiness.path }}
+          {{- if .Values.readiness.initialDelaySeconds }}
+          initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+          {{- end }}
+          periodSeconds: {{ .Values.readiness.periodSeconds }}
+        startupProbe:
+          httpGet:
+            port: {{ .Values.service.actuatorPort }}
+            path: {{ .Values.startup.path }}
+          failureThreshold: {{ .Values.startup.failureThreshold }}
+          periodSeconds: {{ .Values.startup.periodSeconds }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+      {{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end -}}
+      {{- if .Values.affinity }}
+      affinity:
+      {{ toYaml .Values.affinity | indent 8 }}
+      {{- end }}
+      # side car containers
+      {{ include "common.log.sidecar" . | nindent 6 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.tmpSizeLimit }}
+      - name: logs
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logSizeLimit }}
+      - name: script-logs
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.scriptlogSizeLimit }}
+      {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
+      - name: config
+        configMap:
+          name: {{ include "common.fullname" . }}
+      - name: properties
+        configMap:
+          name: {{ include "common.fullname" . }}-properties
+      restartPolicy: {{ .Values.restartPolicy }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

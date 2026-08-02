@@ -1,0 +1,97 @@
+{{/*
+# Copyright © 2017 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      initContainers:
+      - command:
+        - sh
+        args:
+        - -c
+        - |
+          cd /config-input && for PFILE in `ls -1`
+          do
+            envsubst <${PFILE} >/config/${PFILE}
+          done
+          cat /config/server.xml
+        volumeMounts:
+        - mountPath: /config-input
+          name: config-input
+        - mountPath: /config
+          name: config
+        image: {{ include "repositoryGenerator.image.envsubst" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-update-config
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "*** /opt"
+              ls -lh /opt/
+              echo "*** /opt/app"
+              ls -lh /opt/app/
+              /home/uui/uuiStartup.sh
+          ports: {{ include "common.containerPorts" . | nindent 10  }}
+          # disable liveness probe when breakpoints set in debugger
+          # so K8s doesn't restart unresponsive container
+          {{- if eq .Values.liveness.enabled true }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ index .Values.service.ports 0 "port" }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+          {{ end -}}
+          readinessProbe:
+            tcpSocket:
+              port: {{ index .Values.service.ports 0 "port" }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+          volumeMounts:
+          - mountPath: /home/uui/server.xml
+            name: config
+            subPath: server.xml
+          - mountPath: /home/uui/web.xml
+            name: config
+            subPath: web.xml
+          env:
+          - name: MSB_ADDR
+            value: {{ tpl .Values.msbaddr . }}
+          resources: {{ include "common.resources" . | nindent 12 }}
+        {{- if .Values.nodeSelector }}
+        nodeSelector: {{ toYaml .Values.nodeSelector | nindent 10 }}
+        {{- end }}
+        {{- if .Values.affinity }}
+        affinity: {{ toYaml .Values.affinity | nindent 10 }}
+        {{- end }}
+      volumes:
+      - name: config-input
+        configMap:
+          name: {{ include "common.fullname" . }}
+      - name: config
+        emptyDir:
+          medium: Memory
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

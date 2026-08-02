@@ -1,0 +1,158 @@
+global:
+  env:
+    KEYCLOAK_URL: http://keycloak-http.keycloak
+    KEYCLOAK_REALM: onap
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+  #Service Names of the postgres db to connect to.
+  postgres:
+    localCluster: false
+    service:
+      name: pgset
+      externalPort: 5432
+      name2: tcp-pgset-primary
+      externalPort2: 5432
+      name3: tcp-pgset-replica
+      externalPort3: 5432
+    container:
+      name: postgres
+
+secrets:
+  - uid: pg-root-pass
+    name: &pgRootPassSecretName '{{ include "common.release" . }}-portal-ng-preferences-pg-root-pass'
+    type: password
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgRootPasswordExternalSecret) .) (hasSuffix "portal-ng-preferences-pg-root-pass" .Values.postgres.config.pgRootPasswordExternalSecret) }}'
+    password: '{{ .Values.postgres.config.pgRootpassword }}'
+    policy: generate
+  - uid: pg-user-creds
+    name: &pgUserCredsSecretName '{{ include "common.release" . }}-portal-ng-preferences-pg-user-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgUserExternalSecret) .) (hasSuffix "portal-ng-preferences-pg-user-creds" .Values.postgres.config.pgUserExternalSecret) }}'
+    login: '{{ .Values.postgres.config.pgUserName }}'
+    password: '{{ .Values.postgres.config.pgUserPassword }}'
+    passwordPolicy: generate
+
+# Default values for preferences.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+image:
+  imageName: onap/portal-ng/preferences
+  pullPolicy: Always
+  # Overrides the image tag whose default value is the chart appVersion.
+  # tag: 0.1.0
+
+replicaCount: 1
+
+# Specifies how many old replicas will be retained in a deployment
+revisionHistoryLimit: 2
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Custom selector label (for bigger namespaces with other components)
+partOf: portal
+
+service:
+  type: ClusterIP
+  port: 9001
+  ports:
+    - name: http
+      port: 9001
+
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+  unlimited: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+probes:
+  # Configuration of the startup probe that
+  # runs before readiness and liveness probe.
+  startup:
+    ## Number of consecutive failures allowed before marking probe as failed.
+    failureThreshold: 90
+    ## check interval of probe.
+    periodSeconds: 1
+  # Configuration of the readiness probe to check
+  # if the container is ready to accept traffic.
+  readiness:
+    ## Number of consecutive failures allowed before marking probe as failed.
+    failureThreshold: 4
+  # Configuration of the liveness probe to check if the container is alive.
+  liveness:
+    ## Number of consecutive failures allowed before marking probe as failed.
+    failureThreshold: 4
+
+#################################################################
+# Postgres overriding defaults in the postgres
+#################################################################
+postgres:
+  nameOverride: &postgresName portal-ng-preferences-postgres
+  service:
+    name: *postgresName
+    externalPort: 5432
+    name2: portal-ng-preferences-pg-primary
+    externalPort2: 5432
+    name3: portal-ng-preferences-pg-replica
+    externalPort3: 5432
+  container:
+    name:
+      primary: portal-ng-preferences-pg-primary
+      replica: portal-ng-preferences-pg-replica
+  persistence:
+    mountSubPath: portal-ng-preferences/data
+    mountInitPath: portal-ng-preferences
+  config:
+    pgUserName: portalngpreferences
+    pgDatabase: preferences
+    pgUserExternalSecret: *pgUserCredsSecretName
+    pgRootPasswordExternalSecret: *pgRootPassSecretName
+
+postgres-init:
+  nameOverride: portal-ng-preferences-postgres-init
+  config:
+    pgUserName: portalngpreferences
+    pgDatabase: preferences
+    pgDataPath: data
+    pgUserExternalSecret: *pgUserCredsSecretName
+  serviceAccount:
+    nameOverride: portal-ng-preferences-postgres-init
+
+    # pgPrimaryPassword: password
+    # pgUserPassword: password
+    # pgRootPassword: password
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: portal-ng-preferences
+  roles:
+    - read
+
+securityContext:
+  user_id: 65534
+  group_id: 65534

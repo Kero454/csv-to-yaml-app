@@ -1,0 +1,44 @@
+{
+    "openstack": {
+        "vim_type": "openstack",
+        "versions": {
+            "titanium_cloud": {
+                "version": "titanium_cloud",
+                "extra_info_hint": "",
+                "provider_plugin": "multicloud-titaniumcloud"
+            },
+            "pike": {
+                "version": "pike",
+                "extra_info_hint": "",
+                "provider_plugin": "multicloud-pike"
+            },
+            "starlingx": {
+                "version": "starlingx",
+                "extra_info_hint": "",
+                "provider_plugin": "multicloud-starlingx"
+            }
+        },
+        "provider_plugin": "multicloud-pike"
+    },
+    "vmware": {
+        "vim_type": "vmware",
+        "versions": {
+            "4.0": {
+                "version": "4.0",
+                "extra_info_hint": "",
+                "provider_plugin": "multicloud-vio"
+            }
+        },
+        "provider_plugin": "multicloud-vio"
+    },
+    "k8s": {
+        "vim_type": "k8s",
+        "versions": {
+            "1.0": {
+                "version": "1.0",
+                "extra_info_hint": "",
+                "provider_plugin": "multicloud-k8s"
+            }
+        }
+    }
+}

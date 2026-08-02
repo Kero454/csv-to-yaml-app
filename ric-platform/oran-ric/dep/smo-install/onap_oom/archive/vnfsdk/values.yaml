@@ -1,0 +1,128 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications © 2023 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+
+secrets:
+  - uid: pg-root-pass
+    name: &pgRootPassSecretName '{{ include "common.release" . }}-vnfsdk-pg-root-pass'
+    type: password
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgRootPasswordExternalSecret) .) (hasSuffix "vnfsdk-pg-root-pass" .Values.postgres.config.pgRootPasswordExternalSecret) }}'
+    password: '{{ .Values.postgres.config.pgRootpassword }}'
+    policy: generate
+  - uid: pg-user-creds
+    name: &pgUserCredsSecretName '{{ include "common.release" . }}-vnfsdk-pg-user-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgUserExternalSecret) .) (hasSuffix "vnfsdk-pg-user-creds" .Values.postgres.config.pgUserExternalSecret) }}'
+    login: '{{ .Values.postgres.config.pgUserName }}'
+    password: '{{ .Values.postgres.config.pgUserPassword }}'
+    passwordPolicy: generate
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/vnfsdk/refrepo:1.6.3
+pullPolicy: Always
+
+# application configuration override for postgres
+postgres:
+  nameOverride: vnfsdk-postgres
+  service:
+    name: vnfsdk-dbset
+    name2: vnfsdk-dbpri
+    name3: vnfsdk-dbrep
+  container:
+    name:
+      primary: vnfsdk-dbpri
+      replica: vnfsdk-dbrep
+  persistence:
+    mountSubPath: vnfsdk/data
+    mountInitPath: vnfsdk
+  config:
+    pgUserName: postgres
+    pgDatabase: postgres
+    pgUserExternalSecret: *pgUserCredsSecretName
+    pgRootPasswordExternalSecret: *pgRootPassSecretName
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+nodeSelector: {}
+
+affinity: {}
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+  unlimited: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 60
+  periodSeconds: 30
+
+service:
+  type: NodePort
+  name: refrepo
+  internalPort: 8703
+  ports:
+    - name: http
+      port: 8703
+      nodePort: '97'
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "vnfsdk-refrepo-api"
+      name: "refrepo"
+      port: 8703
+  config:
+    ssl: "redirect"
+
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ .Values.postgres.service.name2 }}'
+
+wait_for_job_container:
+  containers:
+    - '{{ include "common.name" . }}-job'

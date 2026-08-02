@@ -1,0 +1,115 @@
+{{/*
+# Copyright © 2018 Amdocs, AT&T
+# Modifications Copyright © 2018 Bell Canada
+# Modifications Copyright © 2020-2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" (dict "annotations" .Values.annotations "dot" .) | nindent 2 }}
+spec:
+  {{- if .Values.debug.enabled }}
+  replicas: 1
+  {{- else }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if (eq "RollingUpdate" .Values.updateStrategy.type) }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+    {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end -}}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+      - name: {{ include "common.name" . }}
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
+        env:
+        - name: CONFIG_HOME
+          value: /opt/app/model-loader/config/
+        - name: SASL_JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
+        {{- if .Values.profiling.enabled }}
+        - name: JVM_ARGS
+          value: '{{ join " " .Values.profiling.args }}'
+        {{- end }}
+        {{- if .Values.debug.enabled }}
+        - name: JVM_ARGS
+          value: {{ .Values.debug.args | quote }}
+        {{- end }}
+        ports:
+        - containerPort: {{ .Values.service.appPort }}
+          name: {{ .Values.service.appPortName }}
+        {{- if .Values.debug.enabled }}
+        - containerPort: {{ .Values.debug.port }}
+          name: {{ .Values.debug.portName }}
+        {{- end }}
+        {{- if .Values.profiling.enabled }}
+        - containerPort: {{ .Values.profiling.port }}
+          name: {{ .Values.profiling.portName }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /opt/app/model-loader/config/model-loader.properties
+          subPath: model-loader.properties
+          name: prop-config
+        - mountPath: /opt/app/model-loader/application.properties
+          subPath: application.properties
+          name: prop-config
+        - mountPath: {{ .Values.log.path }}
+          name: logs
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /opt/app/model-loader/logback.xml
+          name: log-config
+          subPath: logback.xml
+        resources: {{ include "common.resources" . | nindent 10 }}
+      # side car containers
+        {{ include "common.log.sidecar" . | nindent 6 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: prop-config
+        configMap:
+          name: {{ include "common.fullname" . }}-prop
+      - name: logs
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logSizeLimit }}
+      - name: tmp
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.tmpSizeLimit }}
+      {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
+      - name: log-config
+        configMap:
+          name: {{ include "common.fullname" . }}-log
+      restartPolicy: {{ .Values.global.restartPolicy | default .Values.restartPolicy }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

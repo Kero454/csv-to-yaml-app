@@ -1,0 +1,60 @@
+# Copyright © 2022 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+replicaCount: 1
+config:
+  port: 8080
+  enableMetrics: false
+  # The following config should be set/overridden
+  # from parent chart kubernetes/strimzi/values.yaml
+  saslMechanism: parentValue
+  kafkaInternalPort: parentValue
+  strimziKafkaAdminUser: parentValue
+  strimziKafkaAdminPassword: password
+
+# nameOverride is required to avoid duplication
+# in pod and service names ie ...-bridge-bridge-{random hex}
+nameOverride: strimzi-kafka
+
+resources:
+  limits:
+    cpu: '2'
+    memory: 2Gi
+  requests:
+    cpu: 100m
+    memory: 1Gi
+
+pod:
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+bridgeContainer:
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+    capabilities:
+      drop:
+        - ALL
+        - CAP_NET_RAW

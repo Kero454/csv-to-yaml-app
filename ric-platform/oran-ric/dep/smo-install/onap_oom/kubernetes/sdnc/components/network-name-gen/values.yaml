@@ -1,0 +1,136 @@
+# Copyright (C) 2018  AT&T Intellectual Property.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Global configuration default values that can be inherited by
+# all subcharts.
+#################################################################
+global:
+
+  # Change to an unused port prefix range to prevent port conflicts
+  # with other instances running within the same k8s cluster
+  nodePortPrefix: 302
+
+  # image pull policy
+  pullPolicy: IfNotPresent
+
+  mariadbGalera: &mariadbGalera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    localCluster: false
+    service: &dbService mariadb-galera
+    internalPort: &dbPort 3306
+    nameOverride: mariadb-galera
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: neng-db-secret
+    name: &dbUserSecretName '{{ include "common.release" . }}-neng-db-secret'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.db.externalSecret) . }}'
+    login: '{{ .Values.config.db.userName }}'
+    password: '{{ .Values.config.db.userPassword }}'
+  - uid: pol-basic-auth-secret
+    name: '{{ include "common.release" . }}-pol-basic-auth-secret'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.polBasicAuthSecret) . }}'
+    login: '{{ .Values.config.polBasicAuthUser }}'
+    password: '{{ .Values.config.polBasicAuthPassword }}'
+
+mariadb-init:
+  config:
+    userCredentialsExternalSecret: *dbUserSecretName
+    mysqlDatabase: nengdb
+  nameOverride: nengdb-init
+  mariadb-galera:
+    nameOverride: *dbService
+    service:
+      internalPort: *dbPort
+  serviceAccount:
+    nameOverride: nengdb-init
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/ccsdk-apps-ms-neng:1.4.0
+pullPolicy: IfNotPresent
+
+# application configuration
+config:
+  db:
+    userName: nenguser
+    # userPassword: password
+    # userCredentialsExternalSecret: some-secret
+  springProfile: live
+  polClientAuth: cHl0aG9uOnRlc3Q=
+  polBasicAuthUser: healthcheck
+  polBasicAuthPassword: zb!XztG34
+  polUrl:
+    https: https://policy-xacml-pdp:6969/policy/pdpx/v1/decision
+    http: http://policy-xacml-pdp:6969/policy/pdpx/v1/decision
+  polEnv: TEST
+  polReqId: xx
+  disableHostVerification: true
+  aaiCertPass: changeit
+  aaiCertPath: /opt/etc/config/aai_keystore
+  aaiAuth: QUFJOkFBSQ==
+  aaiUri:
+    https: https://aai:8443/aai/v14/
+    http: http://aai:80/aai/v14/
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: false
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+service:
+  type: ClusterIP
+  name: neng-serv
+  portName: http
+  internalPort: 8080
+  externalPort: 8080
+
+ingress:
+  enabled: false
+
+resources: {}
+
+podAnnotations:
+  # Workarround to exclude K8S API from istio communication
+  # as init-container (readinessCheck) does not work with the
+  # Istio CNI plugin, see:
+  # (https://istio.io/latest/docs/setup/additional-setup/cni/#compatibility-with-application-init-containers)
+  traffic.sidecar.istio.io/excludeOutboundPorts: "443"
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: network-name-gen
+  roles:
+    - read

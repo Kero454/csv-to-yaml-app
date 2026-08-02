@@ -1,0 +1,250 @@
+# ============= LICENSE_START ================================================
+# ============================================================================
+# Copyright (C) 2021-2022 Wipro Limited.
+# Copyright (c) 2022-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2023 Deutsche Telekom AG. All rights reserved.
+# ============================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============= LICENSE_END ==================================================
+
+#################################################################
+# Global Configuration Defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Filebeat Configuration Defaults.
+#################################################################
+filebeatConfig:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+#################################################################
+# Secrets Configuration.
+#################################################################
+secrets:
+  - uid: &cpsCredsUID cpscreds
+    type: basicAuth
+    login: '{{ .Values.cpsCreds.identity }}'
+    password: '{{ .Values.cpsCreds.password }}'
+    passwordPolicy: required
+  - uid: &pgUserCredsSecretUid pg-user-creds
+    name: &pgUserCredsSecretName '{{ include "common.release" . }}-sonhms-pg-user-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgUserExternalSecret) .) (hasSuffix "sonhms-pg-user-creds" .Values.postgres.config.pgUserExternalSecret) }}'
+    login: '{{ .Values.postgres.config.pgUserName }}'
+    password: '{{ .Values.postgres.config.pgUserPassword }}'
+    passwordPolicy: generate
+
+#################################################################
+# Application Configuration Defaults.
+#################################################################
+# Application Image
+image: onap/org.onap.dcaegen2.services.son-handler:2.2.1
+pullPolicy: Always
+
+# Log directory where logging sidecar should look for log files
+# if path is set to null sidecar won't be deployed in spite of
+# global.centralizedLoggingEnabled setting.
+log:
+  path: /var/log/ONAP/dcaegen2/services/sonhms
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+# Optional Policy configuration properties
+# if present, policy-sync side car will be deployed
+#dcaePolicySyncImage: onap/org.onap.dcaegen2.deployments.dcae-services-policy-sync:1.0.1
+#policies:
+#  policyID: |
+#    '["com.Config_PCIMS_CONFIG_POLICY"]'
+
+# Probe Configuration
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 1
+  path: /healthcheck
+  scheme: HTTP
+  port: 8080
+
+# Service Configuration
+service:
+  type: ClusterIP
+  name: dcae-son-handler
+  ports:
+    - name: http
+      port: 8080
+      port_protocol: http
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+    authorizedPrincipalsPostgres:
+      - serviceAccount: dcae-son-handler-read
+
+# Credentials
+cpsCreds:
+  identity: cps
+  password: cpsr0cks!
+
+credentials:
+- name: CPS_IDENTITY
+  uid: *cpsCredsUID
+  key: login
+- name: CPS_PASSWORD
+  uid: *cpsCredsUID
+  key: password
+- name: PG_USERNAME
+  uid:  *pgUserCredsSecretUid
+  key: login
+- name: PG_PASSWORD
+  uid: *pgUserCredsSecretUid
+  key: password
+
+
+# Initial Application Configuration
+applicationConfig:
+  postgres.host: &dcaeSonhmsPgPrimary dcae-sonhms-pg-primary
+  postgres.port: 5432
+  postgres.username: ${PG_USERNAME}
+  postgres.password: ${PG_PASSWORD}
+  cps.username: ${CPS_IDENTITY}
+  cps.password: ${CPS_PASSWORD}
+  sonhandler.pollingInterval: 20
+  sonhandler.pollingTimeout: 60
+  cbsPollingInterval: 60
+  sonhandler.numSolutions: 5
+  sonhandler.minCollision: 5
+  sonhandler.minConfusion: 5
+  sonhandler.maximumClusters: 5
+  sonhandler.badThreshold: 50
+  sonhandler.poorThreshold: 70
+  sonhandler.namespace: onap
+  sonhandler.sourceId: SONHMS
+  sonhandler.dmaap.server: ["message-router"]
+  sonhandler.bufferTime: 60
+  sonhandler.cg: sonhms-cg
+  sonhandler.cid: sonhms-cid
+  sonhandler.clientType: cps
+  sonhandler.nearRtricUrl: "https://a1-policy-management:30294/a1-policy/v2/policies"
+  cps.service.url: http://cps-tbdmt:8080
+  cps.get.celldata: execute/cps-ran-schemaset/get-cell-data
+  cps.get.nbr.list.url: execute/cps-ran-schemaset/get-nbr-list
+  cps.get.pci.url: execute/ran-network-schemaset/get-pci
+  cps.get.pnf.url: execute/ran-network-schemaset/get-pnf
+  sonhandler.configDb.service: http://configdb:8080
+  sonhandler.oof.service: https://oof-osdf:8698
+  sonhandler.oof.endpoint: /api/oof/v1/pci
+  sonhandler.pciOptimizer: pci
+  sonhandler.pciAnrOptimizer: pci_anr
+  sonhandler.poorCountThreshold: 3
+  sonhandler.badCountThreshold: 3
+  sonhandler.oofTriggerCountTimer: 30
+  sonhandler.oofTriggerCountThreshold: 5
+  sonhandler.policyRespTimer: 10
+  sonhandler.policyNegativeAckThreshold: 3
+  sonhandler.policyFixedPciTimeInterval: 30000
+  sonhandler.nfNamingCode: RansimAgent
+  streams_publishes:
+    CL_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/unauthenticated.DCAE_CL_OUTPUT
+  streams_subscribes:
+    performance_management_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/unauthenticated.VES_MEASUREMENT_OUTPUT
+    fault_management_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/unauthenticated.SEC_FAULT_OUTPUT
+    nbr_list_change_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/PCI-NOTIF-TOPIC-NGHBR-LIST-CHANGE-INFO
+    dcae_cl_response_topic:
+      type: message-router
+      dmaap_info:
+        topic_url: http://message-router:3904/events/DCAE_CL_RSP
+  service_calls:
+      sdnr-getpnfname: []
+      sdnr-getpci: []
+      sdnr-getnbrlist: []
+      sdnr-getcelllist: []
+      oof-req: []
+      policy-req: []
+
+applicationEnv:
+  CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  #Temporary Dummy CBS Port Value until internal SDK library is updated
+  CONFIG_BINDING_SERVICE_SERVICE_PORT: '0000'
+  STANDALONE: 'false'
+
+# Resource Limit Flavor -By Default Using Small
+flavor: small
+
+# Segregation for Different Environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+  unlimited: {}
+
+#################################################################
+# Application configuration Overriding Defaults in the Postgres.
+#################################################################
+postgres:
+  nameOverride: &postgresName dcae-sonhms-postgres
+  service:
+    name: *postgresName
+    name2: *dcaeSonhmsPgPrimary
+    name3: dcae-sonhms-pg-replica
+  container:
+    name:
+      primary: dcae-sonhms-pg-primary
+      replica: dcae-sonhms-pg-replica
+  persistence:
+    mountSubPath: sonhms/data
+    mountInitPath: sonhms
+  config:
+    pgUserName: sonhms
+    pgDatabase: sonhms
+    pgUserExternalSecret: *pgUserCredsSecretName
+
+# Dependencies
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ .Values.postgres.service.name2 }}'
+      - message-router
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dcae-son-handler
+  roles:
+    - read

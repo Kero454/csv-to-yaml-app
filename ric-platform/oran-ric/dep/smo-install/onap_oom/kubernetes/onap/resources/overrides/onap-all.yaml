@@ -1,0 +1,87 @@
+# Copyright © 2019 Amdocs, Bell Canada
+# Copyright (c) 2020 Nordix Foundation, Modifications
+# Modifications Copyright © 2020 Nokia
+# Modifications Copyright © 2021 Orange
+# Modifications Copyright © 2022 AT&T
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+###################################################################
+# This override file enables helm charts for all ONAP applications.
+###################################################################
+cassandra:
+  enabled: true
+mariadb-galera:
+  enabled: true
+postgres:
+  enabled: true
+authentication:
+  enabled: true
+aai:
+  enabled: true
+cds:
+  enabled: true
+cps:
+  enabled: true
+dcaegen2-services:
+  enabled: true
+  dcae-datalake-admin-ui:
+    enabled: true
+  dcae-datalake-des:
+    enabled: true
+  dcae-datalake-feeder:
+    enabled: true
+  dcae-hv-ves-collector:
+    enabled: true
+  dcae-ms-healthcheck:
+    enabled: true
+  dcae-prh:
+    enabled: true
+  dcae-ves-collector:
+    enabled: true
+  dcae-ves-openapi-manager:
+    enabled: true
+multicloud:
+  enabled: true
+policy:
+  enabled: true
+portal-ng:
+  enabled: true
+robot:
+  enabled: true
+sdc:
+  enabled: true
+sdnc:
+  enabled: true
+  network-name-gen:
+    enabled: true
+  dgbuilder:
+    enabled: true
+  ueb-listener:
+    enabled: true
+  sdnc-ansible-server:
+    enabled: true
+  sdnc-web:
+    enabled: true
+so:
+  enabled: true
+strimzi:
+  enabled: true
+  strimzi-kafka-bridge:
+    enabled: true
+uui:
+  enabled: true
+platform:
+  enabled: true
+a1policymanagement:
+  enabled: true

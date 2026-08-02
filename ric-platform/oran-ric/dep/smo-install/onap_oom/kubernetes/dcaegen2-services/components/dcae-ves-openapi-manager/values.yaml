@@ -1,0 +1,107 @@
+#============LICENSE_START========================================================
+#=================================================================================
+# Copyright (c) 2021-2022 Nokia. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation.
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+
+# Global values
+global:
+  pullPolicy: Always
+image: onap/org.onap.dcaegen2.platform.ves-openapi-manager:1.3.1
+containerPort: &svc_port 8080
+
+service:
+  ports:
+    - name: &port http
+      port: *svc_port
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals: []
+
+schemaMap:
+  filename: "schema-map.json"
+  directory: "/app/mappings"
+
+liveness:
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  path: /health
+  port: *port
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  # liveness not desirable for Cloudify Manager container
+  enabled: true
+
+readinessCheck:
+  wait_for:
+    timeout: 30
+    services:
+      - sdc-be
+
+flavor: small
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dcae-ves-openapi-manager
+  roles:
+    - read
+
+# initial application configuration
+applicationConfig:
+  vesopenapimanager:
+    validation:
+      schemaMapPath: ${SCHEMA_MAP_PATH:./src/main/resources/schema-map.json}
+      eventDomainPath: /event/structure/commonEventHeader/structure/domain/value
+      eventSchemaReferencePath: /event/structure/stndDefinedFields/structure/schemaReference/value
+    distribution:
+      sdcAddress: ${SDC_ADDRESS:sdc-be.onap:8080}
+      isUseHttpsWithSDC: false
+      user: dcae
+      password: Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U
+      pollingInterval: 20
+      pollingTimeout: 20
+      consumerGroup: dcaegen2
+      environmentName: AUTO
+      consumerID: dcae-ves-openapi-manager
+      activateServerTLSAuth: false
+      isFilterInEmptyResources: false
+
+# Strimzi KafkaUser config
+kafkaUser:
+  acls:
+    - name: dcaegen2
+      type: group
+      operations: [Read]
+    - name: SDC-DISTR
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]

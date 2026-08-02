@@ -1,0 +1,187 @@
+# ================================ LICENSE_START ==========================
+# =========================================================================
+#  Copyright (C) 2021 Nordix Foundation.
+#  Copyright (c) 2022 Nokia.  All rights reserved.
+#  Copyright (c) 2022-2023 J. F. Lucas. All rights reserved.
+#  Copyright (c) 2023 Deutsche Telekom AG. All rights reserved.
+# =========================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ================================= LICENSE_END ===========================
+
+#################################################################
+# Global Configuration Defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Filebeat Configuration Defaults.
+#################################################################
+filebeatConfig:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+#################################################################
+# Secrets Configuration.
+#################################################################
+secrets:
+  - uid: &drSubCredsUID drsubcreds
+    type: basicAuth
+    login: '{{ .Values.drSubscriberCreds.username }}'
+    password: '{{ .Values.drSubscriberCreds.password }}'
+    passwordPolicy: required
+
+#################################################################
+# Application Configuration Defaults.
+#################################################################
+# Application Image
+image: onap/org.onap.dcaegen2.services.pm-mapper:1.10.1
+pullPolicy: Always
+
+# Log directory where logging sidecar should look for log files
+# if path is set to null sidecar won't be deployed in spite of
+# global.centralizedLoggingEnabled setting.
+log:
+  path: /var/log/ONAP/dcaegen2/services/pm-mapper
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+# Dependencies
+# Depend on the datafile-collector, which guarantees that
+# the DR feed that pm-mapper susbscribes to will be created
+# already by the datafile-collector DMaaP provisioning init
+# container.  Also guarantees that DR provisioning will be
+# available for pm-mapper initContainter to create the
+# subscription to the feed.
+readinessCheck:
+  wait_for:
+    services:
+      - datafile-collector
+
+# Probe Configuration
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 1
+  path: /healthcheck
+  scheme: HTTP
+  port: 8081
+
+# Service Configuration
+service:
+  type: ClusterIP
+  name: dcae-pm-mapper
+  both_tls_and_plain: true
+  ports:
+    - name: http
+      port: 8443
+      plain_port: 8081
+      port_protocol: http
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+
+# Data Router Subscriber Credentials
+drSubscriberCreds:
+  username: username
+  password: password
+
+credentials:
+- name: DR_USERNAME
+  uid: *drSubCredsUID
+  key: login
+- name: DR_PASSWORD
+  uid: *drSubCredsUID
+  key: password
+
+# Initial Application Configuration
+applicationConfig:
+  enable_tls: false
+  enable_http: true
+  aaf_identity: ""
+  aaf_password: ""
+  pm-mapper-filter: "{ \"filters\":[] }"
+  #key_store_path: /opt/app/pm-mapper/etc/cert/cert.jks
+  #key_store_pass_path: /opt/app/pm-mapper/etc/cert/jks.pass
+  trust_store_path: /opt/app/pm-mapper/etc/cert/trust.jks
+  trust_store_pass_path: /opt/app/pm-mapper/etc/cert/trust.pass
+  dmaap_dr_delete_endpoint: http://dmaap-dr-node:8080/delete
+  streams_publishes:
+    dmaap_publisher:
+      type: message_router
+      dmaap_info:
+        client_id: "dummy_id"
+        location: san-francisco
+        client_role: org.onap.dcae.pmPublisher
+        topic_url: http://message-router:3904/events/unauthenticated.PERFORMANCE_MEASUREMENTS
+  streams_subscribes:
+    dmaap_subscriber:
+      type: data_router
+      dmaap_info:
+        subscriber_id: "dummy_id"
+        decompress: true
+        privileged: true
+        username: ${DR_USERNAME}
+        password: ${DR_PASSWORD}
+        location: san-francisco
+        delivery_url: http://dcae-pm-mapper:8081/delivery
+
+applicationEnv:
+  #CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  #Temporary Dummy CBS Port Value until internal SDK library is updated
+  CONFIG_BINDING_SERVICE_SERVICE_PORT: '0000'
+
+# DataRouter Subscriber Configuration
+drSubConfig:
+  - feedName: bulk_pm_feed
+    feedVersion: "0.0"
+    decompress: true
+    username: ${DR_USERNAME}
+    userpwd: ${DR_PASSWORD}
+    privilegedSubscriber: true
+    deliveryURL: http://dcae-pm-mapper:8081/delivery
+
+# ConfigMap Configuration for DR Subscriber
+volumes:
+  - name: drsub-config
+    path: /opt/app/config/dr_subs
+
+# Resource Limit Flavor -By Default Using Small
+flavor: small
+
+# Segregation for Different Environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dcae-pm-mapper
+  roles:
+    - read

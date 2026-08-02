@@ -1,0 +1,51 @@
+---
+# SPDX-license-identifier: Apache-2.0
+##############################################################################
+# Copyright (c) 2018
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of the Apache License, Version 2.0
+# which accompanies this distribution, and is available at
+# http://www.apache.org/licenses/LICENSE-2.0
+##############################################################################
+
+- hosts: localhost
+  become: yes
+  tasks:
+    - name: Load kud variables
+      include_vars:
+        file: kud-vars.yml
+
+    - name: Check if emco is installed
+      command: /usr/local/bin/helm -n emco list
+      register: helm_list
+
+    - name: Set helm_installed fact
+      set_fact:
+        helm_installed: "{{ helm_list.stdout | regex_findall('^\\S+', multiline=True) }}"
+
+    - name: Uninstall monitor helm chart
+      command: /usr/local/bin/helm uninstall --namespace emco monitor
+      when: '"monitor" in helm_installed'
+
+    - name: Uninstall emco helm charts
+      command: /usr/local/bin/helm uninstall --namespace emco emco
+      when: '"emco" in helm_installed'
+
+    - name: Change to the emco directory and delete the emco namespace
+      command: /usr/local/bin/kubectl delete ns emco --ignore-not-found=true
+
+    - name: Check if emco directory exists
+      stat:
+        path: "{{ emco_dir }}"
+      register: emco_dir_stat
+
+    - name: Change to the emco directory and make clean
+      command: /usr/bin/make clean
+      args:
+        chdir: "{{ emco_dir }}/deployments/helm/emcoOpenNESS"
+      when: emco_dir_stat.stat.exists
+
+    - name: Clean emco directory
+      file:
+        state: absent
+        path: "{{ emco_dir }}"

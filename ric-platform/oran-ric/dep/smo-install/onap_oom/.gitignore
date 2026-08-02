@@ -1,0 +1,43 @@
+# Helm generated stuff
+Chart.lock
+**/charts/
+# auto generated certificates
+kubernetes/platform/components/oom-cert-service/resources/*.jks
+kubernetes/platform/components/oom-cert-service/resources/*.p12
+kubernetes/platform/components/oom-cert-service/resources/*.crt
+
+# Unit tests
+__snapshot__
+
+# Application
+kubernetes/config/onap-parameters.yaml
+kubernetes/dist/*
+kubernetes/common/dist/*
+Chart.lock
+**/charts/*.tgz
+*.orig
+*_build
+
+# AAI Schema
+**/schema/*
+
+
+# Eclipse
+.classpath
+.factorypath
+.project
+.pydevproject
+.settings/
+
+# IntelliJ
+.idea/*
+*.iml
+
+# VSCode
+.vscode/*
+
+# Mac OS
+*DS_Store*
+
+# dist
+dist

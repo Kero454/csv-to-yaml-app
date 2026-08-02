@@ -1,0 +1,24 @@
+{
+  "cmpv2Servers": [
+    {
+      "caName": "CLIENT",
+      "url": "http://ejbca:8080/ejbca/publicweb/cmp/cmp",
+      "issuerDN": "O=EJBCA Container Quickstart,CN=ManagementCA,UID=12345",
+      "caMode": "CLIENT",
+      "authentication": {
+        "iak": "${CLIENT_IAK}",
+        "rv": "${CLIENT_RV}"
+      }
+    },
+    {
+      "caName": "RA",
+      "url": "http://ejbca:8080/ejbca/publicweb/cmp/cmpRA",
+      "issuerDN": "O=EJBCA Container Quickstart,CN=ManagementCA,UID=12345",
+      "caMode": "RA",
+      "authentication": {
+        "iak": "${RA_IAK}",
+        "rv": "${RA_RV}"
+      }
+    }
+  ]
+}

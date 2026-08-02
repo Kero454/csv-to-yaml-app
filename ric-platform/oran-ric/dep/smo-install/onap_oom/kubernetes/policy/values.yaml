@@ -1,0 +1,270 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018-2020 AT&T Intellectual Property
+# Modifications Copyright (C) 2021-2025 Nordix Foundation.
+# Modifications Copyright © 2024-2025 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  prometheusEnabled: true
+  postgres:
+    localCluster: true
+    # flag to enable the DB creation via pgo-operator
+    useOperator: false
+    service:
+      name: &postgresName policy-postgres
+      name2: &postgresName2 policy-pg-primary
+      name3: &postgresName3 policy-pg-replica
+      port: &postgresPort 5432
+    nameOverride: *postgresName
+    # (optional) if localCluster=false and an external secret is used set this variable
+    #userRootSecret: <secretName>
+  kafkaBootstrap: strimzi-kafka-bootstrap:9092
+  policyKafkaUser: policy-kafka-user
+  useStrimziKafka: true
+  kafkaTopics:
+    acRuntimeOperationTopic:
+      name: policy-acruntime-participant
+    acRuntimeSyncTopic:
+      name: acm-ppnt-sync
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: db-root-password
+    name: &dbRootPassSecretName '{{ include "common.release" . }}-policy-db-root-password'
+    type: password
+    externalSecret: '{{ .Values.global.postgres.localCluster | ternary
+                 ( hasSuffix "policy-db-root-password" (index .Values "postgres" "config" "pgRootPasswordExternalSecret") | ternary
+                   ""
+                   (tpl (default "" (index .Values "postgres" "config" "pgRootPasswordExternalSecret")) .)
+                 )
+                 ( not (empty (default "" .Values.global.postgres.userRootSecret)) | ternary
+                   .Values.global.postgres.userRootSecret
+                   (include "common.postgres.secret.rootPassSecretName"
+                     (dict "dot" . "chartName" .Values.global.postgres.nameOverride)
+                   )
+                 )
+               }}'
+    password: '{{ (index .Values "postgres" "config" "pgRootPassword") }}'
+    policy: generate
+  - uid: db-secret
+    name: &dbSecretName '{{ include "common.release" . }}-policy-db-secret'
+    type: basicAuth
+    externalSecret: '{{ hasSuffix "policy-db-secret" (index .Values "postgres" "config" "pgUserExternalSecret") | ternary
+                        ""
+                        (tpl (default "" (index .Values "postgres" "config" "pgUserExternalSecret")) .)
+                     }}'
+    login: '{{ (index .Values "postgres" "config" "pgUserName") }}'
+    password: '{{ (index .Values "postgres" "config" "pgUserPassword") }}'
+    passwordPolicy: generate
+  - uid: policy-app-user-creds
+    name: &policyAppCredsSecret '{{ include "common.release" . }}-policy-app-user-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.policyAppUserExternalSecret) . }}'
+    login: '{{ .Values.config.policyAppUserName }}'
+    password: '{{ .Values.config.policyAppUserPassword }}'
+    passwordPolicy: generate
+  - uid: policy-pap-user-creds
+    name: &policyPapCredsSecret '{{ include "common.release" . }}-policy-pap-user-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.restServer.policyPapUserExternalSecret) . }}'
+    login: '{{ .Values.restServer.policyPapUserName }}'
+    password: '{{ .Values.restServer.policyPapUserPassword }}'
+    passwordPolicy: required
+  - uid: policy-api-user-creds
+    name: &policyApiCredsSecret '{{ include "common.release" . }}-policy-api-user-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.restServer.policyApiUserExternalSecret) . }}'
+    login: '{{ .Values.restServer.policyApiUserName }}'
+    password: '{{ .Values.restServer.policyApiUserPassword }}'
+    passwordPolicy: required
+
+db: &dbSecretsHook
+  credsExternalSecret: *dbSecretName
+
+policy-api:
+  enabled: true
+  db: *dbSecretsHook
+  restServer:
+    apiUserExternalSecret: *policyApiCredsSecret
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+policy-pap:
+  enabled: true
+  db: *dbSecretsHook
+  restServer:
+    papUserExternalSecret: *policyPapCredsSecret
+    apiUserExternalSecret: *policyApiCredsSecret
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+policy-xacml-pdp:
+  enabled: true
+  db: *dbSecretsHook
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+policy-apex-pdp:
+  enabled: true
+  db: *dbSecretsHook
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+policy-drools-pdp:
+  enabled: true
+  db: *dbSecretsHook
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+policy-opa-pdp:
+  enabled: true
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+policy-distribution:
+  enabled: true
+  db: *dbSecretsHook
+policy-clamp-ac-k8s-ppnt:
+  enabled: true
+policy-clamp-ac-pf-ppnt:
+  enabled: true
+  restServer:
+    apiUserExternalSecret: *policyApiCredsSecret
+    papUserExternalSecret: *policyPapCredsSecret
+policy-clamp-ac-http-ppnt:
+  enabled: true
+policy-clamp-ac-a1pms-ppnt:
+  enabled: true
+policy-clamp-ac-kserve-ppnt:
+  enabled: true
+policy-clamp-runtime-acm:
+  enabled: true
+  db: *dbSecretsHook
+  config:
+    appUserExternalSecret: *policyAppCredsSecret
+policy-nexus:
+  enabled: false
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.policyKafkaUser }}'
+
+subChartsOnly:
+  enabled: true
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: { }
+
+affinity: { }
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+config:
+  policyAppUserName: runtimeUser
+  policyPdpPapTopic:
+    name: policy-pdp-pap
+    partitions: 10
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+    consumer:
+      groupId: policy-group
+  policyHeartbeatTopic:
+    name: policy-heartbeat
+    partitions: 10
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+    consumer:
+      groupId: policy-group
+  policyNotificationTopic:
+    name: policy-notification
+    partitions: 10
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+    consumer:
+      groupId: policy-group
+  opaPdpDataTopic:
+    name: opa-pdp-data
+    partitions: 10
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+  someConfig: blah
+
+# application configuration override for postgres
+postgres:
+  nameOverride: &postgresName policy-postgres
+  service:
+    name: *postgresName
+    name2: *postgresName2
+    name3: *postgresName3
+    internalPort: *postgresPort
+  container:
+    name:
+      primary: *postgresName2
+      replica: *postgresName3
+  persistence:
+    mountSubPath: policy/postgres/data
+    mountInitPath: policy
+    size: 3Gi
+  config:
+    pgUserName: policy-user
+    pgDatabase: policyadmin
+    pgUserExternalSecret: *dbSecretName
+    pgRootPasswordExternalSecret: *dbRootPassSecretName
+
+restServer:
+  policyPapUserName: policyadmin
+  policyPapUserPassword: zb!XztG34
+  policyApiUserName: policyadmin
+  policyApiUserPassword: zb!XztG34
+
+# Resource Limit flavor -By Default using small
+# Segregation for Different environment (small, large, or unlimited)
+flavor: small
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "4Gi"
+    requests:
+      cpu: "100m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+    requests:
+      cpu: "200m"
+      memory: "2Gi"
+  unlimited: { }
+
+securityContext:
+  user_id: 100
+  group_id: 65533
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: policy
+  roles:
+    - read

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- include "common.templateMetadata" . | indent 6 }}
+    spec:
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image.imageName }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          envFrom:
+          - configMapRef:
+              name: {{ include "common.fullname" . }}-configmap
+          - secretRef:
+              name: {{ include "common.fullname" . }}-secret
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.service.port }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.service.port }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ .Values.service.port }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources: {{ include "common.resources" . | nindent 12 }}

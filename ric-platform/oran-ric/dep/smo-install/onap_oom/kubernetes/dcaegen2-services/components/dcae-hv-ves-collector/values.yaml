@@ -1,0 +1,235 @@
+#============LICENSE_START========================================================
+# ================================================================================
+# Copyright (c) 2021-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2021-2022 Nokia.  All rights reserved.
+# Modifications Copyright (C) 2022-2023 Nordix Foundation.
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Filebeat configuration defaults.
+#################################################################
+filebeatConfig:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+#################################################################
+# initContainer images.
+#################################################################
+certPostProcessorImage: onap/org.onap.oom.platform.cert-service.oom-certservice-post-processor:2.5.0
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/org.onap.dcaegen2.collectors.hv-ves.hv-collector-main:1.11.0
+pullPolicy: Always
+
+commonName: &commonName dcae-hv-ves-collector
+containerPort: &containerPort 6061
+
+# log directory where logging sidecar should look for log files
+# if path is set to null sidecar won't be deployed in spite of
+# global.centralizedLoggingEnabled setting.
+log:
+  path: /var/log/ONAP/dcae-hv-ves-collector
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+# a tmp volume is needed by the tomcat server of the app
+# when the filesystem is set to read-only
+tmpDir:
+  enabled: true
+
+# directory where TLS certs should be stored
+# if absent, no certs will be retrieved and stored
+certDirectory: /etc/ves-hv/ssl
+
+# CMPv2 certificate
+# It is used only when:
+# - certDirectory is set
+# - global cmpv2Enabled flag is set to true
+# - flag useCmpv2Certificates is set to true
+# Disabled by default
+useCmpv2Certificates: false
+certificates:
+  - mountPath: /etc/ves-hv/ssl/external
+    commonName: *commonName
+    dnsNames:
+      - *commonName
+      - hv-ves-collector
+      - hv-ves
+    keystore:
+      outputType:
+        - jks
+      passwordSecretRef:
+        name: hv-ves-cmpv2-keystore-password
+        key: password
+        create: true
+
+# probe configuration
+readiness:
+  type: exec
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 2
+  command:
+  - /opt/ves-hv-collector/healthcheck.sh
+
+# since there are problems receiving binary data via the sidecar
+# the service port is excluded in the sidecar processing
+podAnnotations:
+  traffic.sidecar.istio.io/excludeOutboundPorts: '6061'
+  traffic.sidecar.istio.io/excludeInboundPorts: '6061'
+  traffic.sidecar.istio.io/includeInboundPorts: '*'
+
+podLabels:
+  sidecar.istio.io/inject: "false"
+
+# service configuration
+service:
+  type: NodePort
+  name: *commonName
+  ports:
+    - name: tcp
+      port: *containerPort
+      port_protocol: tcp
+      app_protocol: tcp
+      nodePort: 22
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "dcae-hv-ves-collector-api"
+      name: *commonName
+      port: *containerPort
+  config:
+    ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+
+# initial application configuration
+applicationConfig:
+  logLevel: INFO
+  server.idleTimeoutSec: 300
+  server.listenPort: *containerPort
+  cbs.requestIntervalSec: 5
+  security.sslDisable: true
+  security.keys.keyStoreFile: /etc/ves-hv/ssl/cert.jks
+  security.keys.keyStorePasswordFile: /etc/ves-hv/ssl/jks.pass
+  security.keys.trustStoreFile: /etc/ves-hv/ssl/trust.jks
+  security.keys.trustStorePasswordFile: /etc/ves-hv/ssl/trust.pass
+  streams_publishes:
+    ves-3gpp-fault-supervision:
+      type: ${MESSAGING_TYPE}
+      kafka_info:
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppFaultSupervision SEC_3GPP_FAULTSUPERVISION_OUTPUT
+    ves-3gpp-provisioning:
+      type: ${MESSAGING_TYPE}
+      kafka_info:
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppProvisioning SEC_3GPP_PROVISIONING_OUTPUT
+    ves-3gpp-heartbeat:
+      type: ${MESSAGING_TYPE}
+      kafka_info:
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppHeartbeat SEC_3GPP_HEARTBEAT_OUTPUT
+    ves-3gpp-performance-assurance:
+      type: ${MESSAGING_TYPE}
+      kafka_info:
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppPerformanceAssurance SEC_3GPP_PERFORMANCEASSURANCE_OUTPUT
+    perf3gpp:
+      type: ${MESSAGING_TYPE}
+      kafka_info:
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &perf3gpp HV_VES_PERF3GPP
+
+# Strimzi Kafka config
+kafkaUser:
+  acls:
+    - name: SEC_3GPP
+      type: topic
+      patternType: prefix
+      operations: [Write, DescribeConfigs]
+    - name: *perf3gpp
+      type: topic
+      operations: [Write, DescribeConfigs]
+
+kafkaTopic:
+  - name: *ves3gppFaultSupervision
+    strimziTopicName: dcae-ves-3gpp-fault-supervision
+    # the default retention values below can be updated
+    # to meet use case requirements for each topic.
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+  - name: *ves3gppProvisioning
+    strimziTopicName: dcae-ves-3gpp-provisioning
+  - name: *ves3gppHeartbeat
+    strimziTopicName: dcae-ves-3gpp-heartbeat
+  - name: *ves3gppPerformanceAssurance
+    strimziTopicName: dcae-ves-3gpp-performance-assurance
+  - name: *perf3gpp
+    strimziTopicName: dcae-ves-3gpp-perf
+
+
+applicationEnv:
+  JAVA_OPTS: '-Dlogback.configurationFile=/etc/ONAP/dcae-hv-ves-collector/logback.xml'
+  CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  #Temporary Dummy CBS Port Value until internal SDK library is updated
+  CONFIG_BINDING_SERVICE_SERVICE_PORT: '0000'
+  MESSAGING_TYPE: 'kafka'
+  KAFKA_BOOTSTRAP_SERVERS: '{{ include "common.release" . }}-strimzi-kafka-bootstrap:9092'
+  USE_SCRAM: 'true'
+  JAAS_CONFIG:
+    externalSecret: true
+    externalSecretUid: '{{ include "common.name" . }}-ku'
+    key: sasl.jaas.config
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: *commonName
+  roles:
+    - read

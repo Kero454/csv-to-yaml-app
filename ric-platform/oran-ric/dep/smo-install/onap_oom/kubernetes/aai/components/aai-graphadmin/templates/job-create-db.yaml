@@ -1,0 +1,132 @@
+{{/*
+#
+# ============LICENSE_START=======================================================
+# org.onap.aai
+# ================================================================================
+# Copyright (c) 2018 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2020 Nokia Intellectual Property. All rights reserved.
+# Copyright (c) 2020-2021 Orange Intellectual Property. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+
+# In ONAP, the following job will always be run on each installation
+# The following job will go through the latest oxm and
+# create properties based on the data type defined in the oxm
+# and create the required indexes for the appropriate properties
+# This can be run multiple times as the code if the index or property already exists
+# then the index or property won't be created again
+# NOTE - During the execution of the createSchema job, there should
+# be no other janusgraph connection to the graph as its the reason
+# that resources traversal and graphadmin wait until this job is done
+# If you are using an existing cassandra cluster not coming from oom
+# then it is your job to ensure that there are no connections to the database
+*/}}
+
+{{/* the new default is schema creation via graphadmin init container. This will be removed in the future. */}}
+{{- if .Values.createDbSchemaViaJob.enabled }}
+{{- if and ( not .Values.global.jobs.migration.enabled ) ( .Values.global.jobs.createSchema.enabled ) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.fullname" . }}-create-db-schema
+  namespace: {{ include "common.namespace" . }}
+  labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "job") | nindent 4 }}
+  {{- if .Values.jobAnnotations.createDBSchema }}
+  annotations:  {{- include "common.tplValue" (dict "value" .Values.jobAnnotations.createDBSchema "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "job") | nindent 8 }}
+      name: {{ include "common.name" . }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+      - name: {{ include "common.name" . }}-job
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        {{ include "common.containerSecurityContext" . | nindent 8 | trim }}
+        command:
+        - sh
+        args:
+        - -c
+        - |
+           {{- if include "common.onServiceMesh" . }}
+           echo "waiting 15s for istio side cars to be up"; sleep 15s;{{- end }}
+           sh docker-entrypoint.sh createDBSchema.sh;
+           {{ include "common.serviceMesh.killSidecar" . | indent 11 | trim }}
+        env:
+        {{- if .Values.config.debug.enabled }}
+        - name: JVM_OPTS
+          value: {{ .Values.config.debug.args | quote }}
+        {{- end }}
+        {{- if .Values.config.env }}
+        {{- range $key,$value := .Values.config.env }}
+        - name: {{ $key | upper | quote}}
+          value: {{ $value | quote}}
+        {{- end }}
+        {{- end }}
+        - name: JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.release" . }}-{{ .Values.global.aaiGraphKafkaUser }}
+              key: sasl.jaas.config
+        {{- if .Values.config.debug.enabled }}
+        ports:
+        - containerPort: {{ .Values.service.debugPort }}
+          name: {{ .Values.service.debugPortName }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
+          name: config
+          subPath: janusgraph-realtime.properties
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/aaiconfig.properties
+          name: properties
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-GA
+          name: logs
+        - mountPath: /opt/app/aai-graphadmin/resources/logback.xml
+          name: config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/localhost-access-logback.xml
+          name: config
+          subPath: localhost-access-logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/application.properties
+          name: properties
+          subPath: application.properties
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
+      - name: logs
+        emptyDir:
+          sizeLimit: 64Mi
+      - name: config
+        configMap:
+          name: {{ include "common.fullname" . }}
+      - name: properties
+        configMap:
+          name: {{ include "common.fullname" . }}-properties
+      restartPolicy: Never
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+{{- end }}
+{{- end }}

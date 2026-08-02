@@ -1,0 +1,149 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Copyright (c) 2022 Nordix Foundation.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Default values for uui.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global:
+  tracing:
+    enabled: false
+    collectorHost: jaeger-collector.istio-system
+    collectorPort: 9411
+
+subChartsOnly:
+  enabled: true
+
+flavor: small
+
+# application image
+image: onap/usecase-ui:16.0.1
+pullPolicy: Always
+
+# application configuration
+
+msbaddr: msb-iag.{{include "common.namespace" .}}:80
+mraddr: message-router.{{include "common.namespace" .}}:3904
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+service:
+  type: ClusterIP
+  name: uui
+  ports:
+    - name: http
+      port: 8080
+
+ingress:
+  enabled: true
+  service:
+    - baseaddr: uui
+      name: uui-proxy
+      port: 80
+  config:
+    ssl: "redirect"
+
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  #
+  # Example:
+  # Configure resource requests and limits
+  # ref: http://kubernetes.io/docs/user-guide/compute-resources/
+  # Minimum memory for development is 2 CPU cores and 4GB memory
+  # Minimum memory for production is 4 CPU cores and 8GB memory
+resources:
+  small:
+    limits:
+      cpu: "250m"
+      memory: "1Gi"
+    requests:
+      cpu: "250m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+  unlimited: {}
+
+nginx:
+  fullnameOverride: uui-proxy
+  serverBlock: |-
+    server {
+      listen 8080;
+      listen [::]:8080;
+
+      # Redirect root path to /usecase-ui
+      location = / {
+          return 301 /usecase-ui;
+      }
+
+      # frontend
+      location /usecase-ui {
+          proxy_pass http://uui:8080;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      # uui-server
+      location /api/usecaseui-server {
+          proxy_pass http://uui-server:8082;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      # intent-service
+      location /api/usecaseui-intent-analysis {
+          proxy_pass http://uui-intent-analysis:8083;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      # llm-service
+      location /api/usecaseui-llm-adaptation {
+          proxy_pass http://uui-nlp:33011;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }

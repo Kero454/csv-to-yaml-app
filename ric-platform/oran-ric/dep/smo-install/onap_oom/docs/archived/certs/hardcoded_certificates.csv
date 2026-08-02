@@ -1,0 +1,16 @@
+Project,ONAP Certificate,Own Certificate,MSB Certificate,Path
+AAF,No,Yes,No,aaf/charts/aaf-cert-service/resources/
+AAF,Yes,No,No,aaf/components/aaf-sms/resources/certs/intermediate_root_ca.pem
+AAI,Yes,No,No,aai/oom/resources/config/aai/aai_keystore
+AAI/SEARCH-DATA,Yes,No,No,aai/oom/components/aai-search-data/resources/config/auth/tomcat_keystore
+AAI/SPARKY-BE,Yes,No,No,aai/oom/components/aai-spary-be/resources/config/auth/org.onap.aai.p12
+AAI/BABEL,No,Yes,No,aai/oom/components/aai-babel/resources/config/auth/tomcat_keystore
+AAI/MODEL-LOADER,Yes,Yes,No,aai/oom/components/aai-model-loaderresources/config/auth/tomcat_keystore
+certInitializer,Yes,No,No,kubernetes/common/certInitializer/resources
+DMaaP/MR,Yes,No,No,Hardcoded in container
+HOLMES,No,Yes,No,Hardcoded in container
+MULTICLOUD,No,Yes,No,Hardcoded in container
+Robot,Yes,No,No,kubernetes/robot/resources/config/lighttpd/ssl/onap-robot.onap.*
+SDC,Yes,No?,No?,kubernetes/sdc/resources/cert
+VID,Yes,No,No,Hardcoded in container
+UUI,No,Yes,No,Hardcoded in container

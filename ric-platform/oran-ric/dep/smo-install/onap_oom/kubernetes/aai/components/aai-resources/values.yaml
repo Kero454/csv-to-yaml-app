@@ -1,0 +1,454 @@
+# Copyright (c) 2018 Amdocs, Bell Canada, AT&T
+# Copyright (c) 2020 Nokia, Orange
+# Modifications Copyright (c) 2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Default values for resources.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global: # global defaults
+  nodePortPrefix: 302
+  kafkaBootstrap: strimzi-kafka-bootstrap
+  aaiKafkaUser: aai-kafka-user
+  cassandra:
+    #Service Name of the cassandra cluster to connect to.
+    #Override it to aai-cassandra if localCluster is enabled.
+    serviceName: cassandra
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+
+  # Specifies a list of jobs to be run
+  jobs:
+    # When enabled, it will create the schema based on oxm and edge rules
+    createSchema:
+      enabled: true
+    #migration using helm hooks
+    migration:
+      enabled: false
+
+  # Specifies if basic authorization is enabled
+  auth:
+    enabled: true
+    # users that can authenticate via basic auth
+    users:
+      - username: aai@aai.onap.org
+        password: demo123456!
+      - username: so@so.onap.org
+        password: demo123456!
+      - username: sdnc@sdnc.onap.org
+        password: demo123456!
+      - username: dcae@dcae.onap.org
+        password: demo123456!
+      - username: policy@policy.onap.org
+        password: demo123456!
+      - username: sdc@sdc.onap.org
+        password: demo123456!
+      - username: AAI
+        password: AAI
+      - username: DCAE
+        password: DCAE
+      - username: MSO
+        password: MSO
+      - username: POLICY
+        password: POLICY
+      - username: ASDC
+        password: ASDC
+      - username: ModelLoader
+        password: ModelLoader
+      - username: AaiUI
+        password: AaiUI
+  config:
+    # Specifies that the cluster connected to a dynamic
+    # cluster being spinned up by kubernetes deployment
+    cluster:
+      cassandra:
+        dynamic: true
+
+    # Active spring profiles for the resources microservice
+    profiles:
+      active: production,kafka
+
+    # Notification event specific properties
+    notification:
+      eventType: AAI-EVENT
+      domain: dev
+
+    # Schema specific properties that include supported versions of api
+    schema:
+      # Specifies if the connection should be one way ssl, two way ssl or no auth
+      service:
+        client: no-auth
+      # Specifies which translator to use if it has schema-service, then it will make a rest request to schema service
+      translator:
+        list: schema-service
+      source:
+        # Specifies which folder to take a look at
+        name: onap
+      uri:
+        # Base URI Path of the application
+        base:
+          path: /aai
+      version:
+        # Current version of the REST API
+        api:
+          default: v30
+        # Specifies which version the depth parameter is configurable
+        depth: v11
+        # List of all the supported versions of the API
+        list: v11,v12,v13,v14,v15,v16,v17,v18,v19,v20,v21,v22,v23,v24,v25,v26,v27,v28,v29,v30
+        # Specifies from which version related link should appear
+        related:
+          link: v11
+        # Specifies from which version the app root change happened
+        app:
+          root: v11
+        # Specifies from which version the xml namespace changed
+        namespace:
+          change: v12
+        # Specifies from which version the edge label appeared in API
+        edge:
+          label: v12
+
+    # Specifies which clients should always default to realtime graph connection
+    realtime:
+      clients: SDNC,MSO,SO,robot-ete
+api_list:
+  - 11
+  - 12
+  - 13
+  - 14
+  - 15
+  - 16
+  - 17
+  - 18
+  - 19
+  - 20
+  - 21
+  - 22
+  - 23
+  - 24
+  - 25
+  - 26
+  - 27
+  - 28
+  - 29
+
+aai_enpoints:
+  - name: aai-cloudInfrastructure
+    url: cloud-infrastructure
+  - name: aai-business
+    url: business
+  - name: aai-actions
+    url: actions
+  - name: aai-service-design-and-creation
+    url: service-design-and-creation
+  - name: aai-network
+    url: network
+  - name: aai-externalSystem
+    url: external-system
+
+# application image
+image: onap/aai-resources:1.16.0
+pullPolicy: Always
+restartPolicy: Always
+flavor: small
+# default number of instances
+replicaCount: 1
+
+# number of ReplicaSets that should be retained for the Deployment
+revisionHistoryLimit: 1
+
+# the minimum number of seconds that a newly created Pod should be ready
+minReadySeconds: 30
+updateStrategy:
+  type: RollingUpdate
+  # The number of pods that can be unavailable during the update process
+  maxUnavailable: 0
+  # The number of pods that can be created above the desired amount of pods during an update
+  maxSurge: 1
+
+# Configuration for the resources deployment
+config:
+  janusgraph:
+    caching:
+      # enable when running read-heavy workloads
+      # modifications to graph done by this service/janusgraph instance will immediately invalidate the cache
+      # modifications to graph done by other services (traversal) will only be visible
+      # after time specified in db-cache-time
+      enabled: true
+      # Documentation: https://docs.janusgraph.org/operations/cache/#database-level-caching
+      dbCacheTime: 180000 # in milliseconds
+      dbCacheSize: 0.5 # percentage (expressed as a decimal between 0 and 1) of the total heap space available to the JVM running
+      dbCacheCleanWait: 20 # in milliseconds
+    # temporarily enable this to update the graph storage version
+    # see: https://docs.janusgraph.org/changelog/#upgrade-instructions_9
+    allowUpgrade: true
+
+
+
+  # Specifies crud related operation timeouts and overrides
+  crud:
+    timeout:
+      # Specifies if the timeout for REST GET calls should be enabled
+      enabled: true
+      # Specifies the timeout values for application specific
+      # Its a pipe seperated list where each element before comma represents
+      # the X-FromAppId and the comma after specifies the timeout limit in ms
+      # If the timeout limit is -1 then it means for these apps no timeout
+      appspecific: JUNITTESTAPP1,1|JUNITTESTAPP2,-1|DCAE-CCS,-1|DCAES,-1|AAIRctFeed,-1|NewvceCreator,-1|IANewvceCreator,-1|AAI-CSIOVALS,-1
+      # Specifies what is the maximum timeout limit in milliseconds
+      limit: 100000
+
+  # Specifies configuration for bulk apis
+  bulk:
+    # Specifies for a bulk payload how many transactions in total allowed
+    limit: 30
+    # Specifies if the bulk can be override and if it can the value
+    override: false
+
+  # environment variables added to the launch of the image in deployment
+  env:
+    MAX_METASPACE_SIZE: "512m"
+
+  # adds jvm args for remote debugging the application
+  debug:
+    enabled: false
+    args: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"
+
+  # adds jvm args for remote profiling the application
+  # port-forward, i.e:
+  # $ PODNAME=traversal
+  # $ kubectl -n ${NAMESPACE:=onap} port-forward pod/$(kubectl -n ${NAMESPACE:=onap}
+  # get pods | awk '{print $1}' | grep -m1 -e "$PODNAME") 9999:9999
+  profiling:
+    enabled: false
+    args:
+      - "-Dcom.sun.management.jmxremote"
+      - "-Dcom.sun.management.jmxremote.ssl=false"
+      - "-Dcom.sun.management.jmxremote.authenticate=false"
+      - "-Dcom.sun.management.jmxremote.local.only=false"
+      - "-Dcom.sun.management.jmxremote.port=9999"
+      - "-Dcom.sun.management.jmxremote.rmi.port=9999"
+      - "-Djava.rmi.server.hostname=127.0.0.1"
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  enabled: true
+  path: /actuator/health
+  periodSeconds: 10
+  timeoutSeconds: 3
+
+readiness:
+  path: /actuator/health/readiness
+  periodSeconds: 10
+  timeoutSeconds: 3
+
+startup:
+  path: /actuator/health/liveness
+  failureThreshold: 60
+  periodSeconds: 5
+  timeoutSeconds: 3
+
+actuator:
+  echo:
+    enabled: true
+
+service:
+  type: ClusterIP
+  resourcesPortName: http
+  resourcesPort: 8447
+  debugPortName: tcp-5005
+  debugPort: 5005
+  metricsPortName: metrics
+  metricsPort: 8448
+  profilingPortName: jmx-9999
+  profilingPort: 9999
+  terminationGracePeriodSeconds: 30
+  sessionAffinity: None
+
+ingress:
+  enabled: false
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: aai-read
+      - serviceAccount: consul-read
+
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  #
+  # Example:
+  # Configure resource requests and limits
+  # ref: http://kubernetes.io/docs/user-guide/compute-resources/
+  # Minimum memory for development is 2 CPU cores and 4GB memory
+  # Minimum memory for production is 4 CPU cores and 8GB memory
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+    requests:
+      cpu: "1"
+      memory: "3Gi"
+  large:
+    limits:
+      cpu: "8"
+      memory: "8Gi"
+    requests:
+      cpu: "4"
+      memory: "6Gi"
+  unlimited: {}
+
+tracing:
+  ignorePatterns:
+    - /aai/util.*
+
+endpoints:
+  enabled: true
+  health:
+    enabled: true
+  info:
+    enabled: true
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    targetPort: 8448
+    path: /actuator/prometheus
+    basicAuth:
+      enabled: false
+      externalSecretName: mysecretname
+      externalSecretUserKey: login
+      externalSecretPasswordKey: password
+
+    ## Namespace in which Prometheus is running
+    ##
+    # namespace: monitoring
+
+    ## Interval at which metrics should be scraped.
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#endpoint
+    ##
+    #interval: 30s
+
+    ## Timeout after which the scrape is ended
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#endpoint
+    ##
+    # scrapeTimeout: 10s
+
+    ## ServiceMonitor selector labels
+    ## ref: https://github.com/bitnami/charts/tree/master/bitnami/prometheus-operator#prometheus-configuration
+    ##
+    selector:
+      app: '{{ include "common.name" . }}'
+      helm.sh/chart: '{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}'
+      app.kubernetes.io/instance: '{{ include "common.release" . }}'
+      app.kubernetes.io/managed-by: '{{ .Release.Service }}'
+
+    ## RelabelConfigs to apply to samples before scraping
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
+    ## Value is evalued as a template
+    ##
+    relabelings: []
+
+    ## MetricRelabelConfigs to apply to samples before ingestion
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
+    ## Value is evalued as a template
+    ##
+    metricRelabelings: []
+    #  - sourceLabels:
+    #      - "__name__"
+    #    targetLabel: "__name__"
+    #    action: replace
+    #    regex: '(.*)'
+    #    replacement: 'example_prefix_$1'
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: aai-resources
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap
+  level:
+    root: INFO
+    base: INFO # base package (org.onap.aai)
+    audit: WARN
+    dbMetric: WARN
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: aai-kafka-user
+    externalSecret: '{{ tpl (default "" .Values.config.jaasConfExternalSecret) . }}'
+    type: genericKV
+    envs:
+      - name: sasl.jaas.config
+        value: '{{ .Values.config.someConfig }}'
+        policy: generate
+kafkaUser:
+  authenticationType: scram-sha-512
+  acls:
+    - name: AAI-EVENT
+      type: topic
+      operations: [Read, Write]
+
+volumes:
+  logSizeLimit: 50Mi
+  tmpSizeLimit: 100Mi
+
+securityContext:
+  user_id: 1000
+  group_id: 1000
+
+readinessCheck:
+  wait_for_migration:
+    jobs:
+      - '{{ include "common.release" . }}-aai-graphadmin-migration'
+  wait_for_createSchema:
+    jobs:
+      - '{{ include "common.release" . }}-aai-graphadmin-create-db-schema'
+  wait_for_cassandra:
+    services:
+      - '{{ .Values.global.cassandra.serviceName }}'
+      - aai-schema-service
+
+podAnnotations:
+  checksum/config: '{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}'

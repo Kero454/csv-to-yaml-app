@@ -1,0 +1,125 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T
+# Modifications Copyright © 2024 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  artifactImage: onap/multicloud/framework-artifactbroker:1.9.2
+  prometheus:
+    enabled: false
+  persistence: {}
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/multicloud/framework:1.9.2
+pullPolicy: Always
+
+#Istio sidecar injection policy
+istioSidecar: true
+
+multicloud-fcaps:
+  enabled: true
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-multicloud'
+multicloud-k8s:
+  enabled: true
+
+# application configuration
+config:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+  aai:
+    aaiPort: 80
+    schemaVersion: v13
+    username: AAI
+    password: AAI
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+securityContext:
+  user_id: 100
+  group_id: 65533
+
+volumes:
+  logSizeLimit: 50Mi
+  pubSizeLimit: 50Mi
+
+# probe configuration parameters
+liveness:
+  enabled: true
+  path: /api/multicloud/v0/swagger.json
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readiness:
+  enabled: true
+  path: /api/multicloud/v0/swagger.json
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+service:
+  type: NodePort
+  internalPort: 9001
+  ports:
+    - name: http
+      port: 9001
+      nodePort: '91'
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: 'multicloud-api'
+      name: 'multicloud'
+      port: 9001
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "4Gi"
+    requests:
+      cpu: "10m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+    requests:
+      cpu: "20m"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: multicloud
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap

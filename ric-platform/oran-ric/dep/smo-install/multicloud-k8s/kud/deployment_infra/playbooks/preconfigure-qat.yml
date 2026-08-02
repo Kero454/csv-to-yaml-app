@@ -1,0 +1,128 @@
+---
+# SPDX-license-identifier: Apache-2.0
+##############################################################################
+# Copyright (c) 2018
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of the Apache License, Version 2.0
+# which accompanies this distribution, and is available at
+# http://www.apache.org/licenses/LICENSE-2.0
+##############################################################################
+
+- hosts: localhost
+  become: yes
+  pre_tasks:
+    - name: Load kud variables
+      include_vars:
+        file: kud-vars.yml
+  tasks:
+    - name: Create QAT dest folder
+      file:
+        state: directory
+        path: "{{ qat_dest }}"
+    - name: Download QAT driver tarball
+      get_url:
+        url: "{{ qat_driver_url }}"
+        dest: "{{ qat_dest }}/{{ qat_package }}.tar.gz"
+
+- hosts: kube-node
+  become: yes
+  pre_tasks:
+    - name: Load kud variables
+      include_vars:
+        file: kud-vars.yml
+  tasks:
+    - name: Create destination folder for QAT check script
+      file:
+        state: directory
+        path: "{{ base_dest }}/qat"
+    - name: Create QAT check script
+      copy:
+        dest: "{{ base_dest }}/qat/qat.sh"
+        content: |
+            #!/bin/bash
+            qat_device=$( for i in 0434 0435 37c8 6f54 19e2; \
+                    do lspci -d 8086:$i -m; done |\
+                            grep -i "Quick*" | head -n 1 | cut -d " " -f 5 )
+            if [ -z "$qat_device" ]; then
+                echo "False"
+                exit 0
+            else
+                echo "True"
+            fi
+        mode: 0755
+    - name: Run QAT check script and re-evaluate the variable
+      command: ./qat.sh
+      args:
+        chdir: "{{ base_dest }}/qat"
+      register: output
+    - debug:
+        var: output.stdout_lines
+    - set_fact:
+        QAT_ENABLED: "{{ output.stdout }}"
+    - debug:
+        var: output
+    - name: Clean QAT check script and folder
+      file:
+        path: "{{ base_dest }}/qat"
+        state: absent
+    - name: Install QAT driver
+      block:
+      - name: Install QAT compilation packages
+        package:
+          name: "{{ item }}"
+          state: present
+        with_items:
+          - pciutils
+          - build-essential
+          - libudev-dev
+          - pkg-config
+      - name: Create destination folder for QAT source code
+        file:
+          state: directory
+          path: "{{ qat_dest }}/{{ qat_package }}"
+      - name: Extract QAT source code
+        unarchive:
+          src: "{{ qat_dest }}/{{ qat_package }}.tar.gz"
+          dest: "{{ qat_dest }}/{{ qat_package }}"
+      - name: Configure the target
+        command: ./configure --enable-icp-sriov=host
+        args:
+          chdir: "{{ qat_dest }}/{{ qat_package }}"
+      - name: Build QAT driver
+        make:
+          chdir: "{{ qat_dest }}/{{ qat_package }}"
+          target: "{{ item }}"
+        loop:
+          - clean
+          - uninstall
+          - install
+      - name: Copy QAT driver install script to target folder
+        copy:
+          src: "install_qat.sh"
+          dest: "{{ qat_dest }}/{{ qat_package }}/build"
+          mode: 0755
+      - name: Copy /etc/default/qat to target folder
+        copy:
+          src: "/etc/default/qat"
+          dest: "{{ qat_dest }}/{{ qat_package }}/build"
+          remote_src: yes
+      - name: Run a script with arguments
+        command: ./install_qat.sh
+        args:
+          chdir: "{{ qat_dest }}/{{ qat_package }}/build"
+      - name: Copy QAT substitue script to target folder
+        copy:
+          src: "substitute.sh"
+          dest: "{{ qat_dest }}/{{ qat_package }}/build"
+          mode: 0755
+      - name: Update the QAT device SSL values to avoid duplication
+        command: ./substitute.sh
+        args:
+          chdir: "{{ qat_dest }}/{{ qat_package }}/build"
+      - name: Restart acceleration driver framework
+        command: adf_ctl restart
+      - name: Restart QAT service
+        service:
+          name: qat_service
+          state: restarted
+      when: QAT_ENABLED

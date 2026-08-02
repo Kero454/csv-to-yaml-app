@@ -1,0 +1,229 @@
+# Copyright © 2020-2021, Nokia
+# Modifications Copyright  © 2020, Nordix Foundation, Orange
+# Modifications Copyright © 2020 Nokia
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Global
+global:
+  nodePortPrefix: 302
+  persistence:
+    enabled: true
+  # Standard OOM
+  pullPolicy: "Always"
+  repository: "nexus3.onap.org:10001"
+  ingress:
+    enabled: true
+    # All http requests via ingress will be redirected
+    config:
+      ssl: "redirect"
+    # you can set an own Secret containing a certificate
+    #  tls:
+    #    secret: 'my-ingress-cert'
+    # optional: Namespace of the Istio IngressGateway
+    namespace: &ingressNamespace istio-ingress
+
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8443
+      port_protocol: http
+
+# Deployment configuration
+repository: "nexus3.onap.org:10001"
+image: onap/org.onap.oom.platform.cert-service.oom-certservice-api:2.6.0
+pullPolicy: Always
+replicaCount: 1
+
+liveness:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  command: curl https://localhost:$HTTPS_PORT/actuator/health --cacert $ROOT_CERT --cert-type p12 --cert $KEYSTORE_P12_PATH --pass $KEYSTORE_PASSWORD
+readiness:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  command: curl https://localhost:$HTTPS_PORT/ready --cacert $ROOT_CERT --cert-type p12 --cert $KEYSTORE_P12_PATH --pass $KEYSTORE_PASSWORD
+
+flavor: small
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "500Mi"
+    requests:
+      cpu: "0.5"
+      memory: "500Mi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+  unlimited: {}
+
+
+# Application configuration
+cmpServers:
+  secret:
+    name: oom-cert-service-secret
+  volume:
+    name: oom-cert-service-volume
+    mountPath: /etc/onap/oom/certservice
+
+tls:
+  issuer:
+    selfsigning:
+      name: &selfSigningIssuer cmpv2-selfsigning-issuer
+    ca:
+      name: &caIssuer cmpv2-issuer-onap
+      secret:
+        name: &caKeyPairSecret  cmpv2-ca-key-pair
+    ingressSelfsigned:
+      name: ingress-selfsigned-issuer
+      namespace: *ingressNamespace
+    ingressCa:
+      name: ingress-ca-issuer
+      namespace: *ingressNamespace
+      secret:
+        name: ingress-ca-key-pair
+  server:
+    secret:
+      name: &serverSecret oom-cert-service-server-tls-secret
+    volume:
+      name: oom-cert-service-server-tls-volume
+      mountPath: /etc/onap/oom/certservice/certs/
+  client:
+    secret:
+      defaultName: oom-cert-service-client-tls-secret
+
+envs:
+  keystore:
+    jksName: keystore.jks
+    p12Name: keystore.p12
+    pemName: tls.crt
+  truststore:
+    jksName: truststore.jks
+    crtName: ca.crt
+    pemName: tls.crt
+  httpsPort: 8443
+
+# External secrets with credentials can be provided to override default credentials defined below,
+# by uncommenting and filling appropriate *ExternalSecret value
+credentials:
+  tls:
+    certificatesPassword: secret
+    #certificatesPasswordExternalSecret:
+  # Below cmp values contain credentials for EJBCA test instance and are relevant only if global addTestingComponents flag is enabled
+  cmp:
+    # Used only if cmpv2 testing is enabled
+    clientIakExternalSecret: '{{ include "common.release" . }}-ejbca-client-iak'
+    #clientRvExternalSecret:
+    raIakExternalSecret: '{{ include "common.release" . }}-ejbca-ra-iak'
+    #raRvExternalSecret:
+    client: {}
+      # iak: mypassword
+      # rv: unused
+    ra: {}
+      # iak: mypassword
+      # rv: unused
+
+secrets:
+  - uid: certificates-password
+    name: &certificatesPasswordSecretName '{{ .Values.cmpv2Config.global.platform.certificates.keystorePasswordSecretName }}'
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.credentials.tls.certificatesPasswordExternalSecret) . }}'
+    password: '{{ .Values.credentials.tls.certificatesPassword }}'
+    passwordPolicy: required
+  # Below values are relevant only if global addTestingComponents flag is enabled
+  - uid: ejbca-server-client-iak
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.credentials.cmp.clientIakExternalSecret) . }}'
+    password: '{{ .Values.credentials.cmp.client.iak }}'
+  - uid: cmp-config-client-rv
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.credentials.cmp.clientRvExternalSecret) . }}'
+    password: '{{ .Values.credentials.cmp.client.rv }}'
+  - uid: ejbca-server-ra-iak
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.credentials.cmp.raIakExternalSecret) . }}'
+    password: '{{ .Values.credentials.cmp.ra.iak }}'
+  - uid: cmp-config-ra-rv
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.credentials.cmp.raRvExternalSecret) . }}'
+    password: '{{ .Values.credentials.cmp.ra.rv }}'
+
+# Certificates definitions
+certificates:
+  - name: selfsigned-cert
+    secretName: *caKeyPairSecret
+    isCA: true
+    commonName: root.com
+    subject:
+      organization: Root Company
+      country: PL
+      locality: Wroclaw
+      province: Dolny Slask
+      organizationalUnit: Root Org
+    issuer:
+      name: *selfSigningIssuer
+      kind: Issuer
+  - name: cert-service-server-cert
+    secretName: *serverSecret
+    commonName: oom-cert-service
+    dnsNames:
+      - oom-cert-service
+      - localhost
+    subject:
+      organization: certServiceServer org
+      country: PL
+      locality: Wroclaw
+      province: Dolny Slask
+      organizationalUnit: certServiceServer company
+    usages:
+      - server auth
+      - client auth
+    keystore:
+      outputType:
+        - jks
+        - p12
+      passwordSecretRef:
+        name: *certificatesPasswordSecretName
+        key: password
+    issuer:
+      name: *caIssuer
+      kind: Issuer
+  - name: cert-service-client-cert
+    secretName: '{{ .Values.cmpv2Config.global.platform.certificates.clientSecretName | default .Values.tls.client.secret.defaultName }}'
+    commonName: certServiceClient.com
+    subject:
+      organization: certServiceClient org
+      country: PL
+      locality: Wroclaw
+      province: Dolny Slask
+      organizationalUnit: certServiceClient company
+    usages:
+      - server auth
+      - client auth
+    keystore:
+      outputType:
+        - jks
+      passwordSecretRef:
+        name: *certificatesPasswordSecretName
+        key: password
+    issuer:
+      name: *caIssuer
+      kind: Issuer

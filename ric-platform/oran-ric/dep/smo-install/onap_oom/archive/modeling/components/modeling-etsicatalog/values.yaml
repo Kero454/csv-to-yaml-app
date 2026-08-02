@@ -1,0 +1,203 @@
+# Copyright © 2017 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+
+  persistence:
+    mountPath: /dockerdata-nfs
+
+  mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows SO to instantiate its own mariadb-galera cluster
+    #When changing it to "true", also set "globalCluster: false"
+    #as the dependency check will not work otherwise (Chart.yaml)
+    localCluster: false
+    globalCluster: true
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+
+  centralizedLoggingEnabled: true
+
+readinessCheck:
+  wait_for:
+    services:
+      - msb-iag
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: modeling-db-secret
+    name: &dbSecretName '{{ include "common.release" . }}-modeling-db-secret'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.db.userCredentialsExternalSecret) . }}'
+    login: '{{ .Values.config.db.userName }}'
+    password: '{{ .Values.config.db.userPassword }}'
+
+#################################################################
+# Dependencies configuration
+#################################################################
+
+mariadb-galera:
+  db:
+    user: &dbUser etsicatalog
+    externalSecret: *dbSecretName
+    name: &mysqlDbName etsicatalog
+  nameOverride: &modeling-db modeling-db
+  service:
+    name: *modeling-db
+    internalPort: 3306
+  nfsprovisionerPrefix: modeling
+  persistence:
+    mountSubPath: modeling/data
+    enabled: true
+  disableNfsProvisioner: true
+  serviceAccount:
+    nameOverride: *modeling-db
+  replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
+
+mariadb-init:
+  config:
+    userCredentialsExternalSecret: *dbSecretName
+    mysqlDatabase: *mysqlDbName
+  # nameOverride should be the same with common.name
+  nameOverride: etsicatalog-db
+  serviceAccount:
+    nameOverride: etsicatalog-db
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+config:
+  #application configuration about  msb
+  ssl_enabled: false
+  msb_enabled: false
+  msbProtocol: http
+  msbServiceName: msb-iag
+  msbPort: 443
+  msbPlainPort: 80
+  sdcProtocol: http
+  sdcServiceName: sdc-be
+  sdcPort: 8443
+  sdcPlainPort: 8080
+  dmaap_enabled: false
+  dmaapProtocol: http
+  dmaapServiceName: message-router-external
+  dmaapPort: 3905
+
+  #application configuration user password about mariadb
+  db:
+    userName: *dbUser
+    # userPassword: password
+    # userCredentialsExternalSecret: some-secret
+
+# application image
+flavor: small
+
+image: onap/modeling/etsicatalog:1.0.14
+pullPolicy: Always
+
+#Istio sidecar injection policy
+istioSidecar: true
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+## Persist data to a persitent volume
+persistence:
+  enabled: true
+  ## A manually managed Persistent Volume and Claim
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # existingClaim:
+  volumeReclaimPolicy: Retain
+  ## database data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # storageClass: "-"
+  accessMode: ReadWriteOnce
+  size: 2Gi
+  mountPath: /dockerdata-nfs
+  mountSubPath: modeling/etsicatalog
+
+service:
+  type: ClusterIP
+  name: modeling-etsicatalog
+  portName: http
+  externalPort: 8806
+  internalPort: 8806
+#  nodePort: 30806
+
+ingress:
+  enabled: false
+
+# Configure resource requests and limits
+resources:
+  small:
+    limits:
+      cpu: "200m"
+      memory: "500Mi"
+    requests:
+      cpu: "100m"
+      memory: "200Mi"
+  large:
+    limits:
+      cpu: "400m"
+      memory: "1Gi"
+    requests:
+      cpu: "200m"
+      memory: "500Mi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: modeling-etsicatalog
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap

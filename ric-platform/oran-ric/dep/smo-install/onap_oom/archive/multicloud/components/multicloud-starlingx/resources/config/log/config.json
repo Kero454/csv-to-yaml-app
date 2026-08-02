@@ -1,0 +1,78 @@
+{
+    "name":"SDCDistributionGroup",
+    "restServerParameters":{
+        "host":"0.0.0.0",
+        "port":9014,
+        "userName":"healthcheck",
+        "password":"zb!XztG34",
+        "https":{{ (eq "true" (include "common.needTLS" .)) | ternary true false }}
+    },
+    "receptionHandlerParameters":{
+        "SDCReceptionHandler":{
+            "receptionHandlerType":"SDC",
+            "receptionHandlerClassName":"org.onap.policy.distribution.reception.handling.sdc.SdcReceptionHandler",
+        "receptionHandlerConfigurationName":"sdcConfiguration",
+            "pluginHandlerParameters":{
+                "artifactForwarders":{
+                    "DummyForwarder":{
+                        "forwarderType":"DummyForwarder",
+                        "forwarderClassName":"org.onap.policy.distribution.main.testclasses.DummyArtifactForwarder",
+                        "forwarderConfigurationParameters": "dummyConfiguration"
+                    }
+                }
+            }
+        }
+    },
+    "receptionHandlerConfigurationParameters":{
+        "sdcConfiguration":{
+            "parameterClassName":"org.onap.policy.distribution.reception.handling.sdc.SdcReceptionHandlerConfigurationParameterGroup",
+            "parameters":{
+                "asdcAddress": "sdc-be.{{ include "common.namespace" . }}:{{ (eq "true" (include "common.needTLS" .)) | ternary 8443 8080 }}",
+                "messageBusAddress": [
+                    "message-router.{{ include "common.namespace" . }}"
+                 ],
+                "user": "multicloud",
+                "password": "Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U",
+                "pollingInterval":20,
+                "pollingTimeout":30,
+                "consumerId": "multicloud-starlingx-id",
+                "artifactTypes": [
+                    "TOSCA_CSAR",
+                    "HEAT",
+                    "HEAT_ARTIFACT",
+                    "HEAT_ENV",
+                    "HEAT_NESTED",
+                    "HEAT_VOL",
+                    "OTHER",
+                    "VF_MODULES_METADATA",
+                    "CLOUD_TECHNOLOGY_SPECIFIC_ARTIFACT"
+                ],
+                "consumerGroup": "multicloud-starlingx-group",
+                "environmentName": "AUTO",
+                "keystorePath": "null",
+                "keystorePassword": "null",
+                "activeserverTlsAuth": false,
+                "isFilterinEmptyResources": true,
+                "isUseHttpsWithDmaap": false,
+                "isUseHttpsWithSDC": {{ (eq "true" (include "common.needTLS" .)) | ternary true false }},
+                "httpsproxyHost": "null",
+                "httpproxyHost": "null",
+                "httpsproxyPort": 8181,
+                "httpproxyPort": 8080
+            }
+        }
+    },
+    "artifactForwarderConfigurationParameters":{
+        "dummyConfiguration":{
+            "parameterClassName":"org.onap.policy.distribution.main.testclasses.DummyArtifactForwarderParameterGroup",
+            "parameters":{
+                "useHttps": false,
+                "hostname": "null",
+                "port": 8081,
+                "userName": "null",
+                "password": "null",
+                "isManaged": true
+            }
+        }
+    }
+}

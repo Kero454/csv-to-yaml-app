@@ -1,0 +1,240 @@
+#============LICENSE_START========================================================
+# ================================================================================
+# Copyright (c) 2021-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2022 Nokia.  All rights reserved.
+# Copyright (c) 2024 Deutsche Telekom Intellectual Property. All rights reserved.
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+
+#################################################################
+# Filebeat configuration defaults.
+#################################################################
+filebeatConfig:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/org.onap.dcaegen2.services.prh.prh-app-server:1.10.1
+pullPolicy: Always
+
+# log directory where logging sidecar should look for log files
+# if path is set to null sidecar won't be deployed in spite of
+# global.centralizedLoggingEnabled setting.
+log:
+  path: /opt/app/prh/logs
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+# a tmp volume is needed by the tomcat server of the app
+# when the filesystem is set to read-only
+tmpDir:
+  enabled: true
+
+secrets:
+  - uid: &aaiCredsUID aaicreds
+    type: basicAuth
+    login: '{{ .Values.aaiCreds.user }}'
+    password: '{{ .Values.aaiCreds.password }}'
+    passwordPolicy: required
+
+# probe configuration
+readiness:
+  initialDelaySeconds: 25
+  periodSeconds: 15
+  path: /heartbeat
+  scheme: HTTP
+  port: 8100
+  timeoutSeconds: 30
+liveness:
+  initialDelaySeconds: 25
+  periodSeconds: 15
+  path: /heartbeat
+  scheme: HTTP
+  port: 8100
+
+# service configuration
+service:
+  type: ClusterIP
+  name: dcae-prh
+  ports:
+    - port: 8100
+      name: http
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+
+aaiCreds:
+  user: AAI
+  password: AAI
+
+credentials:
+- name: AAI_USER
+  uid: *aaiCredsUID
+  key: login
+- name: AAI_PASSWORD
+  uid: *aaiCredsUID
+  key: password
+
+# initial application configuration
+applicationConfig:
+  dmaap.dmaapConsumerConfiguration.dmaapContentType: "application/json"
+  dmaap.dmaapConsumerConfiguration.consumerId: "c12"
+  dmaap.dmaapConsumerConfiguration.consumerGroup: "OpenDCAE-c12"
+  dmaap.dmaapConsumerConfiguration.timeoutMs: -1
+  dmaap.dmaapProducerConfiguration.dmaapContentType: "application/json"
+  dmaap.dmaapUpdateProducerConfiguration.dmaapContentType: "application/json"
+  aai.aaiClientConfiguration.pnfUrl: http://aai-internal.onap.svc.cluster.local:80/aai/v23/network/pnfs/pnf
+  aai.aaiClientConfiguration.baseUrl: http://aai-internal.onap.svc.cluster.local:80/aai/v23
+  aai.aaiClientConfiguration.aaiHost: aai-internal.onap.svc.cluster.local
+  aai.aaiClientConfiguration.aaiHostPortNumber: 80
+  aai.aaiClientConfiguration.aaiProtocol: "http"
+  aai.aaiClientConfiguration.aaiUserName: ${AAI_USER}
+  aai.aaiClientConfiguration.aaiUserPassword: ${AAI_PASSWORD}
+  aai.aaiClientConfiguration.aaiIgnoreSslCertificateErrors: true
+  aai.aaiClientConfiguration.aaiBasePath: "/aai/v23"
+  aai.aaiClientConfiguration.aaiPnfPath: "/network/pnfs/pnf"
+  aai.aaiClientConfiguration.aaiServiceInstancePath: "/business/customers/customer/{{customer}}/service-subscriptions/service-subscription/{{serviceType}}/service-instances/service-instance/{{serviceInstanceId}}"
+  aai.aaiClientConfiguration.aaiHeaders:
+      X-FromAppId: "prh"
+      X-TransactionId: "9999"
+      Accept: "application/json"
+      Real-Time: "true"
+      Authorization: ${AUTH_HDR}
+  security.trustStorePath: "/opt/app/prh/etc/cert/trust.jks"
+  security.trustStorePasswordPath: "/opt/app/prh/etc/cert/trust.pass"
+  security.keyStorePath: "/opt/app/prh/etc/cert/cert.jks"
+  security.keyStorePasswordPath: "/opt/app/prh/etc/cert/jks.pass"
+  security.enableAaiCertAuth: false
+  security.enableDmaapCertAuth: false
+  streams_publishes:
+      pnf-update:
+        type: "message_router"
+        dmaap_info:
+          topic_url: http://message-router.onap.svc.cluster.local:3904/events/unauthenticated.PNF_UPDATE
+      pnf-ready:
+        type: "message_router"
+        dmaap_info:
+          topic_url: http://message-router.onap.svc.cluster.local:3904/events/unauthenticated.PNF_READY
+  streams_subscribes:
+      ves-reg-output:
+        type: "message_router"
+        dmaap_info:
+          topic_url: http://message-router.onap.svc.cluster.local:3904/events/unauthenticated.VES_PNFREG_OUTPUT
+
+applicationEnv:
+  CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  AUTH_HDR: '{{ printf "Basic %s" (print .Values.aaiCreds.user ":" .Values.aaiCreds.password | b64enc) }}'
+  BOOTSTRAP_SERVERS: '{{ include "common.release" . }}-strimzi-kafka-bootstrap:9092'
+  JAAS_CONFIG:
+    externalSecret: true
+    externalSecretUid: '{{ include "common.name" . }}-ku'
+    key: sasl.jaas.config
+
+# Strimzi Kafka User config
+kafkaUser:
+  acls:
+    - name: OpenDCAE-c12
+      type: group
+      patternType: literal
+      operations: [Read]
+    - name: \"*\"
+      type: topic
+      patternType: literal
+      operations: [DescribeConfigs]
+    - name: unauthenticated.VES_PNFREG_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Read]
+    - name: unauthenticated.PNF_READY
+      type: topic
+      patternType: literal
+      operations: [Write]
+    - name: unauthenticated.PNF_UPDATE
+      type: topic
+      patternType: literal
+      operations: [Write]
+
+# Strimzi Kafka Topics
+kafkaTopic:
+  - name: unauthenticated.PNF_READY
+    strimziTopicName: unauthenticated.pnf-ready
+  - name: unauthenticated.PNF_UPDATE
+    strimziTopicName: unauthenticated.pnf-update
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "3Gi"
+    requests:
+      cpu: "1"
+      memory: "3Gi"
+  large:
+    limits:
+      cpu: "3"
+      memory: "6Gi"
+    requests:
+      cpu: "1"
+      memory: "6Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dcae-prh
+  roles:
+    - read
+
+# Pod Security context
+podSecurityContext:
+  runAsGroup: 1414
+  runAsUser: 1414
+  fsGroup: 1414
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container Security context
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+      - CAP_NET_RAW
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+
+# PRH volumes
+externalVolumes:
+  - name: prh-logs
+    mountPath: /var/log/ONAP/prh/prh-app-server/
+    type: emptyDir
+    sizeLimit: 64Mi
+
+# PRH pod annotations
+podAnnotations:
+  sidecar.istio.io/rewriteAppHTTPProbers: "false"

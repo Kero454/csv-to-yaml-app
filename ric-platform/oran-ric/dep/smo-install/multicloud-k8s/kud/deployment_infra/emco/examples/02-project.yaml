@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2020 Intel Corporation
+
+---
+#create project
+version: emco/v2
+resourceContext:
+  anchor: projects
+metadata :
+  name: {{ .ProjectName }}
+
+---
+#create privileged logical cloud
+version: emco/v2
+resourceContext:
+  anchor: projects/{{ .ProjectName }}/logical-clouds
+metadata:
+  name: {{ .LogicalCloud }}
+spec:
+  namespace: {{ .LogicalCloud }}
+  user:
+    user-name: {{ .LogicalCloud }}-admin
+    type: certificate
+
+---
+#create cluster quotas
+version: emco/v2
+resourceContext:
+  anchor: projects/{{ .ProjectName }}/logical-clouds/{{ .LogicalCloud }}/cluster-quotas
+metadata:
+  name: quota
+spec:
+  #an empty spec means that the addons will not be required to specify
+  #cpu, memory, etc. limits
+
+---
+#add namespaced permissions
+version: emco/v2
+resourceContext:
+  anchor: projects/{{ .ProjectName }}/logical-clouds/{{ .LogicalCloud }}/user-permissions
+metadata:
+  name: namespaced
+spec:
+  namespace: {{ .LogicalCloud }}
+  apiGroups:
+  - "*"
+  resources:
+  - "*"
+  verbs:
+  - "*"
+
+---
+#add non-namespaced permissions
+version: emco/v2
+resourceContext:
+  anchor: projects/{{ .ProjectName }}/logical-clouds/{{ .LogicalCloud }}/user-permissions
+metadata:
+  name: non-namespaced
+spec:
+  namespace: ""
+  apiGroups:
+  - "*"
+  resources:
+  - "*"
+  verbs:
+  - "*"
+
+{{- range $clusterName, $cluster := .Clusters }}
+---
+#add cluster reference to logical cloud
+version: emco/v2
+resourceContext:
+  anchor: projects/{{ $.ProjectName }}/logical-clouds/{{ $.LogicalCloud }}/cluster-references
+metadata:
+  name: {{ $clusterName }}
+spec:
+  cluster-provider: {{ $.ClusterProvider }}
+  cluster-name: {{ $clusterName }}
+  loadbalancer-ip: "0.0.0.0"
+{{- end }}
+
+---
+#instantiate logical cloud
+version: emco/v2
+resourceContext:
+  anchor: projects/{{ .ProjectName }}/logical-clouds/{{ .LogicalCloud }}/instantiate

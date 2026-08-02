@@ -1,0 +1,433 @@
+# Copyright © 2019 Amdocs, Bell Canada
+# Copyright (c) 2020 Nordix Foundation, Modifications
+# Modifications Copyright © 2020-2021 Nokia
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration overrides.
+#
+# These overrides will affect all helm charts (ie. applications)
+# that are listed below and are 'enabled'.
+#################################################################
+global:
+  # Change to an unused port prefix range to prevent port conflicts
+  # with other instances running within the same k8s cluster
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+
+  # ONAP Repository
+  # Four different repositories are used
+  # You can change individually these repositories to ones that will serve the
+  # right images. If credentials are needed for one of them, see below.
+  repository: nexus3.onap.org:10001
+  dockerHubRepository: &dockerHubRepository docker.io
+  elasticRepository: &elasticRepository docker.elastic.co
+  quayRepository: quay.io
+  googleK8sRepository: k8s.gcr.io
+  githubContainerRegistry: ghcr.io
+  mariadbContainerRegistry: docker-registry3.mariadb.com
+
+  # Default credentials
+  # they're optional. If the target repository doesn't need them, comment them
+  repositoryCred:
+    user: docker
+    password: docker
+  # If you want / need authentication on the repositories, please set
+  # Don't set them if the target repo is the same than others
+  # so id you've set repository to value `my.private.repo` and same for
+  # dockerHubRepository, you'll have to configure only repository (exclusive) OR
+  # dockerHubCred.
+  # dockerHubCred:
+  #   user: myuser
+  #   password: mypassord
+  # elasticCred:
+  #   user: myuser
+  #   password: mypassord
+  # googleK8sCred:
+  #   user: myuser
+  #   password: mypassord
+
+  # Default definition of the secret containing the docker image repository
+  # credentials. In the default ONAP deployment the secret is created by the
+  # repository-wrapper component, which uses the secrets defined above.
+  # If this is not wanted or other secrets are created, alternative secret
+  # names can be used
+  # Overrides for specific images can be done, if the "image" entry is used as
+  # a map and the "pullSecrets" is used, e.g.
+  # image:
+  #   ...
+  #   pullSecrets:
+  #     - myRegistryKeySecretName
+  #
+  imagePullSecrets:
+    - '{{ include "common.namespace" . }}-docker-registry-key'
+
+  # common global images
+  # Busybox for simple shell manipulation
+  busyboxImage: busybox:1.37.0
+
+  # curl image
+  curlImage: curlimages/curl:8.14.1
+
+  # env substitution image
+  envsubstImage: dibi/envsubst:latest
+
+  # generate htpasswd files image
+  # there's only latest image for htpasswd
+  htpasswdImage: xmartlabs/htpasswd:latest
+
+  # kubenretes client image
+  kubectlImage: bitnami/kubectl:1.22.16
+
+  # logging agent
+  loggingImage: beats/filebeat:5.5.0
+
+  # mariadb client image
+  mariadbImage: mariadb:11.7.2
+
+  # mongodb server image
+  mongodbImage: percona/percona-server-mongodb:7.0.16-10
+
+  # nginx server image
+  nginxImage: bitnami/nginx:1.29.0
+
+  # postgreSQL client and server image
+  postgresImage: crunchydata/crunchy-postgres:centos8-13.2-4.6.1
+
+  # readiness check image
+  readinessImage: onap/oom/readiness:6.2.0
+
+  # image pull policy
+  pullPolicy: Always
+
+  # default java image
+  jreImage: onap/integration-java11:10.0.0
+
+  # default clusterName
+  # {{ template "common.fullname" . }}.{{ template "common.namespace" . }}.svc.{{ .Values.global.clusterName }}
+  clusterName: cluster.local
+
+  # enable this if you have deployed Jaeger alongside ONAP
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      # ports that are exposed by the jaeger-collector service
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+  # default mount path root directory referenced
+  # by persistent volumes and log files
+  persistence:
+    mountPath: /dockerdata-nfs
+    enableDefaultStorageclass: false
+    parameters: {}
+    storageclassProvisioner: kubernetes.io/no-provisioner
+    volumeReclaimPolicy: Retain
+
+  # Global flag to enable the creation of default roles instead of using
+  # common roles-wrapper
+  createDefaultRoles: false
+
+  # override default resource limit flavor for all charts
+  flavor: unlimited
+
+  # flag to enable debugging - application support required
+  debugEnabled: false
+
+  # default password complexity
+  # available options: phrase, name, pin, basic, short, medium, long, maximum security
+  # More datails: https://www.masterpasswordapp.com/masterpassword-algorithm.pdf
+  passwordStrength: long
+
+  # configuration to set log level to all components (the one that are using
+  # "common.log.level" to set this)
+  # can be overrided per components by setting logConfiguration.logLevelOverride
+  # to the desired value
+  # logLevel: DEBUG
+
+  # Global ingress configuration
+  ingress:
+    # generally enable ingress for ONAP components
+    enabled: false
+    # enable all component's Ingress interfaces
+    enable_all: false
+
+    # Provider: ingress, istio, gw-api
+    provider: istio
+    # Ingress class (only for provider "ingress"): e.g. nginx, traefik
+    ingressClass:
+    # Ingress Selector (only for provider "istio") to match with the
+    # ingress pod label "istio=ingress"
+    ingressSelector: ingress
+    # optional: common used Gateway (for Istio, GW-API) and listener names
+    commonGateway:
+      name: ""
+      httpListener: ""
+      httpsListener: ""
+
+    # default Ingress base URL and preAddr- and postAddr settings
+    # Ingress URLs result:
+    # <preaddr><component.ingress.service.baseaddr><postaddr>.<baseurl>
+    virtualhost:
+      # Default Ingress base URL
+      # can be overwritten in component by setting ingress.baseurlOverride
+      baseurl: "simpledemo.onap.org"
+      # prefix for baseaddr
+      # can be overwritten in component by setting ingress.preaddrOverride
+      preaddr: ""
+      # postfix for baseaddr
+      # can be overwritten in component by setting ingress.postaddrOverride
+      postaddr: ""
+
+    # All http (port 80) requests via ingress will be redirected
+    # to port 443 on Ingress controller
+    # only valid for Istio Gateway (ServiceMesh enabled)
+    config:
+      ssl: "redirect"
+    # you can set an own Secret containing a certificate
+    # only valid for Istio Gateway (ServiceMesh enabled)
+    #  tls:
+    #    secret: 'my-ingress-cert'
+
+    # optional: Namespace of the Istio IngressGateway or Gateway-API
+    # only valid for Istio Gateway (ServiceMesh enabled)
+    namespace: istio-ingress
+
+  # Global Service Mesh configuration
+  serviceMesh:
+    enabled: false
+    tls: true
+    # be aware that linkerd is not well tested
+    engine: "istio" # valid value: istio or linkerd
+    # if nativeSidecars are enabled in Istio, this value can be set to "true"
+    # and will disable the deployment of sidecar killer containers in jobs
+    nativeSidecars: false
+
+  # Global Istio Authorization Policy configuration
+  authorizationPolicies:
+    enabled: false
+
+  # metrics part
+  # If enabled, exporters (for prometheus) will be deployed
+  # if custom resources set to yes, CRD from prometheus operartor will be
+  # created
+  # Not all components have it enabled.
+  #
+  metrics:
+    enabled: true
+    custom_resources: false
+
+  # Disabling AAF
+  # POC Mode, only for use in development environment
+  # Keep it enabled in production
+  aafEnabled: false
+
+  # Disabling MSB
+  # POC Mode, only for use in development environment
+  msbEnabled: true
+
+  # default values for certificates
+  certificate:
+    default:
+      renewBefore: 720h #30 days
+      duration:    8760h #365 days
+      subject:
+        organization: "Linux-Foundation"
+        country: "US"
+        locality: "San-Francisco"
+        province: "California"
+        organizationalUnit: "ONAP"
+      issuer:
+        group: certmanager.onap.org
+        kind: CMPv2Issuer
+        name: cmpv2-issuer-onap
+
+  # Enabling CMPv2
+  cmpv2Enabled: false
+  platform:
+    certificates:
+      clientSecretName: oom-cert-service-client-tls-secret
+      keystoreKeyRef: keystore.jks
+      truststoreKeyRef: truststore.jks
+      keystorePasswordSecretName: oom-cert-service-certificates-password
+      keystorePasswordSecretKey: password
+      truststorePasswordSecretName: oom-cert-service-certificates-password
+      truststorePasswordSecretKey: password
+
+  # Indicates offline deployment build
+  # Set to true if you are rendering helm charts for offline deployment
+  # Otherwise keep it disabled
+  offlineDeploymentBuild: false
+
+  # TLS
+  # Set to false if you want to disable TLS for NodePorts. Be aware that this
+  # will loosen your security.
+  # if set this element will force or not tls even if serviceMesh.tls is set.
+  tlsEnabled: false
+
+  # Logging
+  # Currently, centralized logging is not in best shape so it's disabled by
+  # default
+  centralizedLoggingEnabled: &centralizedLogging false
+
+  # Example of specific for the components where you want to disable TLS only for
+  # it:
+  # if set this element will force or not tls even if global.serviceMesh.tls and
+  # global.tlsEnabled is set otherwise.
+  # robot:
+  #   tlsOverride: false
+
+  # Global storage configuration
+  #    Set to "-" for default, or with the name of the storage class
+  #    Please note that if you use AAF, CDS, SDC, Netbox or Robot, you need a
+  #    storageclass with RWX capabilities (or set specific configuration for these
+  #    components).
+  # persistence:
+  #   storageClass: "-"
+
+# Example of specific for the components which requires RWX:
+# cds:
+#   cds-blueprints-processor:
+#     persistence:
+#       storageClassOverride: "My_RWX_Storage_Class"
+# sdc:
+#   sdc-onboarding-be:
+#     persistence:
+#       storageClassOverride: "My_RWX_Storage_Class"
+
+#################################################################
+# Enable/disable and configure helm charts (ie. applications)
+# to customize the ONAP deployment.
+#################################################################
+
+authentication:
+  enabled: false
+aai:
+  enabled: false
+cassandra:
+  enabled: false
+cds:
+  enabled: false
+cli:
+  enabled: false
+cps:
+  enabled: false
+dcaegen2-services:
+  enabled: false
+holmes:
+  enabled: false
+dmaap:
+  enabled: false
+  message-router:
+    enabled: false
+  dmaap-dr-prov:
+    enabled: false
+  dmaap-dr-node:
+    enabled: false
+oof:
+  enabled: false
+mariadb-galera:
+  enabled: false
+msb:
+  enabled: false
+multicloud:
+  enabled: false
+nbi:
+  enabled: false
+  config:
+    # openstack configuration
+    openStackRegion: "Yolo"
+    openStackVNFTenantId: "1234"
+policy:
+  enabled: false
+portal-ng:
+  enabled: false
+robot:
+  enabled: false
+  config:
+    # openStackEncryptedPasswordHere should match the encrypted string used in SO and overridden per environment
+    openStackEncryptedPasswordHere: "c124921a3a0efbe579782cde8227681e"
+sdc:
+  enabled: false
+sdnc:
+  enabled: false
+
+  replicaCount: 1
+
+  mysql:
+    replicaCount: 1
+so:
+  enabled: false
+
+  replicaCount: 1
+
+  liveness:
+    # necessary to disable liveness probe when setting breakpoints
+    # in debugger so K8s doesn't restart unresponsive container
+    enabled: false
+
+  # so server configuration
+  config:
+    # message router configuration
+    dmaapTopic: "AUTO"
+    # openstack configuration
+    openStackUserName: "vnf_user"
+    openStackRegion: "RegionOne"
+    openStackKeyStoneUrl: "http://1.2.3.4:5000"
+    openStackServiceTenantName: "service"
+    openStackEncryptedPasswordHere: "c124921a3a0efbe579782cde8227681e"
+
+  # in order to enable static password for so-monitoring uncomment:
+  # so-monitoring:
+  #   server:
+  #     monitoring:
+  #       password: demo123456!
+
+strimzi:
+  enabled: false
+  # Kafka replication & disk storage should be dimensioned
+  # according to each given system use case.
+  replicaCount: 3
+  persistence:
+    kafka:
+      size: 10Gi
+    zookeeper:
+      size: 1Gi
+  # Strimzi kafka bridge is an optional http api towards
+  # kafka provided by https://strimzi.io/docs/bridge/latest/
+  strimzi-kafka-bridge:
+    enabled: false
+
+uui:
+  enabled: false
+vfc:
+  enabled: false
+vnfsdk:
+  enabled: false
+modeling:
+  enabled: false
+platform:
+  enabled: false
+a1policymanagement:
+  enabled: false
+repository-wrapper:
+  enabled: true
+roles-wrapper:
+  enabled: true

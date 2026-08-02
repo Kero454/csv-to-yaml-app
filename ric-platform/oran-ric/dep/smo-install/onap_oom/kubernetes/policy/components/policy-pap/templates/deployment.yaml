@@ -1,0 +1,149 @@
+{{/*
+#  ============LICENSE_START=======================================================
+#   Copyright (C) 2020 AT&T Intellectual Property.
+#   Modifications Copyright (C) 2022 Bell Canada. All rights reserved.
+#   Modifications Copyright (C) 2024-2025 Nordix Foundation.
+#   Modifications Copyright © 2024-2025 Deutsche Telekom
+#  ================================================================================
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+#  SPDX-License-Identifier: Apache-2.0
+#  ============LICENSE_END=========================================================
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      initContainers:
+      {{ include "common.readinessCheck.waitFor" . | nindent 6 }}
+      - command:
+        - sh
+        args:
+        - -c
+        - "cd /config-input && for PFILE in `ls -1`; do envsubst <${PFILE} >/config/${PFILE}; done"
+        env:
+        - name: SQL_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "login") | indent 10 }}
+        - name: SQL_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "password") | indent 10 }}
+        - name: RESTSERVER_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "restserver-secret" "key" "login") | indent 10 }}
+        - name: RESTSERVER_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "restserver-secret" "key" "password") | indent 10 }}
+        - name: API_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "api-secret" "key" "login") | indent 10 }}
+        - name: API_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "api-secret" "key" "password") | indent 10 }}
+        - name: DISTRIBUTION_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "distribution-secret" "key" "login") | indent 10 }}
+        - name: DISTRIBUTION_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "distribution-secret" "key" "password") | indent 10 }}
+{{- if .Values.global.useStrimziKafka }}
+        - name: JAASLOGIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
+{{- end }}
+        volumeMounts:
+        - mountPath: /config-input
+          name: papconfig
+        - mountPath: /config
+          name: papconfig-processed
+        image: {{ include "repositoryGenerator.image.envsubst" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
+        name: {{ include "common.name" . }}-update-config
+      containers:
+        - name: {{ include "common.name" . }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+
+          command: [ "/bin/sh", "-cx" ]
+          args:
+            - cat /opt/app/policy/pap/etc/mounted/papParameters.yaml;
+              /opt/app/policy/pap/bin/policy-pap.sh /opt/app/policy/pap/etc/mounted/papParameters.yaml
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
+          # disable liveness probe when breakpoints set in debugger
+          # so K8s doesn't restart unresponsive container
+          {{- if eq .Values.liveness.enabled true }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.liveness.port }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+          {{ end -}}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readiness.api }}
+              port: {{ .Values.readiness.port }}
+              httpHeaders:
+                - name: Authorization
+                  value: Basic {{ printf "%s:%s" .Values.restServer.user .Values.restServer.password | b64enc }}
+              scheme: "HTTP"
+            successThreshold: {{ .Values.readiness.successThreshold }}
+            failureThreshold: {{ .Values.readiness.failureThreshold }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.readiness.timeout }}
+          volumeMounts:
+            - mountPath: /etc/localtime
+              name: localtime
+              readOnly: true
+            - name: logs
+              mountPath: /var/log/onap
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp-dir
+            - mountPath: /opt/app/policy/pap/etc/logback.xml
+              subPath: logback.xml
+              name: papconfig-processed
+            - name: papconfig-processed
+              mountPath: /opt/app/policy/pap/etc/mounted
+          resources: {{ include "common.resources" . | nindent 12 }}
+        {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+        {{- end -}}
+        {{- if .Values.affinity }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+        {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+        - name: localtime
+          emptyDir:
+            sizeLimit: {{ .Values.dirSizes.emptyDir.sizeLimit }}
+        - name: empty-dir
+          emptyDir:
+            sizeLimit: {{ .Values.dirSizes.emptyDir.sizeLimit }}
+        - name: logs
+          emptyDir:
+            sizeLimit: {{ .Values.dirSizes.logDir.sizeLimit }}
+        - name: papconfig
+          configMap:
+            name: {{ include "common.fullname" . }}-configmap
+            defaultMode: 0755
+        - name: papconfig-processed
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

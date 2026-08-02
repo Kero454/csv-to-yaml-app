@@ -1,0 +1,153 @@
+# Copyright © 2017 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  mariadbGalera: &mariadbGalera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows DMAAP-DR to instantiate its own mariadb-galera cluster
+    localCluster: false
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - name: &dbUserSecretName '{{ include "common.release" . }}-dmaap-dr-db-user-credentials'
+    uid: 'dmaap-dr-db-user-credentials'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" (index .Values "mariadb-galera" "db" "externalSecret")) .) (hasSuffix "dmaap-dr-db-user-credentials" (index .Values "mariadb-galera" "db" "externalSecret"))}}'
+    login: '{{ index .Values "mariadb-galera" "db" "user" }}'
+    password: '{{ index .Values "mariadb-galera" "db" "password" }}'
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/dmaap/datarouter-prov:2.1.15
+pullPolicy: Always
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+containerPort: &svc_port 8080
+
+service:
+  type: ClusterIP
+  name: dmaap-dr-prov
+  ports:
+    - name: &port http
+      port: *svc_port
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "dmaap-dr-prov-api"
+      name: "dmaap-dr-prov"
+      port: *svc_port
+  config:
+    ssl: "redirect"
+
+readinessCheck:
+  wait_for:
+    jobs:
+      - '{{ include "common.release" . }}-dmaap-dr-mariadb-init-config-job'
+
+# dr uses the EELF Logging framework https://github.com/att/EELF
+# and supports the following log levels: TRACE, DEBUG, INFO, WARN, ERROR, OFF
+logLevel: "DEBUG"
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+  port: *svc_port
+
+readiness:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  port: *svc_port
+
+# mariadb-galera configuration
+mariadb-galera:
+  nameOverride: &dbServer dmaap-dr-db
+  replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
+  db:
+    name: &mysqlDbName datarouter
+    user: datarouter
+    # password:
+    externalSecret: *dbUserSecretName
+  service:
+    name: *dbServer
+  nfsprovisionerPrefix: dmaap-dr-db
+  persistence:
+    size: 1Gi
+    mountSubPath: data-router/dr-db-data
+  serviceAccount:
+    nameOverride: *dbServer
+
+mariadb-init:
+  config:
+    userCredentialsExternalSecret: *dbUserSecretName
+    mysqlDatabase: *mysqlDbName
+  nameOverride: dmaap-dr-mariadb-init
+  serviceAccount:
+    nameOverride: dmaap-dr-mariadb-init
+
+# Resource Limit flavor -By Default using small
+flavor: small
+
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Security Context
+securityContext:
+  user_id: 1000
+  group_id: 1000
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dmaap-dr-prov
+  roles:
+    - read

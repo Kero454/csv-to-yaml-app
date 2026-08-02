@@ -1,0 +1,300 @@
+# Copyright © 2022 Nordix Foundation
+# Modifications Copyright © 2025 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefixExt: 304
+  persistence:
+    mountPath: /dockerdata-nfs
+  ingress:
+    virtualhost:
+      baseurl: &baseurl "simpledemo.onap.org"
+      preaddr: &preaddr ""
+      postaddr: &postaddr ""
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+replicaCount: 3
+affinity:
+  podAntiAffinity:
+    enabled: true
+config:
+  # strimzi-operator 0.45.0 supports <=3.9.0
+  kafkaVersion: 3.9.0
+  # strimzi-operator 0.46.0 supports <=4.0.0
+  #kafkaVersion: 4.0.0
+  #kafkaMetadataVersion: 4.0-IV3
+  authType: simple
+  saslMechanism: &saslMech scram-sha-512
+  kafkaInternalPort: &plainPort 9092
+  strimziKafkaAdminUser: &adminUser strimzi-kafka-admin
+  advertisedHost: kafka-api.simpledemo.onap.org
+  advertizedPortBroker0: &advertizedPortBroker0 9000
+  advertizedPortBroker1: &advertizedPortBroker1 9001
+  advertizedPortBroker2: &advertizedPortBroker2 9002
+  autoCreateTopics: true
+
+persistence:
+  enabled: &pvenabled true
+  mountPath: /dockerdata-nfs
+  broker:
+    enabled: *pvenabled
+    # default values of 2Gi for dev env.
+    # Production values should be dimensioned according to requirements. ie >= 10Gi
+    size: 2Gi
+    volumeReclaimPolicy: Retain
+    accessMode: ReadWriteOnce
+    mountPath: /dockerdata-nfs
+    mountSubPath: strimzi-kafka/broker
+  controller:
+    enabled: *pvenabled
+    size: 1Gi
+    volumeReclaimPolicy: Retain
+    accessMode: ReadWriteOnce
+    mountPath: /dockerdata-nfs
+    mountSubPath: strimzi-kafka/controller
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: strimzi-kafka
+  roles:
+    - read
+
+ingress:
+  enabled: false
+  service:
+  - baseaddr: "kafka-bootstrap-api"
+    name: "onap-strimzi-kafka-external-bootstrap"
+    port: 9094
+    protocol: tcp
+    exposedPort: 9010
+    exposedProtocol: TLS
+  - baseaddr: "kafka-api"
+    tcpRoutes:
+    - name: "onap-strimzi-kafka-0"
+      port: 9094
+      exposedPort: *advertizedPortBroker0
+      exposedProtocol: TLS
+    - name: "onap-strimzi-kafka-1"
+      port: 9094
+      exposedPort: *advertizedPortBroker1
+      exposedProtocol: TLS
+    - name: "onap-strimzi-kafka-2"
+      port: 9094
+      exposedPort: *advertizedPortBroker2
+      exposedProtocol: TLS
+
+# Kafka Exporter for metrics
+metrics:
+  enabled: false
+  kafkaExporter:
+    enabled: false
+    metricsConfig:
+      type: jmxPrometheusExporter
+    topicRegex: ".*"
+    groupRegex: ".*"
+    resources:
+      requests:
+        cpu: "2"
+        memory: "600Mi"
+      limits:
+        cpu: "5"
+        memory: "1.5Gi"
+    logging: debug
+    enableSaramaLogging: true
+    readinessProbe:
+      initialDelaySeconds: 15
+      timeoutSeconds: 5
+    livenessProbe:
+      initialDelaySeconds: 15
+      timeoutSeconds: 5
+  podMonitor:
+    # Prometheus pre requisite. Currently an optional addon in the OOM docs
+    enabled: false
+    # default port for strimzi metrics
+    port: "tcp-prometheus"
+    # podMonitor labels for prometheus to pick up the podMonitor
+    # dummy value
+    labels:
+      release: dummy
+    relabelings: []
+    metricRelabelings: []
+
+cruiseControl:
+## Cruise Control provides a Kafka metrics reporter implementation
+## once installed into the Kafka brokers, filters and records a wide range of metrics provided by the brokers themselves.
+## pre requisite is having 2 or more broker nodes
+  enabled: false
+  metricsConfig:
+    type: jmxPrometheusExporter
+  ## Custom resource for Kafka that can rebalance your cluster
+  # ref. https://strimzi.io/blog/2020/06/15/cruise-control/
+  kafkaRebalance:
+    enabled: false
+  template:
+    pod:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+    cruiseControlContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        capabilities:
+          drop:
+            - ALL
+            - CAP_NET_RAW
+    resources:
+      limits:
+        cpu: '2'
+        memory: 2Gi
+      requests:
+        cpu: 100m
+        memory: 1Gi
+
+######################
+#  Component overrides
+######################
+strimzi-kafka-bridge:
+  enabled: true
+  config:
+    saslMechanism: *saslMech
+    kafkaInternalPort: *plainPort
+    strimziKafkaAdminUser: *adminUser
+
+broker:
+  template:
+    pod:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+    kafkaContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        #runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        capabilities:
+          drop:
+            - ALL
+            - CAP_NET_RAW
+  resources:
+    limits:
+      cpu: '2'
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+
+controller:
+  template:
+    pod:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+    kafkaContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        #runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        capabilities:
+          drop:
+            - ALL
+            - CAP_NET_RAW
+  resources:
+    limits:
+      cpu: '2'
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+
+entityOperator:
+  template:
+    pod:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+    topicOperatorContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        capabilities:
+          drop:
+            - ALL
+            - CAP_NET_RAW
+    userOperatorContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        capabilities:
+          drop:
+            - ALL
+            - CAP_NET_RAW
+    topicOperator:
+      resources:
+        limits:
+          cpu: '2'
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 1Gi
+    userOperator:
+      resources:
+        limits:
+          cpu: '2'
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 1Gi
+
+kafkaExporter:
+  template:
+    pod:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+    container:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        capabilities:
+          drop:
+            - ALL
+            - CAP_NET_RAW

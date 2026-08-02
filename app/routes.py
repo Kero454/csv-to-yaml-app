@@ -5519,28 +5519,30 @@ def deploy_to_ric():
                     steps[-1]['status'] = 'error'
                     steps[-1]['detail'] = f"onboard failed: {onboard_res.get('error') or onboard_res.get('response')}"
 
-                # Step 4: Deploy the onboarded chart.
+                # Step 4: Deploy the onboarded chart via the appmgr REST API.
                 #
-                # appmgr 0.5.9's REST deploy (POST /ric/v1/xapps -> XappDeployXapp)
-                # is an unimplemented go-swagger stub, so we install the chart the
-                # onboarder just pushed to chartmuseum directly with Helm 3 - this
-                # is exactly what the O-RAN `dms_cli install` does under the hood.
-                # Onboard (above) and subscribe (below) remain appmgr/onboarder
-                # REST API calls.
+                # POST /ric/v1/xapps -> appmgr runs `helm install helm-repo/<name>`
+                # itself, pulling the chart the onboarder just pushed to its
+                # chartmuseum (appmgr's `helm.repo` config points there). This
+                # requires the patched appmgr image (deploy handler + helm 3
+                # binary); the stock 0.5.9 image answers with the go-swagger
+                # stub "operation XappDeployXapp has not yet been implemented".
                 deployed_ok = False
                 if onboard_res.get('success'):
-                    steps.append({'name': f'Deploy {m_name} (helm install from chartmuseum)', 'status': 'running'})
-                    helm_res = _deploy_via_helm(
-                        kubectl_base, onboarder_svc['namespace'], onboarder_svc['service'],
-                        chart_port=8080, m_name=m_name, m_version=m_version, namespace='ricxapp')
-                    deployment_result['helm_deploy'] = helm_res
-                    deployed_ok = helm_res.get('success', False)
+                    steps.append({'name': f'Deploy {m_name} (appmgr POST /ric/v1/xapps)', 'status': 'running'})
+                    with _PortForward(kubectl_base, appmgr_svc['namespace'],
+                                      appmgr_svc['service'], appmgr_svc['port']) as pf:
+                        appmgr_res = _deploy_via_appmgr(
+                            pf.base_url, m_name, m_version, namespace='ricxapp',
+                            override={'image_pull_policy': 'Never'})
+                    deployment_result['appmgr_deploy'] = appmgr_res
+                    deployed_ok = appmgr_res.get('success', False)
                     steps[-1]['status'] = 'done' if deployed_ok else 'error'
-                    steps[-1]['detail'] = (f"installed chart {helm_res.get('chart')}"
+                    steps[-1]['detail'] = (f"appmgr deployed ({appmgr_res.get('status_code')})"
                                            if deployed_ok else
-                                           f"deploy failed: {helm_res.get('error')}")
+                                           f"deploy failed: {appmgr_res.get('error') or appmgr_res.get('response')}")
 
-                deployment_result['deploy_via'] = 'helm-from-chartmuseum' if deployed_ok else None
+                deployment_result['deploy_via'] = 'appmgr-rest-api' if deployed_ok else None
 
                 if deployed_ok:
                     # Step 5: Wait for pod readiness and test the xApp.

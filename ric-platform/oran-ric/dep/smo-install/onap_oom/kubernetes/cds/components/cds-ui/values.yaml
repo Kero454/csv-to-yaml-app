@@ -1,0 +1,119 @@
+# Copyright © 2018 Orange
+# Modifications Copyright © 2018  Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefixExt: 304
+
+subChartsOnly:
+  enabled: true
+
+# application image
+image: onap/ccsdk-cds-ui-server:1.8.1
+pullPolicy: Always
+
+# application configuration
+config:
+  env:
+    protocol: HTTP
+  app:
+    action:
+      deployBlueprint:
+        grpcEnabled: true
+  api:
+    controller:
+      http:
+       baseUrl: http://cds-blueprints-processor-http:8081/api/v1
+       authToken: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+    processor:
+      http:
+       baseUrl: http://cds-blueprints-processor-http:8080/api/v1
+       authToken: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+      grpc:
+        host: cds-blueprints-processor-grpc
+        port: 9111
+        authToken: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  httpGet:
+    path: /
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  httpGet:
+    path: /ping
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+service:
+  type: NodePort
+  name: cds-ui
+  internalPort: 3000
+  ports:
+    - name: http
+      port: 3000
+      nodePort: 97
+      useNodePortExt: true
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "cds-ui"
+      name: "cds-ui"
+      port: 3000
+      config:
+        ssl: "redirect"
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "200Mi"
+    requests:
+      cpu: "0.5"
+      memory: "200Mi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "200Mi"
+    requests:
+      cpu: "1"
+      memory: "200Mi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: cds-ui
+  roles:
+    - read

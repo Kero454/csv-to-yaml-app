@@ -1,0 +1,53 @@
+{
+    "name":"OnapPfParameterGroup",
+    "restServerParameters": {
+      "host": "0.0.0.0",
+      "port": 6969,
+      "userName": "${RESTSERVER_USER}",
+      "password": "${RESTSERVER_PASSWORD}",
+      "https": "false",
+      "prometheus": true
+    },
+    "pdpStatusParameters": {
+        "pdpGroup": "defaultGroup",
+        "timeIntervalMs": 120000,
+        "pdpType":"apex",
+        "description":"Pdp Heartbeat",
+        "supportedPolicyTypes": [
+            {
+                "name": "onap.policies.native.Apex",
+                "version": "1.0.0"
+            },
+            {
+              "name": "onap.policies.controlloop.operational.common.Apex",
+              "version": "1.0.0"
+            }
+        ]
+    },
+    "topicParameterGroup": {
+      "topicSources": [{
+          "topic": "${PAP_TOPIC}",
+          "useHttps": false,
+          "fetchTimeout": 15000,
+          "servers": [ "${KAFKA_URL}" ],
+          "topicCommInfrastructure": "kafka",
+          "additionalProps": {
+            "group.id" : "${GROUP_ID}",
+            "security.protocol": "SASL_PLAINTEXT",
+            "sasl.mechanism": "${SASL}",
+            "sasl.jaas.config": "${JAASLOGIN}"
+        }}],
+      "topicSinks" : [{
+          "topic": "${PAP_TOPIC}",
+          "useHttps": false,
+          "servers": [ "${KAFKA_URL}" ],
+          "topicCommInfrastructure": "kafka",
+          "additionalProps": {
+            "group.id" : "${GROUP_ID}",
+            "security.protocol": "SASL_PLAINTEXT",
+            "sasl.mechanism": "${SASL}",
+            "sasl.jaas.config": "${JAASLOGIN}"
+          }
+      }]
+    }
+}

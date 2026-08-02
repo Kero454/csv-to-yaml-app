@@ -1,0 +1,124 @@
+#  ============LICENSE_START=======================================================
+#   Copyright (C) 2021-2025 OpenInfra Foundation Europe. All rights reserved.
+#  ================================================================================
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+#  SPDX-License-Identifier: Apache-2.0
+#  ============LICENSE_END=========================================================
+
+spring:
+  security:
+    user:
+      name: ${RUNTIME_USER}
+      password: ${RUNTIME_PASSWORD}
+  mvc:
+    converters:
+      preferred-json-mapper: gson
+  datasource:
+    url: jdbc:postgresql://{{ .Values.global.postgres.service.name2 }}:{{ .Values.global.postgres.service.port }}/clampacm
+    driverClassName: org.postgresql.Driver
+    username: ${SQL_USER}
+    password: ${SQL_PASSWORD}
+    hikari:
+      connectionTimeout: 30000
+      idleTimeout: 600000
+      maxLifetime: 1800000
+      maximumPoolSize: 10
+  jpa:
+    hibernate:
+      ddl-auto: update
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+        implicit-strategy: org.onap.policy.common.spring.utils.CustomImplicitNamingStrategy
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+metrics:
+  security:
+    disabled: false
+
+security:
+  enable-csrf: false
+
+server:
+  port: 6969
+  servlet:
+    context-path: /onap/policy/clamp/acm
+  error:
+    path: /error
+  ssl:
+    enabled: false
+
+runtime:
+  topics:
+    operationTopic: {{ .Values.global.kafkaTopics.acRuntimeOperationTopic.name }}
+    syncTopic: {{ .Values.global.kafkaTopics.acRuntimeSyncTopic.name }}
+  participantParameters:
+    heartBeatMs: 120000
+    maxMessageAgeMs: 600000
+    maxStatusWaitMs: {{ .Values.customTimeout.maxStatusWaitMs }}
+    maxOperationWaitMs: {{ .Values.customTimeout.maxOperationWaitMs }}
+    updateParameters:
+      maxRetryCount: 3
+      maxWaitMs: 100000
+  topicParameterGroup:
+    topicSources:
+      -
+        useHttps: false
+        fetchTimeout: 15000
+        topic: {{ .Values.global.kafkaTopics.acRuntimeOperationTopic.name }}
+        topicCommInfrastructure: kafka
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        additionalProps:
+          group.id: {{ (first .Values.kafkaUser.acls).name }}
+          allow.auto.create.topics: false
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${SASL_JAAS_CONFIG}
+    topicSinks:
+      -
+        useHttps: false
+        fetchTimeout: 15000
+        topic: {{ .Values.global.kafkaTopics.acRuntimeOperationTopic.name }}
+        topicCommInfrastructure: kafka
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        additionalProps:
+          client.id: {{ (first .Values.kafkaUser.acls).name }}-client-id
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${SASL_JAAS_CONFIG}
+      -
+        useHttps: false
+        fetchTimeout: 15000
+        topic: {{ .Values.global.kafkaTopics.acRuntimeSyncTopic.name }}
+        topicCommInfrastructure: kafka
+        servers:
+          - {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        additionalProps:
+          client.id: {{ (first .Values.kafkaUser.acls).name }}-client-id
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+          sasl.jaas.config: ${SASL_JAAS_CONFIG}
+  acmParameters:
+    toscaElementName: {{ .Values.customNaming.toscaElementName }}
+    toscaCompositionName: {{ .Values.customNaming.toscaCompositionName }}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus

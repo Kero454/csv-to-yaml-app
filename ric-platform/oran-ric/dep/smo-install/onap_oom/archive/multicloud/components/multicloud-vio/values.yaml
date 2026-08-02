@@ -1,0 +1,121 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/multicloud/vio:1.4.2
+pullPolicy: Always
+
+# application configuration
+config:
+  msbgateway: msb-iag
+  msbPort: 80
+  aai:
+    aaiPort: 80
+    schemaVersion: v13
+    username: AAI
+    password: AAI
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 5
+  enabled: true
+
+service:
+  type: NodePort
+  internalPort: 9004
+  ports:
+    - name: http
+      port: 9004
+      nodePort: '92'
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "multicloud-vio",
+          "version": "v0",
+          "url": "/api/multicloud-vio/v0",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        },
+        {
+          "serviceName": "multicloud-vio",
+          "version": "v1",
+          "url": "/api/multicloud-vio/v1",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        }
+      ]{{ end }}
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: 'multicloud-vio-api'
+      name: 'multicloud-vio'
+      port: 9004
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "4Gi"
+    requests:
+      cpu: "10m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+    requests:
+      cpu: "20m"
+      memory: "2Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: multicloud-vio
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'

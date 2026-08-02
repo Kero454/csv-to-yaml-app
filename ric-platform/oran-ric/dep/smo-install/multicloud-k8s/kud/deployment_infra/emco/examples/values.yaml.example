@@ -1,0 +1,39 @@
+HostIP: $HOST_IP
+RsyncPort: 30441
+GacPort: 30493
+OvnPort: 30473
+DtcPort: 30483
+
+ClusterProvider: kud
+ClustersLabel: kud-cluster
+Clusters:
+  cluster:
+    KubeConfig: $KUBE_PATH
+
+ProjectName: kud
+LogicalCloud: kud
+
+PackagesPath: $PWD/../output/packages
+
+# Each composite app will be contained in its own deployment intent
+# group.  This is to enable instantiating the addons in a specified
+# order.
+CompositeApps:
+  addons:
+    Apps:
+    - kubevirt-operator
+    - cdi-operator
+    - multus-cni
+    - ovn4nfv
+    - node-feature-discovery
+    - sriov-network-operator
+    - qat-device-plugin
+    - cpu-manager
+  networks:
+    Apps:
+    - ovn4nfv-network
+    - sriov-network
+  kubevirt:
+    Apps:
+    - kubevirt
+    - cdi

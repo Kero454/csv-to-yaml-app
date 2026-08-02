@@ -1,0 +1,220 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2022 CMCC Corporation
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Default values for uui.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  tracing:
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0
+
+secrets:
+  - uid: pg-root-pass
+    name: &pgRootPassSecretName '{{ include "common.release" . }}-uui-pg-root-pass'
+    type: password
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgRootPasswordExternalSecret) .) (hasSuffix "uui-pg-root-pass" .Values.postgres.config.pgRootPasswordExternalSecret) }}'
+    password: '{{ .Values.postgres.config.pgRootpassword }}'
+    policy: generate
+  - uid: pg-user-creds
+    name: &pgUserCredsSecretName '{{ include "common.release" . }}-uui-pg-user-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgUserExternalSecret) .) (hasSuffix "uui-pg-user-creds" .Values.postgres.config.pgUserExternalSecret) }}'
+    login: '{{ .Values.postgres.config.pgUserName }}'
+    password: '{{ .Values.postgres.config.pgUserPassword }}'
+    passwordPolicy: generate
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+
+subChartsOnly:
+  enabled: true
+
+flavor: small
+
+# application image
+repository: nexus3.onap.org:10001
+image: onap/usecase-ui-server:16.0.1
+pullPolicy: Always
+revisionHistoryLimit: 1
+
+# application configuration
+
+msbaddr: msb-iag.{{include "common.namespace" .}}:80
+mraddr: message-router.{{include "common.namespace" .}}:3904
+aaiaddr: aai.{{include "common.namespace" .}}:80
+
+# application configuration override for postgres
+postgres:
+  nameOverride: &postgresName uui-server-postgres
+  service:
+    name: *postgresName
+    name2: uui-server-pg-primary
+    name3: uui-server-pg-replica
+  container:
+    name:
+      primary: uui-server-pg-primary
+      replica: uui-server-pg-replica
+  persistence:
+    mountSubPath: uui/uuiserver/data
+    mountInitPath: uui/uuiserver
+  config:
+    pgUserName: uui
+    pgDatabase: uuidb
+    pgUserExternalSecret: *pgUserCredsSecretName
+    pgRootPasswordExternalSecret: *pgRootPassSecretName
+
+
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+startup:
+  enabled: true
+  path: /actuator/health
+  periodSeconds: 1
+  failureThreshold: 60
+
+liveness:
+  # disable this for remote debugging
+  enabled: true
+  path: /actuator/health
+  periodSeconds: 10
+
+readiness:
+  path: /actuator/health/readiness
+  periodSeconds: 10
+
+service:
+  type: ClusterIP
+  name: uui-server
+  ports:
+    - name: http
+      port: 8082
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "uui-server-api"
+      name: "uui-server"
+      port: 8082
+
+##
+## Use this to override the global defaults
+tracing:
+# enabled: false
+  sampling: {}
+#   probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  #
+  # Example:
+  # Configure resource requests and limits
+  # ref: http://kubernetes.io/docs/user-guide/compute-resources/
+  # Minimum memory for development is 2 CPU cores and 4GB memory
+  # Minimum memory for production is 4 CPU cores and 8GB memory
+resources:
+  small:
+    limits:
+      cpu: "1.5"
+      memory: "2Gi"
+    requests:
+      cpu: "300m"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+  unlimited: {}
+
+serviceAccount:
+  nameOverride: uui-server
+  roles:
+    - read
+
+securityContext:
+  user_id: 100
+  group_id: 655533
+
+wait_for_job_container:
+  containers:
+    - '{{ include "common.name" . }}-job'
+
+# Annotations to control the execution and deletion of the job
+# Can be used to delete a job before an Upgrade
+#
+# jobAnnotations:
+#   # In case of an ArgoCD deployment this Hook deletes the job before syncing
+#   argocd.argoproj.io/hook: Sync
+#   argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+#
+#   # In case of an Helm/Flux deployment this Hook deletes the job
+#   # This is what defines this resource as a hook. Without this line, the
+#   # job is considered part of the release.
+#   "helm.sh/hook": "pre-upgrade,pre-rollback,post-install"
+#   "helm.sh/hook-delete-policy": "before-hook-creation"
+#   "helm.sh/hook-weight": "1"
+
+uuiServer:
+  basePath: /api/usecaseui-server/v1
+  client:
+    aai:
+      baseUrl: http://aai.onap
+      username: AAI
+      password: AAI
+      apiVersion: v29
+    so:
+      baseUrl: http://so.onap:8080
+      username: InfraPortalClient
+      password: password1$
+    sdc:
+      baseUrl: http://sdc-be:8080
+      username: aai
+      password: Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U
+  slicing:
+    serviceInvariantUuid: defaultServiceInvariantUuid
+    serviceUuid: defaultServiceUuid
+    globalSubscriberId: defaultGlobalSubscriberId
+    serviceType: defaultServiceType
+  ccvpn:
+    globalCustomerId: defaultGlobalCustomerId
+    serviceType: defaultServiceType
+    subscriberName: defaultSubscriberName
+    subscriberType: defaultSubscriberType

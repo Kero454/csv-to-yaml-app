@@ -1,0 +1,268 @@
+{{/*
+# Copyright © 2022 Nordix Foundation
+# Modifications Copyright © 2025 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: {{ include "common.fullname" . }}-controller
+  labels:
+    strimzi.io/cluster: {{ include "common.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  roles:
+    - controller
+  resources:
+    limits:
+      cpu: {{ .Values.controller.resources.limits.cpu }}
+      memory: {{ .Values.controller.resources.limits.memory }}
+    requests:
+      cpu: {{ .Values.controller.resources.requests.cpu }}
+      memory: {{ .Values.controller.resources.requests.memory }}
+  template:
+    pod:
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.controller.template.pod.securityContext | nindent 8 }}
+      {{- if .Values.affinity.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: strimzi.io/name
+                    operator: In
+                    values:
+                      - {{ include "common.fullname" . }}-controller
+              topologyKey: "kubernetes.io/hostname"
+      {{- end }}
+    kafkaContainer:
+      securityContext:
+        {{- toYaml .Values.controller.template.kafkaContainer.securityContext | nindent 10 }}
+  storage:
+    type: jbod
+    volumes:
+    - id: 0
+      type: persistent-claim
+      size: {{ .Values.persistence.controller.size }}
+      kraftMetadata: shared
+      deleteClaim: true
+      class: {{ include "common.storageClass" (dict "dot" . "suffix" "controller" "persistenceInfos" .Values.persistence.controller) }}
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: {{ include "common.fullname" . }}-broker
+  labels:
+    strimzi.io/cluster: {{ include "common.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  roles:
+    - broker
+  resources:
+    limits:
+      cpu: {{ .Values.broker.resources.limits.cpu }}
+      memory: {{ .Values.broker.resources.limits.memory }}
+    requests:
+      cpu: {{ .Values.broker.resources.requests.cpu }}
+      memory: {{ .Values.broker.resources.requests.memory }}
+  template:
+    pod:
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.broker.template.pod.securityContext | nindent 8 }}
+      {{- if .Values.affinity.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: strimzi.io/name
+                    operator: In
+                    values:
+                      - {{ include "common.fullname" . }}-broker
+              topologyKey: "kubernetes.io/hostname"
+      {{- end }}
+    kafkaContainer:
+      securityContext:
+        {{- toYaml .Values.broker.template.kafkaContainer.securityContext | nindent 8 }}
+  storage:
+    type: jbod
+    volumes:
+    - id: 0
+      type: persistent-claim
+      size: {{ .Values.persistence.broker.size }}
+      kraftMetadata: shared
+      deleteClaim: true
+      class: {{ include "common.storageClass" (dict "dot" . "suffix" "kafka" "persistenceInfos" .Values.persistence.broker) }}
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: {{ include "common.fullname" . }}
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: {{ .Values.config.kafkaVersion }}
+    {{- if .Values.config.kafkaMetadataVersion }}
+    metadataVersion: {{ .Values.config.kafkaMetadataVersion }}
+    {{- end }}
+    listeners:
+      - name: plain
+        port: {{ .Values.config.kafkaInternalPort }}
+        type: internal
+        tls: false
+        authentication:
+          type: {{ .Values.config.saslMechanism }}
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: tls
+      - name: external
+        port: 9094
+        type: {{ if (include "common.ingressEnabled" .) }}cluster-ip{{ else }}nodeport{{ end }}
+        tls: {{ if (include "common.ingressEnabled" .) }}false{{ else }}true{{ end }}
+        authentication:
+          type: {{ if (include "common.ingressEnabled" .) }}{{ .Values.config.saslMechanism }}{{ else }}tls{{ end }}
+        configuration:
+          {{- if not (include "common.ingressEnabled" .) }}
+          bootstrap:
+            nodePort: {{ .Values.global.nodePortPrefixExt }}93
+          {{- end }}
+          brokers:
+            - broker: 0
+              advertisedHost: {{ .Values.config.advertisedHost }}
+              advertisedPort: {{ .Values.config.advertizedPortBroker0 }}
+              {{- if not (include "common.ingressEnabled" .) }}
+              nodePort: {{ .Values.global.nodePortPrefixExt }}90
+              {{- end }}
+            - broker: 1
+              advertisedHost: {{ .Values.config.advertisedHost }}
+              advertisedPort: {{ .Values.config.advertizedPortBroker1 }}
+              {{- if not (include "common.ingressEnabled" .) }}
+              nodePort: {{ .Values.global.nodePortPrefixExt }}91
+              {{- end }}
+            - broker: 2
+              advertisedHost: {{ .Values.config.advertisedHost }}
+              advertisedPort: {{ .Values.config.advertizedPortBroker2 }}
+              {{- if not (include "common.ingressEnabled" .) }}
+              nodePort: {{ .Values.global.nodePortPrefixExt }}92
+              {{- end }}
+    authorization:
+      type: {{ .Values.config.authType }}
+      superUsers:
+        - {{ .Values.config.strimziKafkaAdminUser }}
+    config:
+      default.replication.factor: {{ .Values.replicaCount }}
+      min.insync.replicas: {{ (eq 1.0 (.Values.replicaCount)) | ternary 1 (sub .Values.replicaCount 1) }}
+      offsets.topic.replication.factor: {{ .Values.replicaCount }}
+      num.partitions: {{ mul .Values.replicaCount 2 }}
+      transaction.state.log.replication.factor: {{ .Values.replicaCount }}
+      transaction.state.log.min.isr: {{ (eq 1.0 (.Values.replicaCount)) | ternary 1 (sub .Values.replicaCount 1) }}
+      log.message.format.version: {{ .Values.config.kafkaVersion }}
+      inter.broker.protocol.version: {{ .Values.config.kafkaVersion }}
+      auto.create.topics.enable: {{ .Values.config.autoCreateTopics }}
+    {{- if .Values.metrics.kafkaExporter.enabled }}
+    metricsConfig:
+      type: {{ .Values.metrics.kafkaExporter.metricsConfig.type }}
+      valueFrom:
+        configMapKeyRef:
+          name: {{ include "common.fullname" . }}
+          key: kafka-metrics-config.yml
+    {{- end }}
+  entityOperator:
+    template:
+      pod:
+        {{- include "common.imagePullSecrets" . | nindent 8 }}
+        securityContext:
+          {{- toYaml .Values.entityOperator.template.pod.securityContext | nindent 10 }}
+      topicOperatorContainer:
+        securityContext:
+          {{- toYaml .Values.entityOperator.template.topicOperatorContainer.securityContext | nindent 10 }}
+      userOperatorContainer:
+        securityContext:
+          {{- toYaml .Values.entityOperator.template.userOperatorContainer.securityContext | nindent 10 }}
+    topicOperator:
+      resources:
+        limits:
+          cpu: {{ .Values.entityOperator.template.topicOperator.resources.limits.cpu }}
+          memory: {{ .Values.entityOperator.template.topicOperator.resources.limits.memory }}
+        requests:
+          cpu: {{ .Values.entityOperator.template.topicOperator.resources.requests.cpu }}
+          memory: {{ .Values.entityOperator.template.topicOperator.resources.requests.memory }}
+    userOperator:
+      resources:
+        limits:
+          cpu: {{ .Values.entityOperator.template.userOperator.resources.limits.cpu }}
+          memory: {{ .Values.entityOperator.template.userOperator.resources.limits.memory }}
+        requests:
+          cpu: {{ .Values.entityOperator.template.userOperator.resources.requests.cpu }}
+          memory: {{ .Values.entityOperator.template.userOperator.resources.requests.memory }}
+  {{- if .Values.cruiseControl.enabled }}
+  cruiseControl:
+    template:
+      pod:
+        {{- include "common.imagePullSecrets" . | nindent 8 }}
+        securityContext:
+          {{- toYaml .Values.cruiseControl.template.pod.securityContext | nindent 10 }}
+      cruiseControlContainer:
+        securityContext:
+          {{- toYaml .Values.cruiseControl.template.cruiseControlContainer.securityContext | nindent 10 }}
+    metricsConfig:
+      type: {{ .Values.cruiseControl.metricsConfig.type }}
+      valueFrom:
+        configMapKeyRef:
+          name: {{ include "common.fullname" . }}
+          key: cruisecontrol-metrics-config.yml
+    resources:
+      limits:
+        cpu: {{ .Values.cruiseControl.template.resources.limits.cpu }}
+        memory: {{ .Values.cruiseControl.template.resources.limits.memory }}
+      requests:
+        cpu: {{ .Values.cruiseControl.template.resources.requests.cpu }}
+        memory: {{ .Values.cruiseControl.template.resources.requests.memory }}
+  {{- end }}
+  {{- if .Values.metrics.kafkaExporter.enabled }}
+  kafkaExporter:
+    template:
+      pod:
+        {{- include "common.imagePullSecrets" . | nindent 8 }}
+        securityContext:
+          {{- toYaml .Values.cruiseControl.template.pod.securityContext | nindent 10 }}
+      container:
+        securityContext:
+          {{- toYaml .Values.kafkaExporter.template.container.securityContext | nindent 10 }}
+    topicRegex: {{ .Values.metrics.kafkaExporter.topicRegex }}
+    groupRegex: {{ .Values.metrics.kafkaExporter.groupRegex }}
+    resources:
+      requests:
+        cpu: {{ .Values.metrics.kafkaExporter.resources.requests.cpu }}
+        memory: {{ .Values.metrics.kafkaExporter.resources.requests.memory }}
+      limits:
+        cpu: {{ .Values.metrics.kafkaExporter.resources.limits.cpu }}
+        memory: {{ .Values.metrics.kafkaExporter.resources.limits.memory }}
+    logging: {{ .Values.metrics.kafkaExporter.logging }}
+    enableSaramaLogging: {{ .Values.metrics.kafkaExporter.enableSaramaLogging }}
+    readinessProbe:
+      initialDelaySeconds: {{ .Values.metrics.kafkaExporter.readinessProbe.initialDelaySeconds }}
+      timeoutSeconds: {{ .Values.metrics.kafkaExporter.readinessProbe.timeoutSeconds }}
+    livenessProbe:
+      initialDelaySeconds: {{ .Values.metrics.kafkaExporter.livenessProbe.initialDelaySeconds }}
+      timeoutSeconds: {{ .Values.metrics.kafkaExporter.livenessProbe.timeoutSeconds }}
+  {{- end }}

@@ -1,0 +1,154 @@
+# Copyright © 2022, Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+global:
+  env:
+    KEYCLOAK_URL: http://keycloak-http.keycloak
+    KEYCLOAK_REALM: onap
+  ingress:
+    virtualhost:
+      # Default Ingress base URL
+      # can be overwritten in component by setting ingress.baseurlOverride
+      baseurl: "simpledemo.onap.org"
+      # prefix for baseaddr
+      # can be overwritten in component by setting ingress.preaddrOverride
+      preaddr: ""
+      # postfix for baseaddr
+      # can be overwritten in component by setting ingress.postaddrOverride
+      postaddr: ""
+
+# Default values for ui.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+image:
+  imageName: onap/portal-ng/ui
+  pullPolicy: Always
+  # Overrides the image tag whose default value is the chart appVersion.
+  # tag: 0.1.0
+
+replicaCount: 1
+
+# Specifies how many old replicas will be retained in a deployment
+revisionHistoryLimit: 2
+
+nameOverride: ""
+fullnameOverride: ""
+# This is the overall name on which this component is ar part of.
+partOf: portal
+
+service:
+  type: ClusterIP
+  internalPort: 8080
+  ports:
+    - name: http
+      port: 8080
+      port_protocol: http
+
+ingress:
+  enabled: true
+  service:
+    - baseaddr: "portal-ng-ui"
+      name: "portal-ng-ui"
+      port: 8080
+  config:
+    ssl: "redirect"
+
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+  unlimited: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+probes:
+  # Configuration of the startup probe that
+  # runs before readiness and liveness probe.
+  startup:
+    ## Number of consecutive failures allowed before marking probe as failed.
+    failureThreshold: 90
+    ## check interval of probe.
+    periodSeconds: 1
+  # Configuration of the readiness probe to check
+  # if the container is ready to accept traffic.
+  readiness:
+    ## Number of consecutive failures allowed before marking probe as failed.
+    failureThreshold: 4
+  # Configuration of the liveness probe to check if the container is alive.
+  liveness:
+    ## Number of consecutive failures allowed before marking probe as failed.
+    failureThreshold: 4
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+env:
+  NAME_SERVER: coredns.kube-system
+  BFF_URL: http://portal-ng-bff.onap.svc.cluster.local:9080
+  NGINX_PORT: 8080
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: portal-ng-ui
+  roles:
+    - read
+
+nginx:
+  tilesPath: /usr/share/nginx/html/assets/tiles/tiles.json
+  tilesIconsPath: /usr/share/nginx/html/assets/images/tiles
+
+tiles:
+  SDC_URL: "sdc-fe-ui"
+  POLICY_URL: "policy-ui"
+  SO_URL: "so-admin-cockpit-ui"
+  CDS_URL: "cds-ui"
+  HOLMES_URL: "holmes-rule-mgmt-ui"
+  AAI_URL: "aai-sparkybe-api"
+  SDNCDG_URL: "sdnc-dgbuilder-ui"
+  SDNCODL_URL: "sdnc-web-ui"
+
+acl:
+  portal_admin:
+    - users.administration.list
+    - users.administration.detail
+    - users.administration.create
+    - users.administration.edit
+    - users.administration.delete
+    - dashboard.tile.USER_LAST_ACTION_TILE
+  portal_operator:
+    - dashboard.tile.USER_LAST_ACTION_TILE
+  portal_designer:
+    - dashboard.tile.USER_LAST_ACTION_TILE
+
+securityContext:
+  user_id: 101
+  group_id: 101

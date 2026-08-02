@@ -1,0 +1,136 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T, ZTE
+# Modifications Copyright © 2021 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+global:
+  persistence: {}
+  secrets:
+    sdc_user: YXNkY191c2Vy
+    sdc_password: QWExMjM0JV4h
+    #Should be the password of shared cassandra instance/chart
+    cs_password: Y2Fzc2FuZHJh
+    cs_truststore_password: XS5dW3hndHplXWhCaHoqd3ldfW0jbGYq
+    truststore_password: eitLRWo7dCssS05eaWltU2lTODllI3Aw
+    keystore_password: PyhrUCFZdXIhWyohWTUhRV5mKFpLYzMx
+    wf_external_user_password: S3A4Yko0U1hzek0wV1hsaGFrM2VIbGNzZTJnQXc4NHZhb0dHbUp2VXkyVQ==
+  sdc_cassandra:
+    #This flag allows SDC to instantiate its own cluster, serviceName
+    #should be "sdc-cs" if this flag is enabled
+    localCluster: false
+    #Cassandra login details
+    username: cassandra
+    password: cassandra
+    #The cassandra service name to connect to (default: shared cassandra service)
+    #in case of using k8ssandra-operator in the common cassandra installation
+    #the service name is:
+    serviceName: cassandra-dc1-service
+    #in case the older cassandra installation is used:
+    #serviceName: cassandra
+    #Shared cassandra cluster replicaCount, should be changed if localCluster is enabled
+    #to match with its own cluster replica
+    #see "cassandra: replicaCount" in file sdc-cs/values.yaml
+    dbCache: true
+    readConsistencyLevel: ONE
+    writeConsistencyLevel: ALL
+    clusterName: cassandra
+    #datacenter name (use "dc1" in case of k8ssandra-operator, otherwise "Pod")
+    replicaCount: 3
+    dataCenter: dc1
+    rc1: 1
+    #cqlVersion for cassandra 3.11.* must be "3.4.4" and cassandra 4.0.* must be "3.4.5"
+    #and cassandra 4.1.* must be "3.4.6"
+    cqlVersion: "3.4.6"
+
+  BE:
+    http_port: 8080
+    https_port: 8443
+
+  centralizedLoggingEnabled: true
+  # global Kafka config passed to sdc-be chart
+  kafka:
+    # If true, the following Strimzi KafkaTopics will be created
+    useKafka: true
+    topics:
+      sdcDistNotifTopic: &notif-topic-name SDC-DISTR-NOTIF-TOPIC
+      sdcDistStatusTopic: &status-topic-name SDC-DISTR-STATUS-TOPIC
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+# Environment file
+env:
+  name: &env AUTO
+
+kafkaTopic:
+  - name: *notif-topic-name
+    suffix: *env
+  - name: *status-topic-name
+    suffix: *env
+
+sdc-be:
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-sdc'
+sdc-fe:
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-sdc'
+sdc-onboarding-be:
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-sdc'
+sdc-wfd-fe:
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-sdc'
+
+config:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+  environment:
+    workflowUrl: 10.0.2.15
+    vnfRepoPort: 8703
+
+# dependency / sub-chart configuration
+sdc-wfd:
+  enabled: true
+sdcHelmValidator:
+  enabled: true
+  helmVersion: 3.5.2
+  deployable: true
+  lintable: false
+  strictLintable: false
+  url: http://sdc-helm-validator:8080/validate
+
+ONBOARDING_BE:
+  http_port: 8081
+  https_port: 8445
+  catalog_notification_url: "%s://%s:%s/sdc2/rest/v1/catalog/notif/vsp/"
+cassandra:
+  cassandra_port: 9042
+  concurrent_reads: 32
+  num_tokens: 256
+  data_dir: /var/lib/cassandra/data
+  hinted_handoff_enabled: true
+  cassandra_user: asdc_user
+  cassandra_password: Aa1234%^!
+  concurrent_writes: 32
+  multithreaded_compaction: false
+  cache_dir: "/var/lib/cassandra/saved_caches"
+  log_file: "/var/lib/cassandra/log/system.log"
+  phi_convict_threshold: 8
+  commitlog_dir: "/var/lib/cassandra/commitlog"
+  socket_read_timeout: 20000
+  socket_connect_timeout: 20000
+  janusgraph_connection_timeout: 10000

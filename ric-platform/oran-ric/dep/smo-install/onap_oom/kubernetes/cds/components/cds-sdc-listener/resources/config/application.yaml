@@ -1,0 +1,45 @@
+listenerservice:
+  config:
+    sdcAddress: sdc-be.{{include "common.namespace" .}}:8080 #SDC-BE
+    messageBusAddress: message-router.{{include "common.namespace" .}} #Message-Router
+    user: cds #SDC-username
+    password: Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U #SDC-password
+    pollingInterval: 15
+    pollingTimeout: 60
+    relevantArtifactTypes: TOSCA_CSAR
+    consumerGroup: {{ (first .Values.kafkaUser.acls).name }}
+    consumerId: {{ (first .Values.kafkaUser.acls).name }}-sdc-listener
+    environmentName: AUTO
+    keyStorePassword:
+    keyStorePath:
+    activateServerTLSAuth : false
+    isUseHttpsWithSDC: false
+    archivePath: /opt/app/onap/sdc-listener/
+    grpcAddress: cds-blueprints-processor-grpc
+    grpcPort: 9111
+    authHeader: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+    httpsProxyHost:
+    httpProxyHost:
+    httpsProxyPort: 0
+    httpProxyPort: 0
+
+cdslistener:
+  healthcheck:
+    baseUrl: http://localhost:9000/
+    mapping-service-name-with-service-link: "[SDC Listener service,/api/v1/sdclistener/healthcheck]"
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+endpoints:
+  user:
+    name: eHbVUbJAj4AG2522cSbrOQ==
+    password: eHbVUbJAj4AG2522cSbrOQ==

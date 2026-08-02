@@ -1,0 +1,461 @@
+# Copyright © 2018 AT&T USA
+# Copyright © 2020 Huawei
+# Copyright © 2021 Orange
+# Copyright © 2024 Deutsche Telekom Intellectual Property. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  centralizedLoggingEnabled: true
+  mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    nameOverride: mariadb-galera
+    servicePort: '3306'
+    service: mariadb-galera
+    internalPort: '3306'
+    # This flag allows SO to instantiate its own mariadb-galera cluster,
+    # serviceName and nameOverride should be so-mariadb-galera if this flag is enabled
+    localCluster: false
+    # (optional) if localCluster=false and an external secret is used set this variable
+    #userRootSecret: <secretName>
+  persistence:
+    mountPath: /dockerdata-nfs
+  #This configuration specifies Service and port for SDNC OAM interface
+  sdncOamService: sdnc-oam
+  sdncOamPort: 8282
+  #This configuration will run the migration. The configurations are for backing up the data
+  #from DB and then restoring it to the present versions preferred DB.
+  migration:
+    enabled: false
+    dbHost: mariadb-galera
+    dbPort: 3306
+    dbUser: root
+    dbPassword: secretpassword
+    # dbCredsExternalSecret: some secret
+  app:
+    siteName: onapheat
+    auth: 3EDC974C5CD7FE54C47C7490AF4D3B474CDD7D0FFA35A7ACDE3E209631E45F428976EAC0858874F17390A13149E63C90281DD8D20456
+    defaultCloudOwner: onap
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+  so:
+    auth:
+      enabled: true
+      rbacEnabled: false
+
+readinessCheck:
+  wait_for:
+    jobs:
+      - '{{ include "common.release" . }}-so-mariadb-config-job'
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: db-root-pass
+    name: &dbRootPassSecretName '{{ include "common.release" . }}-so-db-root-pass'
+    type: password
+    # If we're using shared mariadb, we need to use the secret name (second
+    # part).
+    # If not, we do the same trick than for user db secret hat allows you
+    # override this secret using external one with the same field that is used
+    # to pass this to subchart.
+    externalSecret: '{{ .Values.global.mariadbGalera.localCluster |
+      ternary (( hasSuffix "so-db-root-pass" (index .Values "mariadb-galera" "rootUser" "externalSecret")) |
+               ternary
+                  ""
+                  (tpl (default "" (index .Values "mariadb-galera" "rootUser" "externalSecret")) .)
+               )
+               ( (not (empty (default "" .Values.global.mariadbGalera.userRootSecret))) |
+                 ternary
+                   .Values.global.mariadbGalera.userRootSecret
+                   (include "common.mariadb.secret.rootPassSecretName"
+                     (dict "dot" . "chartName" .Values.global.mariadbGalera.nameOverride)
+                   )
+               ) }}'
+    password: '{{ .Values.global.mariadbGalera.mariadbRootpassword }}'
+  - uid: db-backup-creds
+    name: &dbBackupCredsSecretName '{{ include "common.release" . }}-so-db-backup-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary .Values.global.migration.dbCredsExternalSecret "migrationDisabled" .Values.global.migration.enabled }}'
+    login: '{{ ternary .Values.global.migration.dbUser "migrationDisabled" .Values.global.migration.enabled }}'
+    password: '{{ ternary .Values.global.migration.dbPassword "migrationDisabled" .Values.global.migration.enabled }}'
+    passwordPolicy: required
+    annotations:
+      helm.sh/hook: pre-upgrade,pre-install
+      helm.sh/hook-weight: '0'
+      helm.sh/hook-delete-policy: before-hook-creation
+  - uid: db-user-creds
+    name: &dbUserCredsSecretName '{{ include "common.release" . }}-so-db-user-creds'
+    type: basicAuth
+    externalSecret: '{{ .Values.dbCreds.userCredsExternalSecret }}'
+    login: '{{ .Values.dbCreds.userName }}'
+    password: '{{ .Values.dbCreds.userPassword }}'
+    passwordPolicy: generate
+  - uid: db-admin-creds
+    name: &dbAdminCredsSecretName '{{ include "common.release" . }}-so-db-admin-creds'
+    type: basicAuth
+    externalSecret: '{{ .Values.dbCreds.adminCredsExternalSecret }}'
+    login: '{{ .Values.dbCreds.adminName }}'
+    password: '{{ .Values.dbCreds.adminPassword }}'
+    passwordPolicy: generate
+  - uid: 'mso-key'
+    name: &mso-key '{{ include "common.release" . }}-mso-key'
+    type: password
+    password: '{{ .Values.mso.msoKey }}'
+  - uid: mso-oof-auth
+    name: &mso-oof-auth '{{ include "common.release" . }}-mso-oof-auth'
+    type: basicAuth
+    login: '{{ .Values.mso.oof.login }}'
+    password: '{{ .Values.mso.oof.password }}'
+    passwordPolicy: required
+  - uid: server-actuator-creds
+    name: &actuator-secrets '{{ include "common.release" . }}-so-server-actuator-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.server.actuatorCredsExternalSecret) . }}'
+    login: '{{ .Values.server.actuator.username }}'
+    password: '{{ .Values.server.actuator.password }}'
+    passwordPolicy: required
+  - uid: server-bpel-creds
+    name: &bpel-secrets '{{ include "common.release" . }}-so-server-bpel-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.server.bpelCredsExternalSecret) . }}'
+    login: '{{ .Values.server.bpel.username }}'
+    password: '{{ .Values.server.bpel.password }}'
+    passwordPolicy: required
+  - uid: so-aai-creds
+    name: &aai-secrets '{{ include "common.release" . }}-so-server-aai-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.server.aaiCredsExternalSecret) . }}'
+    login: '{{ .Values.server.aai.username }}'
+    password: '{{ .Values.server.aai.password }}'
+    passwordPolicy: required
+
+##################################################################
+# Application configuration defaults.
+#################################################################
+
+dbSecrets: &dbSecrets
+  userCredsExternalSecret: *dbUserCredsSecretName
+  adminCredsExternalSecret: *dbAdminCredsSecretName
+
+# unused in this, just to pass to subcharts
+dbCreds:
+  userName: so_user
+  adminName: so_admin
+
+image: onap/so/api-handler-infra:1.15.6
+
+server:
+  aai:
+    username: aai@aai.onap.org
+    password: demo123456!
+  # aaiCredsExternalSecret: some secret
+  actuator:
+    username: mso_admin
+    password: password1$
+  # actuatorCredsExternalSecret: some secret
+  bpel:
+    username: bpel
+    password: password1$
+  # bpelCredsExternalSecret: some secret
+
+pullPolicy: Always
+replicaCount: 1
+minReadySeconds: 10
+containerPort: &containerPort 8080
+logPath: ./logs/apih/
+app: api-handler-infra
+service:
+  type: NodePort
+  internalPort: *containerPort
+  ports:
+    - name: http
+      port: *containerPort
+      nodePort: '77'
+
+updateStrategy:
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
+
+################################################################
+# soHelpers part
+#################################################################
+soHelpers:
+  containerPort: *containerPort
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1500m"
+      memory: "4Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+  unlimited: {}
+
+nodeSelector: {}
+affinity: {}
+
+# application configuration
+config:
+  logstashServiceName: log-ls
+  logstashPort: 5044
+  # "KEYSTONE" for keystone v2, "KEYSTONE_V3" for keystone v3
+  openStackKeystoneVersion: "KEYSTONE"
+
+#Used only if localCluster is enabled. Instantiates SO's own cassandra cluster
+#helm deploy demo local/onap --namespace onap --verbose --set so.enabled=true \
+#                                                       --set so.global.mariadbGalera.localCluster=true \
+#                                                       --set so.global.mariadbGalera.nameOverride=so-mariadb-galera \
+#                                                       --set so.global.mariadbGalera.serviceName=so-mariadb-galera
+mariadb-galera: &mariadbGalera
+  rootUser:
+    externalSecret: *dbRootPassSecretName
+  nameOverride: &so-mariadb so-mariadb-galera
+  replicaCount: 1
+  service:
+    name: *so-mariadb
+    portName: *so-mariadb
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
+  persistence:
+    mountSubPath: so/mariadb-galera/data
+    enabled: true
+  serviceAccount:
+    nameOverride: *so-mariadb
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: 'so-api'
+      name: 'so'
+      port: 8080
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: consul-read
+      - serviceAccount: consul-server-read
+      - serviceAccount: nbi-read
+      - serviceAccount: policy-drools-pdp-read
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: robot-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+
+mso:
+  adapters:
+    requestDb:
+      auth: Basic YnBlbDpwYXNzd29yZDEk
+  camundaAuth: AE2E9BE6EF9249085AF98689C4EE087736A5500629A72F35068FFB88813A023581DD6E765071F1C04075B36EA4213A
+  msoKey: 07a7159d3bf51a0e53be7a8f89699be7
+  sdc:
+    client:
+      auth: 878785F4F31BC9CFA5AB52A172008212D8845ED2DE08AD5E56AF114720A4E49768B8F95CDA2EB971765D28EDCDAA24
+  aai:
+    auth: 6E081E10B1CA43A843E303733A74D9B23B601A6E22A21C7EF2C7F15A42F81A1A4E85E65268C2661F71321052C7F3E55B96A8E1E951F8BF6F
+  oof:
+    login: test
+    password: testpwd
+  so:
+    operationalEnv:
+      dmaap:
+        auth: 51EA5414022D7BE536E7516C4D1A6361416921849B72C0D6FC1C7F262FD9F2BBC2AD124190A332D9845A188AD80955567A4F975C84C221EEA8243BFD92FFE6896CDD1EA16ADD34E1E3D47D4A
+  health:
+    auth: basic bXNvX2FkbWlufHBhc3N3b3JkMSQ=
+
+so-bpmn-infra:
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-so'
+
+so-catalog-db-adapter:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-cnf-adapter:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+  server:
+    aaiCredsExternalSecret: *aai-secrets
+    actuatorCredsExternalSecret: *actuator-secrets
+  mso:
+    msoKeySecret: *mso-key
+
+so-cnfm-lcm:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-etsi-nfvo-ns-lcm:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-mariadb:
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    rootPasswordExternalSecretLocalDb: *dbRootPassSecretName
+    #rootPasswordExternalSecretLocalDb: *dbRootPassSecretName
+    rootPasswordExternalSecret: '{{ .Values.global.mariadbGalera.localCluster |
+      ternary (tpl .Values.db.rootPasswordExternalSecretLocalDb .)
+               ( (not (empty (default "" .Values.global.mariadbGalera.userRootSecret))) |
+                 ternary
+                   .Values.global.mariadbGalera.userRootSecret
+                   (include "common.mariadb.secret.rootPassSecretName"
+                     (dict "dot" . "chartName" .Values.global.mariadbGalera.nameOverride)
+                   )
+               ) }}'
+    backupCredsExternalSecret: *dbBackupCredsSecretName
+    userCredsExternalSecret: *dbUserCredsSecretName
+    adminCredsExternalSecret: *dbAdminCredsSecretName
+
+so-admin-cockpit:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-nssmf-adapter:
+  enabled: true
+  server:
+    actuatorCredsExternalSecret: *actuator-secrets
+    bpelCredsExternalSecret: *bpel-secrets
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-oof-adapter:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+  mso:
+    msoKeySecret: *mso-key
+    camundaAuth: AE2E9BE6EF9249085AF98689C4EE087736A5500629A72F35068FFB88813A023581DD6E765071F1C04075B36EA4213A
+    oof:
+      authSecret: *mso-oof-auth
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-so'
+
+so-openstack-adapter:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-so'
+
+so-request-db-adapter:
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-sdc-controller:
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-so'
+
+so-sdnc-adapter:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+  mso:
+    msoKeySecret: *mso-key
+  logConfigMapNamePrefix: '{{ include "common.release" . }}-so'
+
+so-ve-vnfm-adapter:
+  enabled: false
+
+so-etsi-sol005-adapter:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+  db:
+    <<: *dbSecrets
+
+so-etsi-sol003-adapter:
+  enabled: true
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: so
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap
+  level:
+    root: DEBUG
+
+podAnnotations:
+  # disable istio-based tracing
+  proxy.istio.io/config: |
+    tracing:
+      sampling: 0
+
+tracing:
+  skipPatterns:
+    - /actuator/health/*
+  scheduled:
+    skipClasses:
+      - ScheduledDnsLookup
+      - ExternalTaskServiceUtils

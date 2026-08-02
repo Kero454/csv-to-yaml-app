@@ -1,0 +1,139 @@
+{{/*
+# Copyright © 2018 Amdocs, AT&T
+# Modifications Copyright © 2018 Bell Canada
+# Modifications Copyright © 2020,2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" (dict "annotations" .Values.annotations "dot" .) | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  {{- if .Values.debug.enabled }}
+  replicas: 1
+  {{- else }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if (eq "RollingUpdate" .Values.updateStrategy.type) }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+    {{- end }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+          ports:
+            {{- if .Values.debug.enabled }}
+            - containerPort: {{ .Values.debug.port }}
+              name: {{ .Values.debug.portName }}
+            {{- end }}
+            {{- if .Values.profiling.enabled }}
+            - containerPort: {{ .Values.profiling.port }}
+              name: {{ .Values.profiling.portName }}
+            {{- end }}
+            {{ include "common.containerPorts" . | nindent 12  }}
+          # disable liveness probe when
+          # debugging.enabled=true or profiling.enabled=true
+          {{- if and .Values.liveness.enabled (not (or .Values.debug.enabled .Values.profiling.enabled)) }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+          {{ end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+          env:
+            - name: KEY_STORE_PASSWORD
+              value: NotUsed
+            - name: CONFIG_HOME
+              value: /opt/app/babel/config
+            {{- if .Values.profiling.enabled }}
+            - name: JVM_OPTS
+              value: '{{ join " " .Values.profiling.args }}'
+            {{- end }}
+            {{- if .Values.debug.enabled }}
+            - name: JVM_OPTS
+              value: {{ .Values.debug.args | quote }}
+            {{- end }}
+          volumeMounts:
+          - mountPath: /opt/app/babel/config/application.properties
+            name: config
+            subPath: application.properties
+          - mountPath: /opt/app/babel/config/artifact-generator.properties
+            name: config
+            subPath: artifact-generator.properties
+          - mountPath: /opt/app/babel/config/tosca-mappings.json
+            name: config
+            subPath: tosca-mappings.json
+          - mountPath: /opt/app/babel/config/babel-auth.properties
+            name: config
+            subPath: babel-auth.properties
+          - mountPath: /opt/app/babel/config/auth
+            name: secrets
+          - mountPath: {{ .Values.log.path }}
+            name: logs
+          - mountPath: /opt/app/babel/config/logback.xml
+            name: config
+            subPath: logback.xml
+          - mountPath: /opt/app/babel/logs
+            name: babel-logs
+          - mountPath: /tmp
+            name: tmp
+          resources: {{ include "common.resources" . | nindent 12 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end -}}
+      {{- if .Values.affinity }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+      {{- end }}
+
+        # side car containers
+      {{ include "common.log.sidecar" . | nindent 8 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "common.fullname" . }}-configmap
+        - name: secrets
+          secret:
+            secretName: {{ include "common.fullname" . }}-babel-secrets
+        - name: logs
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.artifactDataSizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.tmpSizeLimit }}
+        - name: babel-logs
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.babelLogsSizeLimit }}
+        {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 8 }}
+
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

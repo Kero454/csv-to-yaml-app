@@ -1,0 +1,153 @@
+# Copyright © 2020 Samsung Electronics
+# Copyright © 2019 Orange, Bell Canada
+# Copyright © 2017 Amdocs, Bell Canada
+# Modification Copyright © 2022-2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  persistence:
+    mountPath: /dockerdata-nfs
+  mariadbGalera: &mariadbGalera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows NBI to instantiate its own mariadb-galera cluster
+    #When changing it to "true", also set "globalCluster: false"
+    #as the dependency check will not work otherwise (Chart.yaml)
+    localCluster: true
+    globalCluster: false
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+    # (optional) if localCluster=false and an external secret is used set this variable
+    #userRootSecret: <secretName>
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - name: &dbUserSecretName '{{ include "common.release" . }}-cds-db-secret'
+    uid: 'cds-db-secret'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" (index .Values "mariadb-galera" "db" "externalSecret")) .) (hasSuffix "cds-db-secret" (index .Values "mariadb-galera" "db" "externalSecret"))}}'
+    login: '{{ index .Values "mariadb-galera" "db" "user" }}'
+    password: '{{ index .Values "mariadb-galera" "db" "password" }}'
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application images
+pullPolicy: Always
+
+subChartsOnly:
+  enabled: true
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 20
+  periodSeconds: 20
+  timeoutSeconds: 20
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+ingress:
+  enabled: false
+
+mariadb-galera:
+  db:
+    user: sdnctl
+    # password:
+    externalSecret: *dbUserSecretName
+    name: &mysqlDbName sdnctl
+  nameOverride: &dbServer cds-db
+  replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
+  persistence:
+    enabled: true
+    mountSubPath: cds/data
+  serviceAccount:
+    nameOverride: *dbServer
+
+cds-blueprints-processor:
+  enabled: true
+  config:
+    cdsDB:
+      dbServer: *dbServer
+      dbPort: 3306
+      dbName: *mysqlDbName
+      dbCredsExternalSecret: *dbUserSecretName
+
+cds-command-executor:
+  enabled: true
+
+cds-py-executor:
+  enabled: true
+
+cds-sdc-listener:
+  enabled: true
+
+cds-ui:
+  enabled: true
+
+#Resource Limit flavor -By Default using small
+flavor: small
+#segregation for different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+  unlimited: {}

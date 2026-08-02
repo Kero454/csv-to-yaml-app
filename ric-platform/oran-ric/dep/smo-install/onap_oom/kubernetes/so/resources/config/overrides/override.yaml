@@ -1,0 +1,144 @@
+aai:
+  endpoint: http://aai.{{ include "common.namespace" . }}:80
+  auth: {{ .Values.mso.aai.auth }}
+server:
+    port: {{ index .Values.containerPort }}
+    tomcat:
+        max-threads: 50
+ssl-enable: false
+mso:
+  msoKey: {{ .Values.mso.msoKey }}
+  logPath: ./logs/apih
+  site-name: {{ index .Values.global.app.siteName }}
+  adapters:
+    requestDb:
+      endpoint: http://so-request-db-adapter.{{ include "common.namespace" . }}:8083
+      auth: {{ .Values.mso.adapters.requestDb.auth }}
+  catalog:
+    db:
+      spring:
+        endpoint: http://so-catalog-db-adapter.{{ include "common.namespace" . }}:8082
+  db:
+    auth: {{ .Values.mso.adapters.requestDb.auth }}
+  config:
+    path: /src/main/resources/
+  infra:
+    default:
+      alacarte:
+        orchestrationUri: /mso/async/services/ALaCarteOrchestrator
+        recipeTimeout: 180
+        testApi: VNF_API
+      service:
+        macro:
+          default:
+            testApi: GR_API
+  camundaURL: http://so-bpmn-infra.{{ include "common.namespace" . }}:8081/
+  camundaAuth: {{ .Values.mso.camundaAuth }}
+  async:
+    core-pool-size: 50
+    max-pool-size: 50
+    queue-capacity: 500
+  sdc:
+    client:
+      auth: {{ .Values.mso.sdc.client.auth }}
+    activate:
+      instanceid: test
+      userid: cs0008
+    endpoint: http://sdc-be.{{ include "common.namespace" . }}:8080
+  tenant:
+    isolation:
+      retry:
+        count: 3
+  aai:
+    endpoint: http://aai.{{ include "common.namespace" . }}:80
+    auth: {{ .Values.mso.aai.auth }}
+
+  extApi:
+    endpoint: http://nbi.onap:8080/nbi/api/v3
+  so:
+    operational-environment:
+      dmaap:
+        username: testuser
+        password: VjR5NDcxSzA=
+        host: http://dmaap-bc.{{ include "common.namespace" . }}:8080
+        auth: {{ .Values.mso.so.operationalEnv.dmaap.auth }}
+      publisher:
+        topic: com.att.ecomp.mso.operationalEnvironmentEvent
+  health:
+    auth: {{ .Values.mso.health.auth }}
+    endpoints:
+      - subsystem: apih
+        uri: http://so-bpmn-infra:8081
+      - subsystem: catalogdb
+        uri: http://so-catalog-db-adapter:8082
+spring:
+  application:
+    name: so-api-handler-infra
+  datasource:
+    hikari:
+      jdbcUrl: jdbc:mariadb://${DB_HOST}:${DB_PORT}/catalogdb
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: org.mariadb.jdbc.Driver
+      pool-name: catdb-pool
+      registerMbeans: true
+  jersey:
+    type: filter
+  security:
+    rbacEnabled: {{ .Values.global.so.auth.rbacEnabled }}
+    usercredentials:
+    -
+      username: sitecontrol
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: SiteControl-Client
+    -
+      username: gui
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: GUI-Client
+    -
+      username: infraportal
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: InfraPortal-Client
+    -
+      username: InfraPortalClient
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: InfraPortal-Client
+    -
+      username: bpel
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: BPEL-Client
+    -
+      username: mso_admin
+      password: '$2a$10$Fh9ffgPw2vnmsghsRD3ZauBL1aKXebigbq3BB1RPWtE62UDILsjke'
+      role: ACTUATOR
+  sleuth:
+    enabled: {{ .Values.global.tracing.enabled }}
+    messaging:
+      jms:
+        enabled: false
+    trace-id128: true
+    sampler:
+      probability: {{ .Values.global.tracing.sampling.probability }}
+    supports-join: false
+    web:
+      skip-pattern: {{ join "," .Values.tracing.skipPatterns }}
+    scheduled:
+      skip-pattern: .*({{ join "|" .Values.tracing.scheduled.skipClasses }})
+  zipkin:
+    base-url: {{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.zipkin }}
+request:
+  datasource:
+    hikari:
+      jdbcUrl: jdbc:mariadb://${DB_HOST}:${DB_PORT}/requestdb
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: org.mariadb.jdbc.Driver
+      pool-name: reqdb-pool
+      registerMbeans: true
+org:
+  onap:
+    so:
+      cloud-owner: CloudOwner
+      adapters:
+        network:
+          encryptionKey: {{ .Values.mso.msoKey }}

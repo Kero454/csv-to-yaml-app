@@ -1,0 +1,496 @@
+{{/*
+# Copyright © 2020 Samsung Electronics
+# Copyright © 2017 Amdocs, Bell Canada
+# Copyright © 2021 Nokia
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  serviceName: {{ include "common.servicename" . }}-cluster
+  podManagementPolicy: Parallel
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      initContainers:
+      - command:
+        - sh
+        args:
+        - -c
+        - "cd /config-input && for PFILE in `ls -1 .`; do envsubst <${PFILE} >/config/${PFILE}; done"
+        env:
+        - name: AAI_CLIENT_NAME
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "aai-user-creds" "key" "login") | indent 10 }}
+        - name: AAI_CLIENT_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "aai-user-creds" "key" "password") | indent 10 }}
+        - name: AAI_TRUSTSTORE_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "aai-truststore-password" "key" "password") | indent 10 }}
+        - name: ANSIBLE_TRUSTSTORE_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ansible-truststore-password" "key" "password") | indent 10 }}
+        - name: SO_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "so-user-creds" "key" "login") | indent 10 }}
+        - name: SO_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "so-user-creds" "key" "password") | indent 10 }}
+        - name: NENG_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "neng-user-creds" "key" "login") | indent 10 }}
+        - name: NENG_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "neng-user-creds" "key" "password") | indent 10 }}
+        - name: CDS_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "cds-user-creds" "key" "login") | indent 10 }}
+        - name: CDS_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "cds-user-creds" "key" "password") | indent 10 }}
+        - name: HONEYCOMB_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "honeycomb-user-creds" "key" "login") | indent 10 }}
+        - name: HONEYCOMB_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "honeycomb-user-creds" "key" "password") | indent 10 }}
+        - name: TRUSTSTORE_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "truststore-password" "key" "password") | indent 10 }}
+        - name: KEYSTORE_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keystore-password" "key" "password") | indent 10 }}
+        - name: DMAAP_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-user-creds" "key" "login") | indent 10 }}
+        - name: DMAAP_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-user-creds" "key" "password") | indent 10 }}
+        - name: DMAAP_AUTHKEY
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-authkey" "key" "password") | indent 10 }}
+        - name: MODELSERVICE_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "modeling-user-creds" "key" "login") | indent 10 }}
+        - name: MODELSERVICE_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "modeling-user-creds" "key" "password") | indent 10 }}
+        - name: RESTCONF_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "restconf-creds" "key" "login") | indent 10 }}
+        - name: RESTCONF_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "restconf-creds" "key" "password") | indent 10 }}
+        - name: ANSIBLE_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ansible-creds" "key" "login") | indent 10 }}
+        - name: ANSIBLE_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ansible-creds" "key" "password") | indent 10 }}
+        - name: SCALEOUT_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "scaleout-creds" "key" "login") | indent 10 }}
+        - name: SCALEOUT_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "scaleout-creds" "key" "password") | indent 10 }}
+        - name: NETBOX_APIKEY
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "netbox-apikey" "key" "password") | indent 10 }}
+        - name: SDNC_DB_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "login") | indent 10 }}
+        - name: SDNC_DB_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "password") | indent 10 }}
+        - name: MYSQL_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "login") | indent 10 }}
+        - name: MYSQL_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "password") | indent 10 }}
+        - name: ODL_ADMIN_USERNAME
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "login") | indent 10 }}
+        - name: ODL_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "login") | indent 10 }}
+        - name: ODL_ADMIN_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "password") | indent 10 }}
+        - name: ODL_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "password") | indent 10 }}
+        {{ if .Values.config.sdnr.oauth.enabled }}
+        - name: OAUTH_TOKEN_SECRET
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "oauth-token-secret" "key" "password") | indent 10 }}
+        - name: KEYCLOAK_SECRET
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keycloak-secret" "key" "password") | indent 10 }}
+        - name: ENABLE_ODLUX_RBAC
+          value: "{{ .Values.config.sdnr.oauth.odluxRbac.enabled | default "true" }}"
+        {{ end }}
+        - name: SDNR_KAFKA_ENABLED
+          value: "{{ .Values.config.sdnr.kafka.enabled | default "false" }}"
+        {{ if .Values.config.sdnr.kafka.enabled }}
+        - name: SDNR_KAFKA_BOOTSTRAP_SERVERS
+          value: "{{ .Values.config.sdnr.kafka.bootstrapServers | default (include "common.release" .) }}-strimzi-kafka-bootstrap.{{.Release.Namespace}}:9092"
+        - name: SDNR_KAFKA_SECURITY_PROTOCOL
+          value: "{{ .Values.config.sdnr.kafka.securityProtocol | default "SASL_PLAINTEXT" }}"
+        - name: SDNR_KAFKA_SASL_MECHANISM
+          value: "{{ .Values.config.sdnr.kafka.saslMechanism | default "SCRAM-SHA-512" }}"
+        - name: SDNR_KAFKA_SASL_JASS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
+        {{ end }}
+        volumeMounts:
+        - mountPath: /config-input
+          name: config-input
+        - mountPath: /config
+          name: properties
+        image: {{ include "repositoryGenerator.image.envsubst" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-update-config
+      {{ if or .Values.dgbuilder.enabled .Values.config.sdnr.enabled -}}
+      - command:
+        - /app/ready.py
+        args:
+        {{ if .Values.dgbuilder.enabled -}}
+        - --service-name
+        - {{ include "common.mariadbService" . }}
+        - --job-name
+        - {{ include "common.fullname" . }}-dbinit-job
+        {{ end -}}
+        {{ if .Values.config.sdnr.enabled -}}
+        - --job-name
+        - {{ include "common.fullname" . }}-sdnrdb-init-job
+        {{ end -}}
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: {{ include "repositoryGenerator.image.readiness" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
+        {{ end }}
+      - name: {{ include "common.name" . }}-chown
+        image: {{ include "repositoryGenerator.image.busybox" . }}
+        command:
+        - sh
+        args:
+        - -c
+        - |
+           mkdir {{ .Values.persistence.mdsalPath }}/journal
+           mkdir {{ .Values.persistence.mdsalPath }}/snapshots
+           mkdir {{ .Values.persistence.mdsalPath }}/daexim
+           chown -R {{ .Values.config.odlUid }}:{{ .Values.config.odlGid}} {{ .Values.persistence.mdsalPath }}
+        volumeMounts:
+          - mountPath: {{ .Values.persistence.mdsalPath }}
+            name: {{ include "common.fullname" . }}-data
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{- if .Values.global.cmpv2Enabled }}
+          {{- $linkCommand := include "common.certManager.linkVolumeMounts" . }}
+          lifecycle:
+            postStart:
+              exec:
+                command: ["sh", "-c", {{$linkCommand | quote}} ]
+          {{- end }}
+          command: ["/bin/bash"]
+          args: ["-c", "/opt/onap/sdnc/bin/createLinks.sh ; /opt/onap/sdnc/bin/startODL.sh"]
+          ports:
+          - containerPort: {{ .Values.service.internalPort }}
+          - containerPort: {{ .Values.service.internalPort2 }}
+          - containerPort: {{ .Values.service.internalPort3 }}
+          - containerPort: {{ .Values.service.clusterPort }}
+          {{- if .Values.config.sdnr.netconfCallHome.enabled }}
+          - containerPort: {{ .Values.service.callHomePort }}
+          {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+          env:
+          {{ if and .Values.config.sdnr.enabled .Values.config.sdnr.sdnronly -}}
+          - name: MYSQL_ROOT_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-root-password" "key" "password") | indent 12 }}
+          {{ end -}}
+          - name: ODL_ADMIN_USERNAME
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "login") | indent 12 }}
+          - name: ODL_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "login") | indent 12 }}
+          - name: ODL_ADMIN_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "password") | indent 12 }}
+          - name: ODL_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "password") | indent 12 }}
+          - name: SDNC_DB_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "login") | indent 12 }}
+          - name: SDNC_DB_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "password") | indent 12 }}
+          - name: MYSQL_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "login") | indent 12 }}
+          - name: MYSQL_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "password") | indent 12 }}
+          - name: MYSQL_DATABASE
+            value: "{{ .Values.config.dbSdnctlDatabase }}"
+          - name: SDNC_CONFIG_DIR
+            value: "{{ .Values.config.configDir }}"
+          - name: AAI_CLIENT_NAME
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "aai-user-creds" "key" "login") | indent 12 }}
+          - name: AAI_CLIENT_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "aai-user-creds" "key" "password") | indent 12 }}
+          - name: AAI_TRUSTSTORE_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "aai-truststore-password" "key" "password") | indent 12 }}
+          - name: ANSIBLE_TRUSTSTORE_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ansible-truststore-password" "key" "password") | indent 12 }}
+          - name: SO_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "so-user-creds" "key" "login") | indent 12 }}
+          - name: SO_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "so-user-creds" "key" "password") | indent 12 }}
+          - name: NENG_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "neng-user-creds" "key" "login") | indent 12 }}
+          - name: NENG_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "neng-user-creds" "key" "password") | indent 12 }}
+          - name: CDS_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "cds-user-creds" "key" "login") | indent 12 }}
+          - name: CDS_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "cds-user-creds" "key" "password") | indent 12 }}
+          - name: HONEYCOMB_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "honeycomb-user-creds" "key" "login") | indent 12 }}
+          - name: HONEYCOMB_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "honeycomb-user-creds" "key" "password") | indent 12 }}
+          - name: TRUSTSTORE_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "truststore-password" "key" "password") | indent 12 }}
+          - name: KEYSTORE_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keystore-password" "key" "password") | indent 12 }}
+          - name: DMAAP_USER
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-user-creds" "key" "login") | indent 12 }}
+          - name: DMAAP_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-user-creds" "key" "password") | indent 12 }}
+          - name: DMAAP_AUTHKEY
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-authkey" "key" "password") | indent 12 }}
+          - name: ENABLE_ODL_CLUSTER
+            value: "{{ .Values.config.enableClustering }}"
+          - name: MY_ODL_CLUSTER
+            value: "{{ .Values.config.myODLCluster }}"
+          - name: PEER_ODL_CLUSTER
+            value: "{{ .Values.config.peerODLCluster }}"
+          - name: IS_PRIMARY_CLUSTER
+            value: "{{ .Values.config.isPrimaryCluster }}"
+          - name: GEO_ENABLED
+            value: "{{ .Values.config.geoEnabled}}"
+          - name: SDNC_AAF_ENABLED
+            value: "false"
+          - name: SDNC_REPLICAS
+            value: "{{ .Values.replicaCount }}"
+          - name: MYSQL_HOST
+            value: {{ include "common.mariadbService" . }}
+          - name: MDSAL_PATH
+            value: {{ .Values.persistence.mdsalPath }}
+          - name: DAEXIM_PATH
+            value: {{ .Values.persistence.daeximPath }}
+          - name: JOURNAL_PATH
+            value: {{ .Values.persistence.journalPath }}
+          - name: SNAPSHOTS_PATH
+            value: {{ .Values.persistence.snapshotsPath }}
+          - name: JAVA_HOME
+            value: "{{ .Values.config.javaHome}}"
+          - name: JAVA_OPTS
+            value: "-XX:MaxRAMPercentage={{.Values.config.odl.javaOptions.maxRAMPercentage}}"
+          - name: LOG4J_FORMAT_MSG_NO_LOOKUPS
+            value: "true"
+          - name: KARAF_CONSOLE_LOG_LEVEL
+            value: "{{ include "common.log.level" . }}"
+          - name: SDNRWT
+            value: "{{ .Values.config.sdnr.enabled | default "false"}}"
+          {{- if eq .Values.config.sdnr.mode "web" }}
+          - name: SDNRDM
+            value: "true"
+          {{- end }}
+          - name: SDNRONLY
+            value: "{{ .Values.config.sdnr.sdnronly | default "false" }}"
+          {{- if .Values.config.sdnr.mariadb.enabled }}
+          - name: SDNRCONTROLLERID
+            value: {{ uuidv4 }}
+          - name: SDNRDBTYPE
+            value: MARIADB
+          - name: SDNRDBURL
+            value: "jdbc:mysql://{{ include "common.mariadbService" . }}:3306/{{ .Values.config.sdnr.mariadb.databaseName}}"
+          - name: SDNR_DB_DATABASE
+            value: {{ .Values.config.sdnr.mariadb.databaseName }}
+          - name: SDNRDBUSERNAME
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "sdnrdb-secret" "key" "login") | indent 12 }}
+          - name: SDNRDBPASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "sdnrdb-secret" "key" "password") | indent 12 }}
+          - name: SDNR_ASYNC_HANDLING
+            value: {{ .Values.config.sdnr.mariadb.asyncHandling | default "false" | quote }}
+          - name: SDNR_ASYNC_POOLSIZE
+            value: {{ .Values.config.sdnr.mariadb.asyncPoolSize | default 200 | quote }}
+          {{- else }}
+          - name: SDNRDBURL
+            value: "http://{{ .Values.elasticsearch.service.name | default "sdnrdb"}}.{{.Release.Namespace}}:{{.Values.elasticsearch.service.port | default "9200"}}"
+          {{- if .Values.config.sdnr.sdnrdbTrustAllCerts }}
+          - name: SDNRDBTRUSTALLCERTS
+            value: "true"
+          {{- end }}
+          {{- end }}
+          {{- if .Values.global.cmpv2Enabled }}
+          - name: ODL_CERT_DIR
+            value: {{ (mustFirst (.Values.certificates)).mountPath }}
+          {{- end }}
+          - name: ENABLE_OAUTH
+            value: "{{ .Values.config.sdnr.oauth.enabled | default "false" }}"
+          - name: SDNR_NETCONF_CALLHOME_ENABLED
+            value: "{{ .Values.config.sdnr.netconfCallHome.enabled | default "false" }}"
+          - name: SDNR_VES_COLLECTOR_ENABLED
+            value: "{{ .Values.config.sdnr.vesCollector.enabled }}"
+          - name: SDNR_VES_COLLECTOR_TLS_ENABLED
+            value: "{{ .Values.config.sdnr.vesCollector.tls.enabled }}"
+          - name: SDNR_VES_COLLECTOR_TRUST_ALL_CERTS
+            value: "{{ .Values.config.sdnr.vesCollector.trustAllCertificates }}"
+          - name: SDNR_VES_COLLECTOR_IP
+            value: "{{ .Values.config.sdnr.vesCollector.address }}"
+          - name: SDNR_VES_COLLECTOR_PORT
+            value: "{{ .Values.config.sdnr.vesCollector.port }}"
+          - name: SDNR_VES_COLLECTOR_VERSION
+            value: "{{ .Values.config.sdnr.vesCollector.version | default "v7" }}"
+          - name: SDNR_VES_COLLECTOR_REPORTING_ENTITY_NAME
+            value: "{{ .Values.config.sdnr.vesCollector.reportingEntityName | default "ONAP SDN-R" }}"
+          - name: SDNR_VES_COLLECTOR_EVENTLOG_MSG_DETAIL
+            value: "{{ .Values.config.sdnr.vesCollector.eventLogMsgDetail | default "SHORT" }}"
+          - name: SDNR_VES_COLLECTOR_USERNAME
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ves-collector-secret" "key" "login") | indent 12 }}
+          - name: SDNR_VES_COLLECTOR_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ves-collector-secret" "key" "password") | indent 12 }}
+          - name: SDNR_WEBSOCKET_PORT
+            value: "{{ .Values.sdnrWebsocketPort | default "8182"}}"
+          - name: SDNR_KAFKA_ENABLED
+            value: "{{ .Values.config.sdnr.kafka.enabled | default "false" }}"
+          {{ if .Values.config.sdnr.kafka.enabled }}
+          - name: SDNR_KAFKA_BOOTSTRAP_SERVERS
+            value: "{{ .Values.config.sdnr.kafka.bootstrapServers | default (include "common.release" .) }}-strimzi-kafka-bootstrap.{{.Release.Namespace}}:9092"
+          - name: SDNR_KAFKA_SECURITY_PROTOCOL
+            value: "{{ .Values.config.sdnr.kafka.securityProtocol | default "PLAINTEXT" }}"
+          - name: SDNR_KAFKA_SASL_MECHANISM
+            value: "{{ .Values.config.sdnr.kafka.saslMechanism | default "PLAIN" }}"
+          - name: SDNR_KAFKA_SASL_JASS_CONFIG
+            value: "{{ .Values.config.sdnr.kafka.saslJassConfig | default "PLAIN" }}"
+          {{ end }}
+
+
+          volumeMounts:
+{{- if .Values.global.cmpv2Enabled }}
+{{ include "common.certManager.volumeMounts" . | indent 10 }}
+{{- end }}
+          - mountPath: /opt/opendaylight/current/etc/org.ops4j.pax.logging.cfg
+            name: sdnc-logging-cfg-config
+            subPath: org.ops4j.pax.logging.cfg
+          - mountPath: {{ .Values.config.binDir }}/installSdncDb.sh
+            name: bin
+            subPath: installSdncDb.sh
+          - mountPath: {{ .Values.config.binDir }}/createLinks.sh
+            name: bin
+            subPath: createLinks.sh
+          - mountPath: {{ .Values.config.ccsdkConfigDir }}/aaiclient.properties
+            name: properties
+            subPath: aaiclient.properties
+          - mountPath: {{ .Values.config.configDir }}/aaiclient.properties
+            name: properties
+            subPath: aaiclient.properties
+          - mountPath: {{ .Values.config.configDir }}/dblib.properties
+            name: properties
+            subPath: dblib.properties
+          - mountPath: {{ .Values.config.configDir }}/generic-api-dg.properties
+            name: properties
+            subPath: generic-api-dg.properties
+          - mountPath: {{ .Values.config.configDir }}/lcm-dg.properties
+            name: properties
+            subPath: lcm-dg.properties
+          - mountPath: {{ .Values.config.configDir }}/svclogic.properties
+            name: properties
+            subPath: svclogic.properties
+          - mountPath: /opt/onap/sdnc/svclogic/config/svclogic.properties
+            name: properties
+            subPath: svclogic.properties
+          - mountPath: {{ .Values.config.configDir }}/netbox.properties
+            name: properties
+            subPath: netbox.properties
+          - mountPath: {{ .Values.config.configDir }}/blueprints-processor-adaptor.properties
+            name: properties
+            subPath: blueprints-processor-adaptor.properties
+          - mountPath: {{ .Values.persistence.mdsalPath }}
+            name: {{ include "common.fullname" . }}-data
+          - mountPath: {{ .Values.log.path }}
+            name: logs
+          - mountPath: {{ .Values.config.odl.salConfigDir }}/{{ .Values.config.odl.salConfigVersion}}/sal-clustering-config-{{ .Values.config.odl.salConfigVersion}}-akkaconf.xml
+            name: properties
+            subPath: akka.conf
+          - mountPath: {{ .Values.config.odl.etcDir }}/org.opendaylight.controller.cluster.datastore.cfg
+            name: properties
+            subPath: org.opendaylight.controller.cluster.datastore.cfg
+          - mountPath: {{ .Values.config.odl.etcDir }}/org.opendaylight.aaa.filterchain.cfg
+            name: properties
+            subPath: org.opendaylight.aaa.filterchain.cfg
+          - mountPath: {{ .Values.config.odl.binDir }}/setenv
+            name: properties
+            subPath: setenv
+          - mountPath: {{ .Values.config.odl.etcDir }}/mountpoint-registrar.properties
+            name: properties
+            subPath: mountpoint-registrar.properties
+          - mountPath: {{ .Values.config.odl.etcDir }}/mountpoint-state-provider.properties
+            name: properties
+            subPath: mountpoint-state-provider.properties
+          - mountPath: {{ .Values.config.odl.etcDir }}/org.opendaylight.daexim.cfg
+            name: properties
+            subPath: org.opendaylight.daexim.cfg
+          {{- if .Values.config.sdnr.oauth.enabled }}
+          - mountPath: {{ .Values.config.odl.etcDir }}/oauth-provider.config.json
+            name: properties
+            subPath: oauth-provider.config.json
+          {{ end }}
+          resources: {{ include "common.resources" . | nindent 12 }}
+        # side car containers
+        {{ include "common.log.sidecar" . | nindent 8 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+        - name: logs
+          emptyDir: {}
+        {{ include "common.log.volumes" . | nindent 8 }}
+        - name: sdnc-logging-cfg-config
+          configMap:
+            name: {{ include "common.fullname" . }}-log-configmap
+        - name: bin
+          configMap:
+            name: {{ include "common.fullname" . }}-bin
+            defaultMode: 0755
+        - name: config-input
+          configMap:
+            name: {{ include "common.fullname" . }}-properties
+            defaultMode: 0644
+        - name: properties
+          emptyDir:
+            medium: Memory
+  {{ if not .Values.persistence.enabled }}
+        - name: {{ include "common.fullname" . }}-data
+          emptyDir: {}
+  {{ else }}
+{{- if .Values.global.cmpv2Enabled }}
+{{ include "common.certManager.volumes" . | nindent 8 }}
+{{- end }}
+  volumeClaimTemplates:
+  - metadata:
+      name: {{ include "common.fullname" . }}-data
+      labels:
+        name: {{ include "common.fullname" . }}
+        chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+        release: "{{ include "common.release" . }}"
+        heritage: "{{ .Release.Service }}"
+    spec:
+      accessModes:
+      - {{ .Values.persistence.accessMode }}
+      storageClassName: {{ include "common.storageClass" . }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.size }}
+  {{- end }}

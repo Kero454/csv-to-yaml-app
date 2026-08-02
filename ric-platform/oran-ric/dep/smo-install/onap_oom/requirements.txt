@@ -1,0 +1,17 @@
+sphinx>=4.2.0  # BSD
+sphinx-rtd-theme>=1.0.0  # MIT
+doc8
+docutils
+six
+sphinxcontrib-redoc
+sphinxcontrib-spelling
+PyEnchant
+pylint
+autopep8
+gitlint-core
+sh==1.14.3
+sphinxcontrib-blockdiag
+sphinxcontrib-seqdiag
+sphinxcontrib-swaggerdoc
+sphinxcontrib-plantuml
+sphinx-toolbox

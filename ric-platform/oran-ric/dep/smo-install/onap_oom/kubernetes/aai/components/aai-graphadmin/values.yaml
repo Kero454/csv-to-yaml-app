@@ -1,0 +1,399 @@
+#
+# ============LICENSE_START=======================================================
+# org.onap.aai
+# ================================================================================
+# Copyright (c) 2018 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2020 Nokia Intellectual Property. All rights reserved.
+# Copyright (c) 2020-2021 Orange Intellectual Property. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+
+# Default values for resources.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global: # global defaults
+  nodePortPrefix: 302
+  kafkaBootstrap: strimzi-kafka-bootstrap
+  aaiGraphKafkaUser: aai-graph-kafka-user
+  cassandra:
+    #This will instantiate AAI cassandra cluster, default:shared cassandra.
+    localCluster: false
+    # flag to enable the DB creation via k8ssandra-operator
+    useOperator: true
+    #Cassandra datacenter name
+    localDataCenter: dc1
+  initContainers:
+    enabled: true
+  jobs:
+    # When enabled, it will create the schema based on oxm and edge rules
+    createSchema:
+      enabled: true
+    #migration using helm hooks
+    migration:
+      enabled: false
+    duplicates:
+      enabled: false
+  # Specifies if basic authorization is enabled
+  auth:
+    enabled: true
+    # users that can authenticate via basic auth
+    users:
+      - username: aai@aai.onap.org
+        password: demo123456!
+      - username: AAI
+        password: AAI
+  config:
+    # Specifies that the cluster connected to a dynamic
+    # cluster being spinned up by kubernetes deployment
+    cluster:
+      cassandra:
+        dynamic: true
+    # Notification event specific properties
+    notification:
+      eventType: AAI-EVENT
+      domain: dev
+    # Schema specific properties that include supported versions of api
+    schema:
+      # Specifies if the connection should be one way ssl, two way ssl or no auth
+      # will be set to no-auth if tls is disabled
+      service:
+        client: no-auth
+      # Specifies which translator to use if it has schema-service, then it will
+      # make a rest request to schema service
+      translator:
+        list: schema-service
+      source:
+        # Specifies which folder to take a look at
+        name: onap
+      uri:
+        # Base URI Path of the application
+        base:
+          path: /aai
+      version:
+        # Current version of the REST API
+        api:
+          default: v30
+        # Specifies which version the depth parameter is configurable
+        depth: v11
+        # List of all the supported versions of the API
+        list: v11,v12,v13,v14,v15,v16,v17,v18,v19,v20,v21,v22,v23,v24,v25,v26,v27,v28,v29,v30
+        # Specifies from which version related link should appear
+        related:
+          link: v11
+        # Specifies from which version the app root change happened
+        app:
+          root: v11
+        # Specifies from which version the xml namespace changed
+        namespace:
+          change: v12
+        # Specifies from which version the edge label appeared in API
+        edge:
+          label: v12
+    # Specifies which clients should always default to realtime graph connection
+    realtime:
+      clients: SDNC,-1|MSO,-1|SO,-1|robot-ete,-1
+
+# application image
+image: onap/aai-graphadmin:1.16.0
+pullPolicy: Always
+restartPolicy: Always
+flavor: small
+
+# default number of instances
+replicaCount: 1
+
+# number of ReplicaSets that should be retained for the Deployment
+revisionHistoryLimit: 1
+
+# the minimum number of seconds that a newly created Pod should be ready
+minReadySeconds: 30
+updateStrategy:
+  type: RollingUpdate
+  # The number of pods that can be unavailable during the update process
+  maxUnavailable: 0
+  # The number of pods that can be created above the desired amount of pods during an update
+  maxSurge: 1
+
+# Configuration for the graphadmin deployment
+config:
+  # Specify the profiles for the graphadmin microservice
+  profiles:
+    active: kafka
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.aaiGraphKafkaUser }}'
+    someConfig: graphrandom
+  # Specifies the timeout limit for the REST API requests
+  timeout:
+    enabled: true
+    limit: 180000
+  janusgraph:
+    # temporarily enable this to update the graph storage version
+    # see: https://docs.janusgraph.org/changelog/#upgrade-instructions_9
+    allowUpgrade: true
+    # config override for the cassandra driver
+    # see: https://docs.janusgraph.org/master/configs/configuration-reference/#storagecqlinternal
+    cassandraDriver:
+      configuration: advanced.metadata.schema.debouncer.window = 2 second
+  # Default maximum records to fix for the data grooming and dupeTool
+  maxFix:
+    dataGrooming: 150
+    dupeTool: 25
+  # Default number of sleep minutes for dataGrooming and dupeTool
+  sleepMinutes:
+    dataGrooming: 7
+    dupeTool: 7
+  # Cron specific attributes to be triggered for the graphadmin spring cron tasks
+  cron:
+    # Specifies that the data grooming tool which runs duplicates should be enabled
+    dataGrooming:
+      enabled: true
+    # Specifies that the data snapshot which takes a graphson snapshot should be enabled
+    dataSnapshot:
+      enabled: true
+      params: JUST_TAKE_SNAPSHOT
+    # Data cleanup which zips snapshots older than x days and deletes older than y days
+    dataCleanup:
+      dataGrooming:
+        enabled: true
+        # Zips up the dataGrooming files older than 5 days
+        ageZip: 5
+        # Deletes the dataGrooming files older than 30 days
+        ageDelete: 30
+
+      dataSnapshot:
+        enabled: true
+        # Zips up the dataSnapshot graphson files older than 5 days
+        ageZip: 5
+        # Deletes the dataSnapshot graphson files older than 30 days
+        ageDelete: 30
+  # Concurrency lock control flag
+  aai:
+    lock:
+      uri:
+        enabled: false
+  # adds jvm args for remote debugging the application
+  debug:
+    enabled: false
+    args: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"
+  # adds jvm args for remote profiling the application
+  profiling:
+    enabled: false
+    args:
+      - "-Dcom.sun.management.jmxremote"
+      - "-Dcom.sun.management.jmxremote.ssl=false"
+      - "-Dcom.sun.management.jmxremote.authenticate=false"
+      - "-Dcom.sun.management.jmxremote.local.only=false"
+      - "-Dcom.sun.management.jmxremote.port=9999"
+      - "-Dcom.sun.management.jmxremote.rmi.port=9999"
+      - "-Djava.rmi.server.hostname=127.0.0.1"
+  env:
+    BOOTSTRAP_SERVERS: onap-strimzi-kafka-bootstrap:9092
+    DATA_SNAPSHOT_TASKS_ENABLED: false
+    DATA_SNAPSHOT_CLEANUP_ENABLED: false
+    HISTORY_TRUNCATE_TASK_ENABLED: false
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  enabled: true
+  path: /actuator/health
+  periodSeconds: 10
+
+readiness:
+  path: /actuator/health/readiness
+  periodSeconds: 10
+
+startup:
+  path: /actuator/health/liveness
+  failureThreshold: 60
+  periodSeconds: 5
+
+actuator:
+  echo:
+    enabled: true
+
+## Can be used to restore the old behaviour of having a separate job for schema creation
+createDbSchemaViaJob:
+  enabled: false
+
+readinessCheck:
+  waitForSchemaCreationJob:
+    jobs:
+      - '{{ include "common.release" . }}-aai-graphadmin-create-db-schema'
+  waitForLocalCassandra:
+    containers:
+      - aai-schema-service
+    apps:
+      - aai-cassandra
+  waitForCassandraService:
+    services:
+      - '{{ .Values.global.cassandra.serviceName }}'
+  waitForWithSchemaService:
+    services:
+      - '{{ .Values.global.cassandra.serviceName }}'
+      - aai-schema-service
+
+service:
+  type: ClusterIP
+  # REST API port for the graphadmin microservice
+  appPortName: http
+  appPort: 8449
+  debugPortName: tcp-5005
+  debugPort: 5005
+  profilingPortName: jxm-9999
+  profilingPort: 9999
+  actuatorPortName: http-graphadmin
+  actuatorPort: 8448
+  terminationGracePeriodSeconds: 45
+
+ingress:
+  enabled: false
+
+# No inbound communications.
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals: []
+
+persistence:
+  enabled: true
+  ## A manually managed Persistent Volume and Claim
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # existingClaim:
+  volumeReclaimPolicy: Retain
+  ## database data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # storageClass: "-"
+  accessMode: ReadWriteMany
+  size: 2Gi
+
+  mountPath: /dockerdata-nfs
+  mountSubPath: aai/aai-graphadmin
+  mountSubPath1: aai/migration
+
+# To make logback capping values configurable
+logback:
+  logToFileEnabled: false
+  maxHistory: 7
+  totalSizeCap: 6GB
+  queueSize: 1000
+
+accessLogback:
+  logToFileEnabled: false
+  maxHistory: 7
+  totalSizeCap: 6GB
+
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "4Gi"
+    requests:
+      cpu: "500m"
+      memory: "1600Mi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+    requests:
+      cpu: "1"
+      memory: "4Gi"
+  unlimited: {}
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    targetPort: 8448
+    path: /actuator/prometheus
+    basicAuth:
+      enabled: false
+
+    selector:
+      app: '{{ include "common.name" . }}'
+      helm.sh/chart: '{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}'
+      app.kubernetes.io/instance: '{{ include "common.release" . }}'
+      app.kubernetes.io/managed-by: '{{ .Release.Service }}'
+
+    relabelings: []
+
+    metricRelabelings: []
+
+# Not fully used for now
+securityContext:
+  user_id: 65534
+  group_id: 65534
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: aai-graphadmin
+  roles:
+    - read
+#Log configuration
+log:
+  path: /var/log/onap
+  level:
+    root: INFO
+    base: INFO
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+#DupeTool cronjob parameters
+dupeToolParams:
+  schedule: "0 8 * * *"
+  userId: "am8383 "
+  nodeType: "complex"
+  timeWindowMinutes: 60
+  autoFix: true
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: aai-graph-kafka-user
+    externalSecret: '{{ tpl (default "" .Values.config.jaasConfExternalSecret) . }}'
+    type: genericKV
+    envs:
+      - name: sasl.jaas.config
+        value: '{{ .Values.config.someConfig }}'
+        policy: generate
+kafkaUser:
+  authenticationType: scram-sha-512
+  acls:
+    - name: AAI-EVENT
+      type: topic
+      operations: [Read, Write]
+
+volumes:
+  logSizeLimit: 64Mi
+  scriptlogSizeLimit: 300Mi
+  tmpSizeLimit: 500Mi
+
+podAnnotations:
+  checksum/config: '{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}'
+
+jobAnnotations:
+  backup:
+    "helm.sh/hook": pre-upgrade,pre-rollback,post-install
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation
+  migration:
+    "helm.sh/hook": pre-upgrade,pre-rollback,post-install
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation

@@ -1,0 +1,169 @@
+{{/*
+################################################################################
+#   Copyright (c) 2020 Nordix Foundation.                                      #
+#   Copyright © 2020 Samsung Electronics, Modifications                        #
+#                                                                              #
+#   Licensed under the Apache License, Version 2.0 (the "License");            #
+#   you may not use this file except in compliance with the License.           #
+#   You may obtain a copy of the License at                                    #
+#                                                                              #
+#       http://www.apache.org/licenses/LICENSE-2.0                             #
+#                                                                              #
+#   Unless required by applicable law or agreed to in writing, software        #
+#   distributed under the License is distributed on an "AS IS" BASIS,          #
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+#   See the License for the specific language governing permissions and        #
+#   limitations under the License.                                             #
+################################################################################
+*/}}
+
+kind: StatefulSet
+apiVersion: apps/v1
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  serviceName: {{ include "common.servicename" . }}
+  replicas: {{ index .Values.replicaCount }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  template:
+    metadata:
+      labels: {{- include "common.labels" . | nindent 8 }}
+    spec:
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      initContainers:
+      - name: {{ include "common.name" . }}-bootstrap-config
+        image: {{ include "repositoryGenerator.image.envsubst" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
+        - sh
+        args:
+        - -c
+        - |
+          cd /config-input
+          for PFILE in `ls -1`
+          do
+            envsubst <${PFILE} >/config/${PFILE}
+            chmod o+w /config/${PFILE}
+          done
+          cat /config/application.yaml
+        env:
+        - name: A1CONTROLLER_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "controller-secret" "key" "login") | indent 10 }}
+        - name: A1CONTROLLER_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "controller-secret" "key" "password") | indent 10 }}
+        - name: LOGBACK_CONFIG_FILE
+          value: {{ .Values.app.logging.config | quote }}
+{{- if .Values.global.tracing.enabled }}
+        - name: ONAP_PROPAGATOR_PRODUCE
+          value: "[{{ .Values.tracing.propagator.produce.type }}]"
+        - name: ONAP_OTEL_EXPORTER_ENDPOINT
+          value: "{{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.otlpGrpc }}"
+        - name: ONAP_OTEL_EXPORTER_PROTOCOL
+          value: {{ .Values.tracing.collector.protocol | quote }}
+        - name: ONAP_SDK_DISABLED
+          value: {{ .Values.tracing.sdk.disabled | quote }}
+        - name: ONAP_TRACING_SOUTHBOUND
+          value: {{ .Values.tracing.sdk.south | quote }}
+        - name: ONAP_TRACING_NORTHBOUND
+          value: {{ .Values.tracing.north.enabled | quote }}
+        - name: ONAP_OTEL_SAMPLER_JAEGER_REMOTE_ENDPOINT
+          value: "{{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.grpc }}"
+{{- end }}
+        volumeMounts:
+        - mountPath: /config-input
+          name: {{ include "common.fullname" . }}-policy-conf-input
+        - mountPath: /config
+          name: config
+      containers:
+      - name: {{ include "common.name" . }}-update-config
+        image: {{ include "repositoryGenerator.image.envsubst" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        securityContext:
+          runAsGroup: {{ .Values.groupID }}
+          runAsUser: {{ .Values.userID }}
+          runAsNonRoot: true
+        command:
+        - sh
+        args:
+        - /tmp/scripts/daemon.sh
+        env:
+        - name: A1CONTROLLER_USER
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "controller-secret" "key" "login") | indent 10 }}
+        - name: A1CONTROLLER_PASSWORD
+          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "controller-secret" "key" "password") | indent 10 }}
+        - name: LOGBACK_CONFIG_FILE
+          value: {{ .Values.app.logging.config | quote }}
+{{- if .Values.global.tracing.enabled }}
+        - name: ONAP_PROPAGATOR_PRODUCE
+          value: "[{{ .Values.tracing.propagator.produce.type }}]"
+        - name: ONAP_OTEL_EXPORTER_ENDPOINT
+          value: {{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.otlpGrpc }}
+        - name: ONAP_OTEL_EXPORTER_PROTOCOL
+          value: {{ .Values.tracing.collector.protocol | quote }}
+        - name: ONAP_SDK_DISABLED
+          value: {{ .Values.tracing.sdk.disabled | quote }}
+        - name: ONAP_TRACING_SOUTHBOUND
+          value: {{ .Values.tracing.sdk.south | quote }}
+        - name: ONAP_TRACING_NORTHBOUND
+          value: {{ .Values.tracing.north.enabled | quote }}
+        - name: ONAP_OTEL_SAMPLER_JAEGER_REMOTE_ENDPOINT
+          value: {{ .Values.global.tracing.sampling.baseUrl | quote }}
+{{- end }}
+        volumeMounts:
+        - mountPath: /tmp/scripts
+          name: {{ include "common.fullname" . }}-envsubst-scripts
+        - mountPath: /config-input
+          name: {{ include "common.fullname" . }}-policy-conf-input
+        - mountPath: /config
+          name: config
+      - name: {{ include "common.name" . }}
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        ports: {{ include "common.containerPorts" . | nindent 10  }}
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.readiness.port }}
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        livenessProbe:
+          httpGet:
+            path: /status
+            port: {{ .Values.liveness.port }}
+            scheme: HTTP
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        volumeMounts:
+        - name: config
+          mountPath: /opt/app/policy-agent/logback-plain.xml
+          subPath: logback-plain.xml
+        - name: config
+          mountPath: /opt/app/policy-agent/data/application_configuration.json
+          subPath: application_configuration.json
+        - name: config
+          mountPath: /opt/app/policy-agent/config/application.yaml
+          subPath: application.yaml
+        - name: {{ include "common.fullname" . }}
+          mountPath: "/var/policy-management-service/database"
+        resources: {{ include "common.resources" . | nindent 10 }}
+        securityContext:
+          runAsUser: {{ .Values.mainUserId }}
+          runAsGroup: {{ .Values.mainGroupId }}
+          runAsNonRoot: true
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+        - name: {{ include "common.fullname" . }}-policy-conf-input
+          configMap:
+            name: {{ include "common.fullname" . }}-policy-conf
+        - name: {{ include "common.fullname" . }}-envsubst-scripts
+          configMap:
+            name: {{ include "common.fullname" . }}-envsubst-scripts
+            defaultMode: 0555
+        - name: config
+          emptyDir:
+            medium: Memory
+{{- if not .Values.persistence.enabled }}
+        - name: {{ include "common.fullname" . }}
+          emptyDir: {}
+{{- else }}
+  volumeClaimTemplates:
+    - {{include "common.PVCTemplate" . | indent 6 | trim }}
+{{- end }}

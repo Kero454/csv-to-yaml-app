@@ -1,0 +1,696 @@
+# Copyright © 2020 Samsung Electronics, highstreet technologies GmbH
+# Copyright © 2017 Amdocs, Bell Canada
+# Copyright © 2021 Nokia
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  persistence:
+    mountPath: /dockerdata-nfs
+  centralizedLoggingEnabled: true
+  mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows SO to instantiate its own mariadb-galera cluster
+    #If shared instance is used, this chart assumes that DB already exists
+    localCluster: false
+    service: &mariadbService mariadb-galera
+    internalPort: 3306
+    nameOverride: &mariadbName mariadb-galera
+    # (optional) if localCluster=false and an external secret is used set this variable
+    #userRootSecret: <secretName>
+
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: db-root-password
+    name: &rootDbSecret '{{ include "common.release" . }}-sdnc-db-root-password'
+    type: password
+    # If we're using shared mariadb, we need to use the secret name (second
+    # part).
+    # If not, we do the same trick than for user db secret hat allows you
+    # override this secret using external one with the same field that is used
+    # to pass this to subchart.
+    externalSecret: '{{ .Values.global.mariadbGalera.localCluster |
+      ternary (( hasSuffix "sdnc-db-root-password" (index .Values "mariadb-galera" "rootUser" "externalSecret")) |
+               ternary
+                  ""
+                  (tpl (default "" (index .Values "mariadb-galera" "rootUser" "externalSecret")) .)
+               )
+               ( (not (empty (default "" .Values.global.mariadbGalera.userRootSecret))) |
+                 ternary
+                   .Values.global.mariadbGalera.userRootSecret
+                   (include "common.mariadb.secret.rootPassSecretName"
+                     (dict "dot" . "chartName" .Values.global.mariadbGalera.nameOverride)
+                   )
+               ) }}'
+    password: '{{ (index .Values "mariadb-galera" "rootUser" "password") }}'
+  - uid: db-secret
+    name: &dbSecretName '{{ include "common.release" . }}-sdnc-db-secret'
+    type: basicAuth
+    # This is a nasty trick that allows you override this secret using external one
+    # with the same field that is used to pass this to subchart
+    externalSecret: '{{ (hasSuffix "sdnc-db-secret" (index .Values "mariadb-galera" "db" "externalSecret")) |
+      ternary
+        ""
+        (tpl (default "" (index .Values "mariadb-galera" "db" "externalSecret")) .) }}'
+    login: '{{ index .Values "mariadb-galera" "db" "user" }}'
+    password: '{{ index .Values "mariadb-galera" "db" "password" }}'
+  - uid: odl-creds
+    name: &odlCredsSecretName '{{ include "common.release" . }}-sdnc-odl-creds'
+    type: basicAuth
+    externalSecret: '{{ .Values.config.odlCredsExternalSecret }}'
+    login: '{{ .Values.config.odlUser }}'
+    password: '{{ .Values.config.odlPassword }}'
+    # For now this is left hardcoded but should be revisited in a future
+    passwordPolicy: required
+  - uid: netbox-apikey
+    type: password
+    externalSecret: '{{ .Values.config.netboxApikeyExternalSecret }}'
+    password: '{{ .Values.config.netboxApikey }}'
+    passwordPolicy: required
+  - uid: aai-truststore-password
+    type: password
+    externalSecret: '{{ .Values.config.aaiTruststoreExternalSecret }}'
+    password: '{{ .Values.config.aaiTruststorePassword }}'
+    passwordPolicy: required
+  - uid: ansible-truststore-password
+    type: password
+    externalSecret: '{{ .Values.config.ansibleTruststoreExternalSecret }}'
+    password: '{{ .Values.config.ansibleTruststorePassword }}'
+    passwordPolicy: required
+  - uid: truststore-password
+    type: password
+    externalSecret: '{{ .Values.config.truststoreExternalSecret }}'
+    password: '{{ .Values.config.truststorePassword }}'
+    passwordPolicy: required
+  - uid: keystore-password
+    type: password
+    externalSecret: '{{ .Values.config.keystoreExternalSecret }}'
+    password: '{{ .Values.config.keystorePassword }}'
+    passwordPolicy: required
+  - uid: dmaap-authkey
+    type: password
+    externalSecret: '{{ .Values.config.dmaapAuthKeyExternalSecret }}'
+    password: '{{ .Values.config.dmaapAuthKey }}'
+    passwordPolicy: required
+  - uid: aai-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.aaiCredsExternalSecret}}'
+    login: '{{ .Values.config.aaiUser }}'
+    password: '{{ .Values.config.aaiPassword }}'
+    passwordPolicy: required
+  - uid: so-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.soCredsExternalSecret}}'
+    login: '{{ .Values.config.soUser }}'
+    password: '{{ .Values.config.soPassword }}'
+    passwordPolicy: required
+  - uid: neng-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.nengCredsExternalSecret}}'
+    login: '{{ .Values.config.nengUser }}'
+    password: '{{ .Values.config.nengPassword }}'
+    passwordPolicy: required
+  - uid: cds-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.cdsCredsExternalSecret}}'
+    login: '{{ .Values.config.cdsUser }}'
+    password: '{{ .Values.config.cdsPassword }}'
+    passwordPolicy: required
+  - uid: honeycomb-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.honeycombCredsExternalSecret}}'
+    login: '{{ .Values.config.honeycombUser }}'
+    password: '{{ .Values.config.honeycombPassword }}'
+    passwordPolicy: required
+  - uid: dmaap-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.dmaapCredsExternalSecret}}'
+    login: '{{ .Values.config.dmaapUser }}'
+    password: '{{ .Values.config.dmaapPassword }}'
+    passwordPolicy: required
+  - uid: modeling-user-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.modelingCredsExternalSecret}}'
+    login: '{{ .Values.config.modelingUser }}'
+    password: '{{ .Values.config.modelingPassword }}'
+    passwordPolicy: required
+  - uid: restconf-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.restconfCredsExternalSecret}}'
+    login: '{{ .Values.config.restconfUser }}'
+    password: '{{ .Values.config.restconfPassword }}'
+    passwordPolicy: required
+  - uid: ansible-creds
+    name: &ansibleSecretName '{{ include "common.release" . }}-sdnc-ansible-creds'
+    type: basicAuth
+    externalSecret: '{{ .Values.config.ansibleCredsExternalSecret}}'
+    login: '{{ .Values.config.ansibleUser }}'
+    password: '{{ .Values.config.ansiblePassword }}'
+    passwordPolicy: required
+  - uid: scaleout-creds
+    type: basicAuth
+    externalSecret: '{{ .Values.config.scaleoutCredsExternalSecret}}'
+    login: '{{ .Values.config.scaleoutUser }}'
+    password: '{{ .Values.config.scaleoutPassword }}'
+    passwordPolicy: required
+  - uid: oauth-token-secret
+    type: password
+    externalSecret: '{{ ternary (tpl (default "" .Values.config.sdnr.oauth.tokenExternalSecret) .) "oauth-disabled" .Values.config.sdnr.oauth.enabled }}'
+    password: '{{ .Values.config.sdnr.oauth.tokenSecret }}'
+    passwordPolicy: required
+  - uid: keycloak-secret
+    type: password
+    externalSecret: '{{ ternary (tpl (default "" .Values.config.sdnr.oauth.providersSecrets.keycloakExternalSecret) .) "oauth-disabled" .Values.config.sdnr.oauth.enabled }}'
+    password: '{{ .Values.config.sdnr.oauth.providersSecrets.keycloak }}'
+    passwordPolicy: required
+  - uid: ves-collector-secret
+    type: basicAuth
+    login: '{{ .Values.config.sdnr.vesCollector.username }}'
+    password: '{{ .Values.config.sdnr.vesCollector.password }}'
+  - uid: sdnrdb-secret
+    name: &sdnrdbSecretName '{{ include "common.release" . }}-sdnc-sdnrdb-secret'
+    type: basicAuth
+    login: '{{ index .Values "config" "sdnr" "mariadb" "user" }}'
+    password: '{{ index .Values "config" "sdnr" "mariadb" "password" }}'
+#################################################################
+# Certificates
+#################################################################
+certificates:
+  - mountPath:  /var/custom-certs
+    commonName: sdnc.simpledemo.onap.org
+    dnsNames:
+        - sdnc.simpledemo.onap.org
+    keystore:
+      outputType:
+        - jks
+      passwordSecretRef:
+        create: true
+        name: sdnc-cmpv2-keystore-password
+        key: password
+    issuer:
+      group: certmanager.onap.org
+      kind: CMPv2Issuer
+      name: cmpv2-issuer-onap
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application images
+
+pullPolicy: Always
+image: onap/sdnc-image:3.1.0
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# application configuration
+config:
+  odlUid: 100
+  odlGid: 101
+  odlUser: admin
+  odlPassword: Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U
+  # odlCredsExternalSecret: some secret
+  netboxApikey: onceuponatimeiplayedwithnetbox20180814
+  # netboxApikeyExternalSecret: some secret
+  aaiTruststorePassword: changeit
+  # aaiTruststoreExternalSecret: some secret
+  ansibleTruststorePassword: changeit
+  # ansibleTruststoreExternalSecret: some secret
+  truststorePassword: adminadmin
+  # truststoreExternalSecret: some secret
+  keystorePassword: adminadmin
+  # keystoreExternalSecret: some secret
+  aaiUser: sdnc@sdnc.onap.org
+  aaiPassword: demo123456!
+  # aaiCredsExternalSecret: some secret
+  soUser: sdncaBpmn
+  soPassword: password1$
+  # soCredsExternalSecret: some secret
+  nengUser: ccsdkapps
+  nengPassword: ccsdkapps
+  # nengCredsExternalSecret: some secret
+  cdsUser: ccsdkapps
+  cdsPassword: ccsdkapps
+  # cdsCredsExternalSecret: some secret
+  honeycombUser: admin
+  honeycombPassword: admin
+  # honeycombCredsExternalSecret: some secret
+  dmaapUser: admin
+  dmaapPassword: admin
+  dmaapAuthKey: "fs20cKwalJ6ry4kX:7Hqm6BDZK47IKxGRkOPFk33qMYs="
+  # dmaapCredsExternalSecret: some secret
+  # dmaapAuthKeyExternalSecret: some secret
+  modelingUser: ccsdkapps
+  modelingPassword: ccsdkapps
+  # modelingCredsExternalSecret: some secret
+  restconfUser: admin
+  restconfPassword: admin
+  # restconfCredsExternalSecret: some secret
+  scaleoutUser: admin
+  scaleoutPassword: admin
+  # scaleoutExternalSecret: some secret
+  ansibleUser: sdnc
+  ansiblePassword: sdnc
+  # ansibleCredsExternalSecret: some secret
+
+  dbSdnctlDatabase: &sdncDbName sdnctl
+  enableClustering: true
+  sdncHome: /opt/onap/sdnc
+  binDir: /opt/onap/sdnc/bin
+  etcDir: /opt/onap/sdnc/data
+  geoEnabled: false
+# if geoEnabled is set to true here, mysql.geoEnabled must be set to true
+# if geoEnabled is set to true the following 3 values must be set to their proper values
+  myODLCluster: 127.0.0.1
+  peerODLCluster: 127.0.0.1
+  isPrimaryCluster: true
+  configDir: /opt/onap/sdnc/data/properties
+  ccsdkConfigDir: /opt/onap/ccsdk/data/properties
+  dmaapTopic: SUCCESS
+  dmaapPort: 3904
+  logstashServiceName: log-ls
+  logstashPort: 5044
+  ansibleServiceName: sdnc-ansible-server
+  ansiblePort: 8000
+  javaHome: /opt/java/openjdk
+
+  odl:
+    etcDir: /opt/opendaylight/etc
+    binDir: /opt/opendaylight/bin
+    gcLogDir: /opt/opendaylight/data/log
+    salConfigDir: /opt/opendaylight/system/org/opendaylight/controller/sal-clustering-config
+    salConfigVersion: 1.10.4
+    akka:
+      seedNodeTimeout: 15s
+      circuitBreaker:
+        maxFailures: 10
+        callTimeout: 90s
+        resetTimeout: 30s
+      recoveryEventTimeout: 90s
+    datastore:
+      persistentActorRestartMinBackoffInSeconds: 10
+      persistentActorRestartMaxBackoffInSeconds: 40
+      persistentActorRestartResetBackoffInSeconds: 20
+      shardTransactionCommitTimeoutInSeconds: 120
+      shardIsolatedLeaderCheckIntervalInMillis: 30000
+      operationTimeoutInSeconds: 120
+    javaOptions:
+      maxGCPauseMillis: 100
+      parallelGCThreads : 3
+      numberGCLogFiles: 10
+      maxRAMPercentage: 70
+      gcLogOptions: ""
+      # Next line enables gc logging
+      # gcLogOptions: "-Xlog:gc=trace:file={{.Values.config.odl.gcLogDir}}/gc-%t.log}:time,level,tags:filecount={{.Values.config.odl.javaOptions.numberGCLogFiles}}"
+        # enables sdnr functionality
+  sdnr:
+    enabled: true
+    # mode: web - SDNC contains device manager only plus dedicated webserver service for ODLUX (default),
+    # mode: dm - SDNC contains sdnr device manager + ODLUX components
+    mode: dm
+    # sdnronly: true starts sdnc container with odl and sdnrwt features only
+    sdnronly: false
+    sdnrdbTrustAllCerts: true
+    elasticsearch:
+    ## for legacy eleasticsearch database
+      enabled: &esdbenabled true
+      # enabled: &esdbenabled false
+    mariadb:
+      ## for legacy eleasticsearch database
+      enabled: false
+      # enabled: true
+      databaseName: sdnrdb
+      user: sdnrdb
+      externalSecret: *sdnrdbSecretName
+      asyncHandling: true
+      asyncPoolSize: 200
+    kafka:
+      enabled: false
+      consumerGroupPrefix: &consumerGroupPrefix sdnr
+      # Strimzi KafkaUser config see configuration below
+      kafkaUser: &kafkaUser
+        acls:
+        - name: unauthenticated.SEC_
+          type: topic
+          patternType: prefix
+          operations: [Read]
+        - name: unauthenticated.VES_PNFREG_OUTPUT
+          type: topic
+          patternType: literal
+          operations: [Read]
+        - name: *consumerGroupPrefix
+          type: group
+          patternType: prefix
+          operations: [Read]
+      ## set if bootstrap server is not OOM standard
+      # bootstrapServers: []
+      ## set connection parameters if not default
+      # securityProtocol: PLAINTEXT
+      # saslMechanism: SCRAM-SHA-512
+      ## saslJassConfig: provided by secret
+
+
+    mountpointStateProviderEnabled: false
+    netconfCallHome:
+      enabled: true
+
+
+    oauth:
+      enabled: false
+      tokenIssuer: ONAP SDNC
+      tokenSecret: secret
+      supportOdlusers: true
+      redirectUri: null
+      publicUrl: none
+      odluxRbac:
+        enabled: true
+      # example definition for a oauth provider
+      providersSecrets:
+        keycloak: d8d7ed52-0691-4353-9ac6-5383e72e9c46
+      providers:
+      - id: keycloak
+        type: KEYCLOAK
+        host: http://keycloak:8080
+        clientId: odlux.app
+        secret: ${KEYCLOAK_SECRET}
+        scope: openid
+        title: ONAP Keycloak Provider
+        roleMapping:
+          mykeycloak: admin
+    vesCollector:
+      enabled: false
+      tls:
+        enabled: true
+      trustAllCertificates: false
+      username: sample1
+      password: sample1
+      address: dcae-ves-collector.onap
+      port: 8080
+      version: v7
+      reportingEntityName: ONAP SDN-R
+      eventLogMsgDetail: SHORT
+
+# Strimzi KafkaUser/Topic config on top level
+kafkaUser: *kafkaUser
+
+# Annotations to control the execution and deletion of the job
+# Can be used to delete a job before an Upgrade
+#
+# jobAnnotations:
+#   # In case of an ArgoCD deployment this Hook deletes the job before syncing
+#   argocd.argoproj.io/hook: Sync
+#   argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+#
+#   # In case of an Helm/Flux deployment this Hook deletes the job
+#   # This is what defines this resource as a hook. Without this line, the
+#   # job is considered part of the release.
+#   "helm.sh/hook": "pre-upgrade,pre-rollback,post-install"
+#   "helm.sh/hook-delete-policy": "before-hook-creation"
+#   "helm.sh/hook-weight": "1"
+
+# dependency / sub-chart configuration
+network-name-gen:
+  enabled: true
+
+mariadb-galera: &mariadbGalera
+  nameOverride: &sdnc-db sdnc-db
+  config: &mariadbGaleraConfig
+    rootPasswordExternalSecret: *rootDbSecret
+    userName: &dbUser sdnctl
+    userCredentialsExternalSecret: *dbSecretName
+  rootUser:
+    externalSecret: *rootDbSecret
+  db:
+    name: *sdncDbName
+    user: *dbUser
+    externalSecret: *dbSecretName
+  service:
+    name: sdnc-db
+  sdnctlPrefix: sdnc
+  persistence:
+    mountSubPath: sdnc/mariadb-galera
+    enabled: true
+  replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
+  serviceAccount:
+    nameOverride: *sdnc-db
+
+cds:
+  enabled: false
+
+ueb-listener:
+  enabled: true
+  mariadb-galera:
+    <<: *mariadbGalera
+    config:
+      <<: *mariadbGaleraConfig
+      mysqlDatabase: *sdncDbName
+  nameOverride: sdnc-ueb-listener
+  config:
+    sdncPort: 8282
+    sdncChartName: sdnc
+    configDir: /opt/onap/sdnc/data/properties
+    odlCredsExternalSecret: *odlCredsSecretName
+
+sdnc-ansible-server:
+  enabled: true
+  config:
+    restCredsExternalSecret: *ansibleSecretName
+  mariadb-galera:
+    <<: *mariadbGalera
+    config:
+      <<: *mariadbGaleraConfig
+      mysqlDatabase: ansible
+  service:
+    name: sdnc-ansible-server
+    internalPort: 8000
+
+dgbuilder:
+  enabled: true
+  nameOverride: sdnc-dgbuilder
+  config:
+    db:
+      dbName: *sdncDbName
+      rootPasswordExternalSecret: '{{ .Values.global.mariadbGalera.localCluster |
+        ternary
+          (printf "%s-sdnc-db-root-password" (include "common.release" .))
+          (include "common.mariadb.secret.rootPassSecretName"
+            (dict "dot" . "chartName" "mariadb-galera")) }}'
+      userCredentialsExternalSecret: *dbSecretName
+    dbPodName: *mariadbName
+    dbServiceName: *mariadbService
+    # This should be revisited and changed to plain text
+    dgUserPassword: cc03e747a6afbbcbf8be7668acfebee5
+  serviceAccount:
+    nameOverride: sdnc-dgbuilder
+  mariadb-galera:
+  service:
+    name: sdnc-dgbuilder
+    ports:
+    - name: http
+      port: 3100
+      nodePort: "03"
+
+  ingress:
+    enabled: false
+    service:
+      - baseaddr: "sdnc-dgbuilder-ui"
+        name: "sdnc-dgbuilder"
+        port: 3100
+    config:
+      ssl: "redirect"
+
+
+
+# local elasticsearch cluster
+localElasticCluster: true
+elasticsearch:
+  enabled: *esdbenabled
+  nameOverride: &elasticSearchName sdnrdb
+  name: sdnrdb-cluster
+  service:
+    name: *elasticSearchName
+  master:
+    replicaCount: 3
+    # dedicatednode: "yes"
+    # working as master node only, in this case increase replicaCount for elasticsearch-data
+    # dedicatednode: "no"
+    # handles master and data node functionality
+    dedicatednode: "no"
+    nameOverride: *elasticSearchName
+    cluster_name: sdnrdb-cluster
+
+# enable
+sdnc-web:
+  enabled: true
+  ## set if web socket port should not be default
+  # sdnrWebsocketPort: *sdnrWebsocketPort
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+service:
+  type: NodePort
+  name: sdnc
+  portName: http
+  internalPort: 8181
+  internalPort2: 8101
+  internalPort3: 8080
+
+  #port
+  externalPort: 8282
+
+  externalPort2: 8202
+
+  externalPort3: 8280
+
+  nodePort4: 67
+
+  clusterPort: 2550
+  clusterPort2: 2650
+  clusterPort3: 2681
+
+  geoNodePort1: 61
+  geoNodePort2: 62
+  geoNodePort3: 63
+  geoNodePort4: 64
+  geoNodePort5: 65
+  geoNodePort6: 66
+
+  callHomePort: &chport 4334
+  callHomeNodePort: 66
+  ## set if web socket port should not be default
+  ## change in sdnc-web section as well
+  # sdnrWebsocketPort: &sdnrWebsocketPort 8182
+
+
+## Persist data to a persitent volume
+persistence:
+  enabled: true
+
+  ## A manually managed Persistent Volume and Claim
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # existingClaim:
+  volumeReclaimPolicy: Retain
+
+  ## database data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /dockerdata-nfs
+  mountSubPath: sdnc/mdsal
+  mdsalPath: /opt/opendaylight/mdsal
+  daeximPath: /opt/opendaylight/mdsal/daexim
+  journalPath: /opt/opendaylight/segmented-journal
+  snapshotsPath: /opt/opendaylight/snapshots
+
+ingress:
+  enabled: false
+  service:
+  - baseaddr: "sdnc-api"
+    name: "sdnc"
+    port: 8282
+  - baseaddr: "sdnc-callhome"
+    name: "sdnc-callhome"
+    port: *chport
+    protocol: tcp
+    exposedPort: *chport
+    exposedProtocol: TCP
+  config:
+    ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: a1policymanagement-read
+      - serviceAccount: cds-blueprints-processor-read
+      - serviceAccount: consul-read
+      - serviceAccount: ncmp-dmi-plugin-read
+      - serviceAccount: policy-drools-pdp-read
+      - serviceAccount: robot-read
+      - serviceAccount: sdnc-ansible-server-read
+      - serviceAccount: sdnc-dmaap-listener-read
+      - serviceAccount: sdnc-prom-read
+      - serviceAccount: sdnc-ueb-listener-read
+      - serviceAccount: sdnc-web-read
+      - serviceAccount: so-sdnc-adapter-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+    authorizedPrincipalsSdnHosts:
+      - serviceAccount: sdnc-read
+
+#Resource Limit flavor -By Default using small
+flavor: small
+#segregation for different envionment (Small and Large)
+
+resources:
+  small:
+    limits:
+      cpu: "3"
+      memory: "8Gi"
+    requests:
+      cpu: "1"
+      memory: "8Gi"
+  large:
+    limits:
+      cpu: "4"
+      memory: "10Gi"
+    requests:
+      cpu: "2"
+      memory: "10Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: sdnc
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap
+
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ include "common.mariadbService" . }}'

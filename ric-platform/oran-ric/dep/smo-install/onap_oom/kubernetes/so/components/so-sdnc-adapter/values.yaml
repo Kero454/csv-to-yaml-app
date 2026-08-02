@@ -1,0 +1,188 @@
+# Copyright © 2018 AT&T USA
+# Copyright © 2020 Huawei
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  nodePortPrefixExt: 304
+  persistence:
+    mountPath: /dockerdata-nfs
+  #This configuration specifies Service and port for SDNC OAM interface
+  sdncOamService: sdnc-oam
+  sdncOamPort: 8282
+  mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    service: mariadb-galera
+    servicePort: '3306'
+  tracing:
+    enabled: false
+    collector:
+      baseUrl: http://jaeger-collector.istio-config
+      port:
+        zipkin: 9411
+        otlpGrpc: 4317
+        grpc: 14250
+    sampling:
+      probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: db-user-creds
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.db.userCredsExternalSecret) . }}'
+    login: '{{ .Values.db.userName }}'
+    password: '{{ .Values.db.userPassword }}'
+    passwordPolicy: required
+  - uid: db-admin-creds
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.db.adminCredsExternalSecret) . }}'
+    login: '{{ .Values.db.adminName }}'
+    password: '{{ .Values.db.adminPassword }}'
+    passwordPolicy: required
+  - uid: sdnc-adapter-mso-key
+    name: '{{ include "common.release" . }}-so-sdnc-mso-key'
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.mso.msoKeySecret) . }}'
+    password: '{{ .Values.mso.msoKey }}'
+  - uid: sdnc-adapter-mso-auth
+    name: '{{ include "common.release" . }}-so-sdnc-mso-auth'
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.mso.authSecret) . }}'
+    password: '{{ .Values.mso.auth }}'
+#secretsFilePaths: |
+#  - 'my file 1'
+#  - '{{ include "templateThatGeneratesFileName" . }}'
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+image: onap/so/sdnc-adapter:1.15.6
+pullPolicy: Always
+
+org:
+  onap:
+    so:
+      adapters:
+        sdnc:
+          bpelauth: 4C18603C5AE7E3A42A6CED95CDF9C0BA9B2109B3725747662E5D34E5FDF63DA9ADEBB08185098F14699195FDE9475100
+          sdncauth: ED07A7EE5F099FA53369C3DF2240AD68A00154676EEDBC6F8C16BAA83B1912941B8941ABD48683D2C1072DA7040659692DE936A59BBF42A038CF71DE67B4A375190071EC76EA657801B033C135
+          network:
+            encryptionKey: 07a7159d3bf51a0e53be7a8f89699be7
+mso:
+  msoKey: 07a7159d3bf51a0e53be7a8f89699be7
+  #msoKeySecret: some secret
+  auth: BEA8637716A7EB617DF472BA6552D22F68C1CB17B0D094D77DDA562F4ADAAC4457CAB848E1A4
+  #authSecret: some secret
+  adapters:
+    requestDb:
+      auth: Basic YnBlbDpwYXNzd29yZDEk
+
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
+
+db:
+  userName: so_user
+  userPassword: so_User123
+  # userCredsExternalSecret: some secret
+  adminName: so_admin
+  adminPassword: so_Admin123
+  # adminCredsExternalSecret: some secret
+
+replicaCount: 1
+minReadySeconds: 10
+containerPort: &containerPort 8086
+logPath: ./logs/sdnc/
+app: sdnc-adapter
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: *containerPort
+updateStrategy:
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
+
+#################################################################
+# soHelpers part
+#################################################################
+soHelpers:
+  containerPort: *containerPort
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "1"
+      memory: "1.5Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1.5Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "3Gi"
+    requests:
+      cpu: "1"
+      memory: "3Gi"
+  unlimited: {}
+livenessProbe:
+  path: /manage/health
+  port: 8086
+  scheme: HTTP
+  initialDelaySeconds: 600
+  periodSeconds: 60
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+ingress:
+  enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: robot-read
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: so-read
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: so-sdnc-adapter
+  roles:
+    - read
+
+#Logs configuration
+log:
+  path: /var/log/onap
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+podAnnotations:
+  # disable istio-based tracing
+  proxy.istio.io/config: |
+    tracing:
+      sampling: 0

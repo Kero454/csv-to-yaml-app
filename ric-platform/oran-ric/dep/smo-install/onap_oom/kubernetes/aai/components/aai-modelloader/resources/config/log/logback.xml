@@ -1,0 +1,107 @@
+{{/*
+<!--
+# Copyright © 2018 Amdocs, Bell Canada, AT&T
+# Modifications Copyright © 2021 Orange
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+-->
+*/}}
+<configuration scan="true" scanPeriod="3 seconds" debug="false">
+
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+      <providers>
+        <timestamp><fieldName>timestamp</fieldName></timestamp>
+        <message/>
+        <mdc>
+          <fieldName>context</fieldName>
+          <excludeMdcKeyName>ServerIPAddress</excludeMdcKeyName>
+          <excludeMdcKeyName>EntryTimestamp</excludeMdcKeyName>
+          <excludeMdcKeyName>InvokeTimestamp</excludeMdcKeyName>
+          <excludeMdcKeyName>ErrorCode</excludeMdcKeyName>
+          <excludeMdcKeyName>ErrorDesc</excludeMdcKeyName>
+        </mdc>
+        <stackTrace>
+          <fieldName>exception</fieldName>
+          <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+            <exclude>^sun\.reflect\..*\.invoke</exclude>
+            <exclude>^net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
+            <rootCauseFirst>true</rootCauseFirst>
+          </throwableConverter>
+        </stackTrace>
+        <threadName><fieldName>thread</fieldName></threadName>
+        <loggerName>
+          <fieldName>logger</fieldName>
+          <shortenedLoggerNameLength>36</shortenedLoggerNameLength>
+        </loggerName>
+        <logLevel/>
+      </providers>
+    </encoder>
+  </appender>
+
+  <appender name="AsyncSysOut" class="ch.qos.logback.classic.AsyncAppender">
+    <appender-ref ref="STDOUT" />
+  </appender>
+
+  <!-- ============================================================================ -->
+  <!-- EELF loggers -->
+  <!-- ============================================================================ -->
+  <logger name="com.att.eelf" level="info" additivity="false">
+    <appender-ref ref="STDOUT" />
+  </logger>
+  <logger name="com.att.eelf.audit" level="info" additivity="false">
+    <appender-ref ref="STDOUT" />
+  </logger>
+  <logger name="com.att.eelf.metrics" level="info" additivity="false">
+    <appender-ref ref="STDOUT" />
+  </logger>
+
+  <!-- Spring related loggers -->
+  <logger name="org.springframework" level="WARN" />
+  <logger name="org.springframework.beans" level="WARN" />
+  <logger name="org.springframework.web" level="WARN" />
+  <logger name="com.blog.spring.jms" level="WARN" />
+
+  <logger name="com.att" level="INFO" />
+
+  <!-- Model Loader loggers -->
+  <logger name="org.openecomp.modelloader" level="INFO" />
+
+  <logger name="org.onap.sdc.impl.NotificationConsumer" level="WARN" />
+
+  <!-- Other Loggers that may help troubleshoot -->
+  <logger name="net.sf" level="WARN" />
+  <logger name="org.apache.commons.httpclient" level="WARN" />
+  <logger name="org.apache.commons" level="WARN" />
+  <logger name="org.apache.coyote" level="WARN" />
+  <logger name="org.apache.jasper" level="WARN" />
+
+  <!-- Camel Related Loggers (including restlet/servlet/jaxrs/cxf logging.
+       May aid in troubleshooting) -->
+  <logger name="org.apache.camel" level="WARN" />
+  <logger name="org.apache.cxf" level="WARN" />
+  <logger name="org.apache.camel.processor.interceptor" level="WARN" />
+  <logger name="org.apache.cxf.jaxrs.interceptor" level="WARN" />
+  <logger name="org.apache.cxf.service" level="WARN" />
+  <logger name="org.restlet" level="WARN" />
+  <logger name="org.apache.camel.component.restlet" level="WARN" />
+
+  <!-- logback internals logging -->
+  <logger name="ch.qos.logback.classic" level="WARN" />
+  <logger name="ch.qos.logback.core" level="WARN" />
+
+  <root level={{ .Values.log.level.root | upper | quote }}>
+    <appender-ref ref="STDOUT" />
+  </root>
+
+</configuration>

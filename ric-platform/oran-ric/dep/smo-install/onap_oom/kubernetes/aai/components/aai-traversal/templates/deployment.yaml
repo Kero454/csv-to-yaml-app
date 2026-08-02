@@ -1,0 +1,188 @@
+{{/*
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T
+# Modifications Copyright © 2020 Nokia, Orange
+# Modifications Copyright © 2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" (dict "annotations" .Values.annotations "dot" .) | nindent 2 }}
+spec:
+  {{- if or .Values.config.debug.enabled .Values.config.profiling.enabled }}
+  replicas: 1
+  {{- else }}
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+  selector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      hostname: aai-traversal
+      terminationGracePeriodSeconds: {{ .Values.service.terminationGracePeriodSeconds }}
+      initContainers:
+      {{- if .Values.global.jobs.migration.enabled }}
+      {{ include "common.readinessCheck.waitFor" (dict "dot" . "wait_for" .Values.readinessCheck.wait_for_migration) | nindent 8 }}
+      {{- else if .Values.global.jobs.createSchema.enabled  }}
+      {{ include "aai.waitForSchemaCreation" . | nindent 6 }}
+      {{- else }}
+      {{ include "common.readinessCheck.waitFor" (dict "dot" . "wait_for" .Values.readinessCheck.wait_for_cassandra) | nindent 8 }}
+      {{- end }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+      - name: {{ include "common.name" . }}
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
+        env:
+        {{- if .Values.config.env }}
+        {{- range $key,$value := .Values.config.env }}
+        - name: {{ $key | upper | quote}}
+          value: {{ $value | quote}}
+        {{- end }}
+        {{- end }}
+        {{- if eq .Values.flavor "small" }}
+        - name: MAX_HEAP_SIZE
+          value: {{ .Values.small.maxHeapSize | quote }}
+        {{- else if eq .Values.flavor "large" }}
+        - name: MAX_HEAP_SIZE
+          value: {{ .Values.large.maxHeapSize | quote }}
+        {{- end }}
+        {{- if .Values.config.profiling.enabled }}
+        - name: PRE_JVM_ARGS
+          value: '{{ join " " .Values.config.profiling.args }}'
+        {{- end }}
+        {{- if .Values.config.debug.enabled }}
+        - name: POST_JVM_ARGS
+          value: {{ .Values.config.debug.args | quote }}
+        {{- end }}
+        - name: DISABLE_UPDATE_QUERY
+          value: {{ .Values.config.disableUpdateQuery | quote }}
+        - name: INTERNAL_PORT_1
+          value: {{ .Values.service.traversalPort | quote }}
+        - name: INTERNAL_PORT_2
+          value: {{ .Values.service.debugPort | quote }}
+        - name: INTERNAL_PORT_3
+          value: {{ .Values.service.metricsPort | quote }}
+        - name: BOOTSTRAP_SERVERS
+          value: {{ include "common.release" . }}-strimzi-kafka-bootstrap:9092
+        - name: JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.release" . }}-{{ .Values.global.aaiTravKafkaUser }}
+              key: sasl.jaas.config
+        volumeMounts:
+        - mountPath: /opt/app/aai-traversal/resources/etc/appprops/janusgraph-realtime.properties
+          name: {{ include "common.fullname" . }}-config
+          subPath: janusgraph-realtime.properties
+        - mountPath: /opt/app/aai-traversal/resources/etc/appprops/aaiconfig.properties
+          name: {{ include "common.fullname" . }}-config
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-GQ
+          name: logs
+        - mountPath: /opt/aai/logroot/AAI-GQ/misc
+          name: {{ include "common.fullname" . }}-logs-misc
+        - mountPath: /opt/app/aai-traversal/resources/logback.xml
+          name: {{ include "common.fullname" . }}-config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-traversal/resources/application.properties
+          name: {{ include "common.fullname" . }}-config
+          subPath: application.properties
+        - mountPath: /tmp
+          name: tmp
+        ports:
+        - containerPort: {{ .Values.service.traversalPort }}
+          name: {{ .Values.service.traversalPortName }}
+        {{- if .Values.config.debug.enabled }}
+        - containerPort: {{ .Values.service.debugPort }}
+          name: {{ .Values.service.debugPortName }}
+        {{- end }}
+        - containerPort: {{ .Values.service.metricsPort }}
+          name: {{ .Values.service.metricsPortName }}
+        {{- if .Values.config.profiling.enabled }}
+        - containerPort: {{ .Values.service.profilingPort }}
+          name: {{ .Values.service.profilingPortName }}
+        {{- end }}
+        lifecycle:
+          # wait for active requests (long-running tasks) to be finished
+          # Before the SIGTERM is invoked, Kubernetes exposes a preStop hook in the Pod.
+          preStop:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  while (netstat -an | grep ESTABLISHED | grep -e $INTERNAL_PORT_1)
+                  do sleep 3
+                  done
+        # disable liveness probe when
+        # debugging.enable=true or profiling.enabled=true
+        {{- if and .Values.liveness.enabled (not (or .Values.config.debug.enabled .Values.config.profiling.enabled)) }}
+        livenessProbe:
+          httpGet:
+            port: {{ .Values.service.metricsPort }}
+            path: {{ .Values.liveness.path }}
+          {{- if .Values.liveness.initialDelaySeconds }}
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          {{- end }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            port: {{ .Values.service.metricsPort }}
+            path: {{ .Values.readiness.path }}
+          {{- if .Values.readiness.initialDelaySeconds }}
+          initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+          {{- end }}
+          periodSeconds: {{ .Values.readiness.periodSeconds }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | indent 8 }}
+      {{- end }}
+
+      # side car containers
+      {{ include "common.log.sidecar" . | nindent 6 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: logs
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logSizeLimit }}
+      - name: tmp
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.tmpSizeLimit }}
+      - name: {{ include "common.fullname" . }}-logs-misc
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logmiscSizeLimit }}
+      {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
+      - name: {{ include "common.fullname" . }}-config
+        configMap:
+          name: {{ include "common.fullname" . }}
+      restartPolicy: {{ .Values.global.restartPolicy | default .Values.restartPolicy }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

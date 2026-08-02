@@ -1,0 +1,116 @@
+{{/*
+# Copyright © 2017 Amdocs, AT&T, Bell Canada
+# Modifications Copyright © 2018  ZTE
+# Modifications Copyright © 2023,2025 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      initContainers:
+      {{- if .Values.initJob.enabled }}
+        {{ include "common.readinessCheck.waitFor" . | nindent 8 }}
+      {{ end }}
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
+          # disable liveness probe when breakpoints set in debugger
+          # so K8s doesn't restart unresponsive container
+          {{ if .Values.liveness.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+            successThreshold: {{ .Values.liveness.successThreshold }}
+            failureThreshold: {{ .Values.liveness.failureThreshold }}
+          {{ end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+            successThreshold: {{ .Values.readiness.successThreshold }}
+            failureThreshold: {{ .Values.readiness.failureThreshold }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startup.periodSeconds }}
+            successThreshold: {{ .Values.startup.successThreshold }}
+            failureThreshold: {{ .Values.startup.failureThreshold }}
+          env:
+          - name: JAVA_OPTIONS
+            value: {{ .Values.config.javaOptions }}
+          - name: CS_HOSTS
+            value: "{{ .Values.global.sdc_cassandra.serviceName }}"
+          - name: CS_PORT
+            value: "{{ .Values.config.cassandraClientPort }}"
+          - name: CS_AUTHENTICATE
+            value: "{{ .Values.config.cassandraAuthenticationEnabled }}"
+          - name: CS_USER
+            valueFrom:
+              secretKeyRef: {name: {{ include "common.release" . }}-sdc-cs-secrets, key: sdc_user}
+          - name: CS_PASSWORD
+            valueFrom:
+              secretKeyRef: {name: {{ include "common.release" . }}-sdc-cs-secrets, key: sdc_password}
+          - name: CS_DATACENTER
+            value: "{{ .Values.config.cassandraDataCenter }}"
+          - name: CS_SSL_ENABLED
+            value: "{{ .Values.config.cassandraSSLEnabled }}"
+          - name: CS_TRUST_STORE_PATH
+            value: "{{ .Values.config.cassandraTrustStorePath }}"
+          - name: CS_TRUST_STORE_PASSWORD
+            valueFrom:
+              secretKeyRef: {name: {{ include "common.release" . }}-sdc-cs-secrets, key: cs_truststore_password}
+          - name: SDC_PROTOCOL
+            value: "HTTP"
+          - name: SDC_ENDPOINT
+            value: "{{ .Values.config.sdcEndpoint.http }}"
+          - name: SDC_USER
+            value: "{{ .Values.config.sdcExternalUser }}"
+          - name: SDC_PASSWORD
+            valueFrom:
+              secretKeyRef: {name: {{ include "common.release" . }}-sdc-cs-secrets, key: wf_external_user_password}
+          - name: SERVER_SSL_ENABLED
+            value: "false"
+          - name: TRACING_ENABLED
+            value: "{{ .Values.global.tracing.enabled }}"
+          - name: TRACING_COLLECTOR_BASEURL
+            value: "{{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.zipkin }}"
+          - name: TRACING_SAMPLING_PROBABILITY
+            value: "{{ .Values.config.tracing.samplingProbability }}"
+          - name: TRACING_SKIP_PATTERN
+            value: "{{ .Values.config.tracing.skipPattern }}"
+          resources: {{ include "common.resources" . | nindent 12 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

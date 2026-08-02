@@ -1,0 +1,256 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+name: 'Release Helm Charts'
+
+# yamllint disable-line rule:truthy
+on:
+  # Trigger on tag push events
+  push:
+    tags:
+      - '**'
+
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: publish-release-${{ github.workflow }}-${{ github.event.inputs.GERRIT_CHANGE_ID || github.run_id }}
+  cancel-in-progress: true
+
+# Parameters used during workflow test/development
+env:
+  # Inherited from build-publish.yaml
+  CHARTS_SOURCE_DIR: 'charts'
+  CHART_ARTIFACT_NAME: 'helm-charts'
+  CHARTMUSEUM_STORAGE_DIR: './chartmuseum-storage'
+  CHARTS_BUILD_DIR: './chartmuseum-storage'
+  HELM_VERSION: 'v3.19.2'
+
+  # Inherited from jenkins verify job
+  RIC_DEP_CI_DOCKER_FILE: 'ci/Dockerfile'
+
+jobs:
+  repository-metadata:
+    name: "Repository Metadata"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    timeout-minutes: 5
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e  # v2.14.2
+        with:
+          egress-policy: audit
+
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: "Gather repository metadata"
+        id: repo-metadata
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/repository-metadata-action@ceabcd987d13d7bfefd2372e01eebb0ddac45956  # v0.2.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_summary: 'false'
+          artifact_upload: 'true'
+          artifact_formats: 'json'
+
+  tag-validate:
+    name: 'Validate Tag Push'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: read
+    timeout-minutes: 2
+    outputs:
+      tag: "${{ steps.tag-validate.outputs.tag_name }}"
+    steps:
+      # Harden the runner used by this workflow
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e  # v2.14.2
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 'Verify pushed tag'
+        id: 'tag-validate'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/tag-validate-action@v1.0.1
+        with:
+          require_type: 'calver'
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          require_signed: gpg,ssh
+          require_github: false
+          debug: true
+      - name: 'Reject development tags'
+        if: steps.tag-validate.outputs.development_tag == 'true'
+        shell: bash
+        run: |
+          # Reject development tags
+          echo "Development tag pushed; aborting release workflow 🛑"
+          echo "Development tag pushed; aborting release workflow 🛑" \
+            >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+  verify-and-publish:
+    name: 'Build/Verify Helm Charts'
+    needs: [tag-validate]
+    runs-on: 'ubuntu-latest'
+    outputs:
+      charts_build_dir: "${{ env.CHARTS_BUILD_DIR }}"
+      chart_artifact_name: "${{ env.CHART_ARTIFACT_NAME }}"
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e  # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@8d0d610af187e78a2772c2d18d627f4c52d3fbfb # v3.1.0
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          NEXUS_PASSWORD: op://6n4qm2onchsinyyeuxmcfbo7ne/ajxfr5yoj2is2o4hpqlw766ogu/password
+
+      - name: "Check NEXUS_PASSWORD available"
+        id: check-nexus-password
+        env:
+          NEXUS_PASSWORD: ${{ env.NEXUS_PASSWORD }}
+        run: |
+          # Check NEXUS_PASSWORD available
+          # Use a temp file to avoid exposing password in process list
+          PASSWORD_FILE=$(mktemp)
+          printf '%s' "$NEXUS_PASSWORD" > "${PASSWORD_FILE}"
+          PASSWORD_SHA1=$(sha1sum "${PASSWORD_FILE}" | awk '{print $1}')
+          # Securely overwrite and remove the temp file
+          shred -vfz -n 3 "${PASSWORD_FILE}" 2>/dev/null || rm -f "${PASSWORD_FILE}"
+          echo "NEXUS_PASSWORD SHA1: ${PASSWORD_SHA1}"
+          NULL_STRING_SHA1="da39a3ee5e6b4b0d3255bfef95601890afd80709"
+          if [ -z "$NEXUS_PASSWORD" ] || [ "${PASSWORD_SHA1}" = "${NULL_STRING_SHA1}" ]; then
+            echo "⚠️ NEXUS_PASSWORD is not set or has null value"
+            echo "⚠️ NEXUS_PASSWORD is not set or has null value" \
+              >> $GITHUB_OUTPUT
+            echo "set=false" >> $GITHUB_OUTPUT
+          elif [ "$PASSWORD_SHA1" != \
+            'eec68c052add49d3b4a0d8f4a3ada5a3c54c0d96' ]; then
+            echo "⚠️ NEXUS_PASSWORD does not match the expected value"
+            echo "⚠️ NEXUS_PASSWORD does not match the expected value" \
+              >> $GITHUB_STEP_SUMMARY
+            echo "set=false" >> $GITHUB_OUTPUT
+          else
+            echo "NEXUS_PASSWORD was validated"
+            echo "✅ NEXUS_PASSWORD was validated" >> $GITHUB_STEP_SUMMARY
+            echo "set=true" >> $GITHUB_OUTPUT
+          fi
+
+      # No need for Gerrit checkout; triggered on tag push
+      # GitHub is already in sync with Gerrit state
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: 'Display workflow environment'
+        shell: bash
+        run: |
+            # Display workflow environment
+            echo "RIC_DEP_CI_DOCKER_FILE: $RIC_DEP_CI_DOCKER_FILE"
+
+      - name: 'Setup Helm'
+        # yamllint disable-line rule:line-length
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
+        # Not explicitly used while testing updated Helm
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: 'Set up Docker Buildx'
+        # yamllint disable-line rule:line-length
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
+
+      - name: 'Build pre-requisites, install Helm plugins'
+        id: pre-requisites
+        shell: bash
+        run: |
+          # Build pre-requisites
+          echo 'Running: git submodule update --init 💬'
+          git submodule update --init
+          echo 'Running: helm plugin installs 💬'
+            plugin_dir='smo-install/onap_oom/kubernetes/helm/plugins/'
+          helm plugin install "$plugin_dir/undeploy/"
+          helm plugin install "$plugin_dir/deploy/"
+          # Installation of helm-push fixes the error below
+          # Error: unknown command "cm-push" for "helm"
+          # yamllint disable-line rule:line-length
+          helm plugin install https://github.com/chartmuseum/helm-push
+          echo 'Listing Helm plugins 💬'
+          helm plugin list
+
+      - name: 'Start ChartMuseum'
+        id: chartmuseum
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/chartmuseum-action@a381338882e65722ebcac53c66bc2ddbe962d423 # v0.1.7
+        with:
+          username: 'chartmuseum'
+          password: "${{ secrets.GITHUB_TOKEN }}"
+          exit: false
+          directory: "${{ env.CHARTMUSEUM_STORAGE_DIR }}"
+          helm_repo_name: 'local'
+
+      # Makefiles publish to Chartmeusem service locally
+      - name: 'Build onap_oom'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/make-action@e07201ee8e3d1f34800f1c63f58415624a8c054c  # v0.1.3
+        with:
+          make_args: "-C smo-install/onap_oom/kubernetes -e SKIP_LINT=TRUE"
+
+      # Makefiles publish to Chartmeusem service locally
+      - name: 'Build oran_oom'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/make-action@e07201ee8e3d1f34800f1c63f58415624a8c054c  # v0.1.3
+        with:
+          make_args: "-C smo-install/oran_oom"
+
+      # Makefiles publish to Chartmeusem service locally
+      - name: 'Build oran_oom/smo'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/make-action@e07201ee8e3d1f34800f1c63f58415624a8c054c  # v0.1.3
+        with:
+          make_args: "-C smo-install/oran_oom/smo"
+
+      # Makefiles publish to Chartmeusem service locally
+      - name: 'Build tests_oom'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/make-action@e07201ee8e3d1f34800f1c63f58415624a8c054c  # v0.1.3
+        with:
+          make_args: "-C smo-install/tests_oom"
+
+      - name: Build ric-aux and ric-dep
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ${{ env.RIC_DEP_CI_DOCKER_FILE }}
+          push: false
+          tags: ""
+
+      - name: 'Publish to Nexus3 (Helm Snapshot)'
+        uses: lfreleng-actions/nexus-publish-action@b53a4638789cba03279c97aeab7f0ce10dbfa991  # v0.1.4
+        # Note: changed from verify for 1Password integration
+        with:
+          nexus_server: "${{ vars.NEXUS3_SERVER }}"
+          nexus_username: "${{ github.event.repository.name }}"
+          nexus_password: "${{ secrets.NEXUS_PASSWORD }}"
+          repository_format: 'raw'
+          repository_name: 'helm.release'
+          files_path: "${{ env.CHARTS_BUILD_DIR }}"
+          file_pattern: '*.tgz'
+          permit_fail: true

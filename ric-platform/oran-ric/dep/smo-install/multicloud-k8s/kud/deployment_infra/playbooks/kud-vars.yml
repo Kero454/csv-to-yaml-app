@@ -1,0 +1,129 @@
+---
+# SPDX-license-identifier: Apache-2.0
+##############################################################################
+# Copyright (c) 2018
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of the Apache License, Version 2.0
+# which accompanies this distribution, and is available at
+# http://www.apache.org/licenses/LICENSE-2.0
+##############################################################################
+
+base_dest: /tmp
+
+ovn_kubernetes_dest: "{{ base_dest }}/ovn-kubernetes"
+ovn_kubernetes_source_type: "tarball"
+ovn_kubernetes_version: 0.3.0
+ovn_kubernetes_url: "https://github.com/openvswitch/ovn-kubernetes/archive/v{{ ovn_kubernetes_version }}.tar.gz"
+#ovn_kubernetes_source_type: "source"
+#ovn_kubernetes_version: 456a0857956988f968bb08644c650ba826592ec1
+#ovn_kubernetes_url: "https://github.com/openvswitch/ovn-kubernetes"
+
+criproxy_dest: "/usr/local/bin"
+criproxy_source_type: "binary"
+criproxy_version: 0.14.0
+criproxy_url: "https://github.com/Mirantis/criproxy/releases/download/v{{ criproxy_version }}/criproxy"
+#criproxy_dest: "{{ base_dest }}/criproxy"
+#criproxy_source_type: "source"
+#criproxy_version: b5ca5a6cec278e2054dface4f7a3e111fb9ab84b
+#criproxy_url: "https://github.com/Mirantis/criproxy"
+virtlet_dest: "{{ base_dest }}/virtlet"
+virtlet_source_type: "binary"
+virtlet_version: 1.4.4
+virtlet_url: "https://github.com/Mirantis/virtlet/releases/download/v{{ virtlet_version }}/virtletctl"
+#virtlet_source_type: "source"
+#virtlet_version: 68e11b8f1db2c78b063126899f0e60910700975d
+#virtlet_url: "https://github.com/Mirantis/virtlet"
+
+
+istio_dest: "{{ base_dest }}/istio"
+istio_source_type: "tarball"
+istio_version: 1.0.3
+istio_url: "https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz"
+
+# Intel CPU Manager for Kubernetes
+cmk_namespace: kube-system
+cmk_use_all_hosts: false # 'true' will deploy CMK on the master nodes too
+cmk_shared_num_cores: 1 # number of CPU cores to be assigned to the "shared" pool on each of the nodes
+cmk_exclusive_num_cores: 2 # number of CPU cores to be assigned to the "exclusive" pool on each of the nodes
+cmk_git_url: "https://github.com/intel/CPU-Manager-for-Kubernetes.git"
+cmk_version: "v1.4.1"
+cmk_dir: "/tmp/cmk"
+registry_local_address: "localhost:5000"
+cmk_pkgs: make,jq
+cmk_untaint_required: true
+
+go_version: '1.14.15'
+kubespray_version: 2.14.1
+# This matches the helm_version from kubespray defaults
+helm_client_version: 3.2.4
+# kud playbooks not compatible with 2.8.0 - see MULTICLOUD-634
+ansible_version: 2.9.7
+
+sriov_pkgs: make,gcc
+sriov_dest: "{{ base_dest }}/sriov_driver"
+sriov_driver_source_type: "tarball"
+sriov_driver_version: 3.7.34
+sriov_driver_url: "https://downloadmirror.intel.com/28943/eng/iavf-{{ sriov_driver_version }}.tar.gz"
+sriov_package: iavf-3.7.34
+
+qat_dest: "{{ base_dest }}/qat_driver"
+qat_driver_source_type: "tarball"
+qat_driver_version: 1.7.l.4.6.0-00025
+qat_driver_url: "https://01.org/sites/default/files/downloads/{{ qat_package }}.tar.gz"
+qat_package: qat1.7.l.4.6.0-00025
+
+optane_dest: "{{ base_dest }}/optane"
+optane_ipmctl_source_type: "tarball"
+optane_ipmctl_version: 02.00.00.3474
+optane_ipmctl_url: "https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/ipmctl/{{ optane_package }}.tar.xz"
+optane_ipmctl_package: ipmctl_02.00.00.3474+really01.00.00.3469.orig
+
+emco_git_url: "https://github.com/open-ness/EMCO.git"
+emco_repository: "integratedcloudnative/"
+emco_version: "openness-21.03.06"
+emco_dir: "/opt/emco"
+emco_values:
+  global:
+    repository: "{{ emco_repository }}"
+    pullPolicy: IfNotPresent
+  emco-services:
+    orchestrator:
+      imageTag: "{{ emco_version }}"
+    ncm:
+      imageTag: "{{ emco_version }}"
+    rsync:
+      imageTag: "{{ emco_version }}"
+    clm:
+      imageTag: "{{ emco_version }}"
+    ovnaction:
+      imageTag: "{{ emco_version }}"
+    dcm:
+      imageTag: "{{ emco_version }}"
+    dtc:
+      imageTag: "{{ emco_version }}"
+    nps:
+      imageTag: "{{ emco_version }}"
+    sds:
+      imageTag: "{{ emco_version }}"
+    gac:
+      imageTag: "{{ emco_version }}"
+    sfc:
+      imageTag: "{{ emco_version }}"
+    sfcclient:
+      imageTag: "{{ emco_version }}"
+emcoconfig_localhost: true
+emcoctl_localhost: true
+emco_roles:
+- emco
+- monitor
+
+kata_version: 2.1.0-rc0
+kata_rbac_url: "https://raw.githubusercontent.com/kata-containers/kata-containers/{{ kata_version }}/tools/packaging/kata-deploy/kata-rbac/base/kata-rbac.yaml"
+kata_deploy_url: "https://raw.githubusercontent.com/kata-containers/kata-containers/{{ kata_version }}/tools/packaging/kata-deploy/kata-deploy/base/kata-deploy.yaml"
+kata_runtimeclass_url: "https://raw.githubusercontent.com/kata-containers/kata-containers/{{ kata_version }}/tools/packaging/kata-deploy/runtimeclasses/kata-runtimeClasses.yaml"
+kata_webhook_dest: "{{ base_dest }}/kata_webhook"
+kata_webhook_version: 2.1.0-rc0
+kata_webhook_script_url: "https://raw.githubusercontent.com/kata-containers/tests/{{ kata_webhook_version }}/kata-webhook/create-certs.sh"
+kata_webhook_registration_url: "https://raw.githubusercontent.com/kata-containers/tests/{{ kata_webhook_version }}/kata-webhook/deploy/webhook-registration.yaml.tpl"
+kata_webhook_deployment_url: "https://raw.githubusercontent.com/kata-containers/tests/{{ kata_webhook_version }}/kata-webhook/deploy/webhook.yaml"
+kata_webhook_runtimeclass: "kata-clh"

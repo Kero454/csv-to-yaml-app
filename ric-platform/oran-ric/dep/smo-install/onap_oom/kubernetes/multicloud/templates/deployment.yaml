@@ -1,0 +1,122 @@
+{{/*
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T
+# Modifications Copyright © 2024 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      initContainers:
+      - name: {{ include "common.name" . }}-copy-pub
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command: ["cp", "-R", "/opt/multivimbroker/multivimbroker/pub/.", "/opt/multivimbroker/multivimbroker/pub_rw/"]
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 10m
+            memory: 100Mi
+        {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+        volumeMounts:
+        - mountPath: /opt/multivimbroker/multivimbroker/pub_rw
+          name: framework-pub
+      containers:
+      - env:
+        - name: MSB_PROTO
+          value: "http"
+        - name: MSB_ADDR
+          value: "{{ .Values.config.msbgateway }}.{{ include "common.namespace" . }}"
+        - name: MSB_PORT
+          value: "{{ .Values.config.msbPort }}"
+        - name: AAI_ADDR
+          value: "aai.{{ include "common.namespace" . }}"
+        - name: AAI_PORT
+          value: "{{ .Values.config.aai.aaiPlainPort }}"
+        - name: AAI_SCHEMA_VERSION
+          value: "{{ .Values.config.aai.schemaVersion }}"
+        - name: AAI_USERNAME
+          value: "{{ .Values.config.aai.username }}"
+        - name: AAI_PASSWORD
+          value: "{{ .Values.config.aai.password }}"
+        - name: AAI_PROTOCOL
+          value: "http"
+        - name: SSL_ENABLED
+          value: "false"
+        resources: {{ include "common.resources" . | nindent 10 }}
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}
+        {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+        volumeMounts:
+        - mountPath: "{{ .Values.log.path }}"
+          name: framework-log
+        - mountPath: /opt/multivimbroker/multivimbroker/pub
+          name: framework-pub
+        - mountPath: /opt/multivimbroker/multivimbroker/pub/config/log.yml
+          name: framework-logconfig
+          subPath: log.yml
+        - mountPath: /opt/multivimbroker/multivimbroker/pub/config/provider-plugin.json
+          name: provider-plugin
+          subPath: provider-plugin.json
+        ports: {{ include "common.containerPorts" . | nindent 10  }}
+        # disable liveness probe when breakpoints set in debugger
+        # so K8s doesn't restart unresponsive container
+        {{ if .Values.liveness.enabled }}
+        livenessProbe:
+          httpGet:
+            port: {{ .Values.service.internalPort }}
+            path: {{ .Values.liveness.path }}
+            scheme: HTTP
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        {{ end }}
+        {{ if .Values.readiness.enabled }}
+        readinessProbe:
+          httpGet:
+            port: {{ .Values.service.internalPort }}
+            path: {{ .Values.readiness.path }}
+            scheme: HTTP
+          initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readiness.periodSeconds }}
+        {{ end }}
+      # side car containers
+      {{ include "common.log.sidecar" . | nindent 6 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: framework-log
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logSizeLimit }}
+      - name: framework-pub
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.pubSizeLimit }}
+      - name: provider-plugin
+        configMap:
+          name: {{ include "common.fullname" . }}-provider-plugin-configmap
+      {{ include "common.log.volumes" . | nindent 6 }}
+      - name: framework-logconfig
+        configMap:
+          name: {{ include "common.fullname" . }}-log-configmap
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Always

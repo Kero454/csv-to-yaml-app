@@ -1,0 +1,247 @@
+{{/*
+#
+# ============LICENSE_START=======================================================
+# org.onap.aai
+# ================================================================================
+# Copyright (c) 2018 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2020 Nokia Intellectual Property. All rights reserved.
+# Copyright (c) 2020-2021 Orange Intellectual Property. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============LICENSE_END=========================================================
+
+# In ONAP, the following job will always be run on each installation
+# The following job will go through the latest oxm and
+# create properties based on the data type defined in the oxm
+# and create the required indexes for the appropriate properties
+# This can be run multiple times as the code if the index or property already exists
+# then the index or property won't be created again
+# NOTE - During the execution of the createSchema job, there should
+# be no other janusgraph connection to the graph as its the reason
+# that resources traversal and graphadmin wait until this job is done
+# If you are using an existing cassandra cluster not coming from oom
+# then it is your job to ensure that there are no connections to the database
+*/}}
+
+{{- if .Values.global.jobs.migration.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.fullname" . }}-migration
+  namespace: {{ include "common.namespace" . }}
+  labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "job") | nindent 4 }}
+  {{- if .Values.jobAnnotations.migration }}
+  annotations:  {{- include "common.tplValue" (dict "value" .Values.jobAnnotations.migration "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "job") | nindent 8 }}
+      name: {{ include "common.name" . }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      initContainers:
+      {{ include "common.readinessCheck.waitFor" (dict "dot" . "wait_for" .Values.readinessCheck.waitForWithSchemaService) | indent 6 | trim }}
+      - command:
+        - sh
+        args:
+        - -c
+        - |
+           sh docker-entrypoint.sh dataRestoreFromSnapshot.sh `ls -t /opt/app/aai-graphadmin/logs/data/dataSnapshots|head -1|awk -F".P" '{ print $1 }'`
+        volumeMounts:
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
+          name: config
+          subPath: janusgraph-realtime.properties
+        - mountPath: /opt/app/aai-graphadmin/logs/data/dataSnapshots
+          name: snapshots
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/aaiconfig.properties
+          name: properties
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-GA
+          name: logs
+        - mountPath: /opt/app/aai-graphadmin/resources/logback.xml
+          name: config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/localhost-access-logback.xml
+          name: config
+          subPath: localhost-access-logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/application.properties
+          name: properties
+          subPath: application.properties
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-restore-backup
+      containers:
+      - image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-perform-migration
+        command:
+        - sh
+        args:
+        - -c
+        - |
+           {{- if include "common.onServiceMesh" . }}
+           echo "waiting 15s for istio side cars to be up"; sleep 15s;{{- end }}
+           sh docker-entrypoint.sh run_Migrations.sh -e UpdateAaiUriIndexMigration --commit --skipPreMigrationSnapShot --runDisabled RebuildAllEdges ;
+           {{ include "common.serviceMesh.killSidecar" . | indent 11 | trim }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
+        volumeMounts:
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
+          name: config
+          subPath: janusgraph-realtime.properties
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/aaiconfig.properties
+          name: properties
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-GA
+          name: logs
+        - mountPath: /opt/app/aai-graphadmin/resources/logback.xml
+          name: config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/localhost-access-logback.xml
+          name: config
+          subPath: localhost-access-logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/application.properties
+          name: properties
+          subPath: application.properties
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 8 }}
+      - name: {{ include "common.fullname" . }}-logs
+        emptyDir: {}
+      - name: {{ include "common.fullname" . }}-config
+        configMap:
+          name: {{ include "common.fullname" . }}-configmap
+      - name: {{ include "common.fullname" . }}-snapshots
+        persistentVolumeClaim:
+          claimName: {{ include "common.fullname" . }}-migration
+      - name: properties
+        configMap:
+          name: {{ include "common.fullname" . }}-properties
+      restartPolicy: Never
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.fullname" . }}-db-backup-job
+  namespace: {{ include "common.namespace" . }}
+  labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "db-backup-job") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade,pre-install
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels: {{- include "common.labels" (dict "labels" .Values.labels "ignoreHelmChart" .Values.ignoreHelmChart "dot" . "suffix" "db-backup-job") | nindent 8 }}
+      name: {{ include "common.name" . }}
+    spec:
+      initContainers:
+      {{- if eq .Values.global.jobs.migration.remoteCassandra.enabled false }}
+      - command:
+        - /bin/bash
+        - -c
+        - /app/ready.py --service-name {{ .Values.global.cassandra.serviceName }}
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: {{ include "repositoryGenerator.image.readiness" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}-db-backup-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
+      {{- end }}
+      containers:
+      - name: {{ include "common.name" . }}-db-backup-job
+        image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
+        - sh
+        args:
+        - -c
+        - |
+           {{- if include "common.onServiceMesh" . }}
+           echo "waiting 15s for istio side cars to be up"; sleep 15s;{{- end }}
+           sh docker-entrypoint.sh dataSnapshot.sh
+           {{ include "common.serviceMesh.killSidecar" . | indent 11 | trim }}
+        volumeMounts:
+        - mountPath: /opt/app/aai-graphadmin/logs/data/dataSnapshots
+          name: snapshots
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
+          name: migration
+          subPath: janusgraph-migration-real.properties
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-cached.properties
+          name: migration
+          subPath: janusgraph-migration-cached.properties
+        - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/aaiconfig.properties
+          name: properties
+          subPath: aaiconfig.properties
+        - mountPath: /opt/aai/logroot/AAI-RES/
+          name: logs
+        - mountPath: /opt/app/aai-graphadmin/resources/logback.xml
+          name: config
+          subPath: logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/localhost-access-logback.xml
+          name: config
+          subPath: localhost-access-logback.xml
+        - mountPath: /opt/app/aai-graphadmin/resources/application.properties
+          name: properties
+          subPath: application.properties
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes: {{ include "common.resources" . | nindent 10 }}
+      - name: logs
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: {{ include "common.fullname" . }}
+      - name: properties-input
+        configMap:
+          name: {{ include "common.fullname" . }}-properties
+      - name: properties
+        emptyDir:
+          medium: Memory
+      - name: migration
+        configMap:
+          name: {{ include "common.fullname" . }}-migration
+      - name: snapshots
+        persistentVolumeClaim:
+          claimName: {{ include "common.fullname" . }}-migration
+      restartPolicy: Never
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
+{{ end }}

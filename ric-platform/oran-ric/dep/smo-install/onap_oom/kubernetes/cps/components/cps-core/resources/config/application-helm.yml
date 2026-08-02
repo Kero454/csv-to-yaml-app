@@ -1,0 +1,115 @@
+{{/*
+#  Copyright (C) 2021 Pantheon.tech
+#  Modifications Copyright (C) 2020 Bell Canada.
+#  Modifications Copyright (C) 2021-2023 Nordix Foundation.
+#  Modifications Copyright (C) 2021 Orange
+#  Modifications Copyright (C) 2024 TechMahindra Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+spring:
+  application:
+    name: cps-core
+  datasource:
+{{- if .Values.global.postgres.localCluster }}
+    url: jdbc:postgresql://{{ .Values.postgres.service.name2 }}:{{ .Values.postgres.service.externalPort2 }}/{{ .Values.postgres.config.pgDatabase }}
+{{- else }}
+    url: jdbc:postgresql://{{ .Values.global.postgres.service.name2 }}:{{ .Values.global.postgres.service.externalPort2 }}/{{ .Values.postgres.config.pgDatabase }}
+{{- end }}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driverClassName: org.postgresql.Driver
+    initialization-mode: always
+  liquibase:
+    change-log: classpath:changelog/changelog-master.yaml
+    label-filter: {{ .Values.config.liquibaseLabels }}
+  kafka:
+    producer:
+      client-id: cps-core
+{{- with (first .Values.kafkaUser.acls) }}
+    consumer:
+      group-id: {{ .name }}
+{{- end }}
+    bootstrap-servers: {{ include "common.release" . }}-strimzi-kafka-bootstrap:9092
+    security:
+      protocol: SASL_PLAINTEXT
+    properties:
+      sasl:
+        mechanism: {{ .Values.kafkaUser.authenticationType | upper }}
+        jaas:
+          config: ${SASL_JAAS_CONFIG}
+
+
+security:
+# comma-separated uri patterns which do not require authorization
+  permit-uri: /actuator/**,/swagger-ui.html,/swagger-ui/**,/swagger-resources/**,/api-docs/**,/v3/api-docs/**
+  auth:
+    username: ${CPS_USERNAME}
+    password: ${CPS_PASSWORD}
+
+# Actuator
+management:
+  tracing:
+    propagation:
+      produce: {{ .Values.management.tracing.propagation.produce }}
+    sampling:
+      probability: {{ .Values.global.tracing.sampling.probability }}
+
+logging:
+  level:
+    org:
+      springframework: {{ .Values.logging.level }}
+
+ncmp:
+  dmi:
+    auth:
+      username: ${DMI_USERNAME}
+      password: ${DMI_PASSWORD}
+
+
+# Kafka Topics
+{{- if .Values.topics.config }}
+{{ toYaml .Values.topics.config | nindent 2 }}
+{{- end }}
+
+{{- if .Values.config.additional }}
+{{ toYaml .Values.config.additional | nindent 2 }}
+{{- end }}
+
+cps:
+  tracing:
+    enabled: {{ .Values.global.tracing.enabled }}
+    sampler:
+      jaeger_remote:
+        endpoint: {{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.grpc }}
+    exporter:
+      endpoint: {{ .Values.global.tracing.collector.baseUrl }}:{{ .Values.global.tracing.collector.port.otlpGrpc }}
+      protocol: {{ .Values.tracing.exporter.protocol }}
+    excluded-observation-names: {{ .Values.tracing.excludedObservationNames }}
+
+# Custom Hazelcast config.
+hazelcast:
+  cluster-name: {{ .Values.hazelcast.config.clusterName }}
+  mode:
+    kubernetes:
+      enabled: {{ .Values.hazelcast.config.kubernetesDiscovery }}
+      service-name: {{ .Values.hazelcast.config.kubernetesServiceName }}
+
+otel:
+  exporter:
+    otlp:
+      traces:
+        protocol: {{ .Values.tracing.otlp.traces.protocol }}
+
+# Last empty line is required otherwise the last property will be missing from application.yml file in the pod.

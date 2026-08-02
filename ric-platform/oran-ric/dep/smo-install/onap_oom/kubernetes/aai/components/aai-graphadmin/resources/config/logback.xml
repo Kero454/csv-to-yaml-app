@@ -1,0 +1,151 @@
+<?xml version="1.0"?>
+<!--
+{{/*
+    ============LICENSE_START=======================================================
+    org.onap.aai
+    ================================================================================
+    Copyright 2019 AT&T Intellectual Property. All rights reserved.
+    ================================================================================
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+    ============LICENSE_END=========================================================
+*/}}
+-->
+<configuration scan="true" scanPeriod="60 seconds" debug="true">
+  <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+  <property resource="application.properties"/>
+
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+      <providers>
+        <timestamp><fieldName>timestamp</fieldName></timestamp>
+        <message/>
+        <mdc>
+          <fieldName>context</fieldName>
+          <excludeMdcKeyName>ServerIPAddress</excludeMdcKeyName>
+          <excludeMdcKeyName>EntryTimestamp</excludeMdcKeyName>
+          <excludeMdcKeyName>InvokeTimestamp</excludeMdcKeyName>
+          <excludeMdcKeyName>ErrorCode</excludeMdcKeyName>
+          <excludeMdcKeyName>ErrorDesc</excludeMdcKeyName>
+        </mdc>
+        <stackTrace>
+          <fieldName>exception</fieldName>
+          <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+            <exclude>^sun\.reflect\..*\.invoke</exclude>
+            <exclude>^net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
+            <rootCauseFirst>true</rootCauseFirst>
+          </throwableConverter>
+        </stackTrace>
+        <threadName><fieldName>thread</fieldName></threadName>
+        <loggerName>
+          <fieldName>logger</fieldName>
+          <shortenedLoggerNameLength>36</shortenedLoggerNameLength>
+        </loggerName>
+        <logLevel/>
+      </providers>
+    </encoder>
+  </appender>
+
+  <logger name="org.onap.aai" level={{ .Values.log.level.base | upper | quote }} additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="AuditRecord" level="INFO" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="AuditRecord_DirectCall" level="INFO" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="PerfTrackerRecord" level="INFO" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <!-- logback jms appenders & loggers definition ends here -->
+  <logger name="org.onap.aai.aaf" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+
+  <logger name="org.onap.aai.aailog.filter.RestClientLoggingInterceptor" level="INFO">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.logging.filter.base.AbstractMetricLogFilter" level="INFO">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.aailog.logs.AaiScheduledTaskAuditLog" level="INFO">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.aailog.logs.AaiDBMetricLog" level="INFO">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.logging.ErrorLogHelper" level="WARN">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.logging.filter.base.AbstractAuditLogFilter" level="INFO">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.interceptors.post" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.kafka" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.datasnapshot" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.historytruncate" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.datagrooming" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.schema" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.dbgen.DupeTool" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.dbgen.DynamicPayloadGenerator" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.dbgen" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.datacleanup" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.migration" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.util.SendMigrationNotifications" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.util.SendDeleteMigrationNotifications" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <logger name="org.onap.aai.dataexport" level="DEBUG" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+
+  <logger name="org.apache" level="WARN"/>
+  <logger name="org.zookeeper" level="WARN"/>
+  <logger name="com.netflix" level="WARN"/>
+  <logger name="org.janusgraph" level="WARN"/>
+  <logger name="org.janusgraph.graphdb.transaction" level="ERROR" />
+  <logger name="com.att.aft.dme2" level="WARN"/>
+  <!-- ============================================================================ -->
+  <!-- General EELF logger -->
+  <!-- ============================================================================ -->
+  <logger name="com.att.eelf" level="WARN" additivity="false">
+    <appender-ref ref="STDOUT"/>
+  </logger>
+  <root level={{ .Values.log.level.root | upper | quote }}>
+    <appender-ref ref="STDOUT"/>
+  </root>
+</configuration>

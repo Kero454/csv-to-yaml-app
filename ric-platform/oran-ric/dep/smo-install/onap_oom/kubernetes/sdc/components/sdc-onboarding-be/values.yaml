@@ -1,0 +1,291 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T, ZTE
+# Modifications Copyright © 2025 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  persistence: {}
+  sdc_cassandra:
+    #This flag allows SDC to instantiate its own cluster, serviceName
+    #should be sdc-cs if this flag is enabled
+    localCluster: false
+    #The cassandra service name to connect to (default: shared cassandra service)
+    serviceName: cassandra
+    #Shared cassandra cluster replicaCount, should be changed if localCluster is enabled
+    #to match with its own cluster replica
+    replicaCount: 3
+    clusterName: cassandra
+    dataCenter: Pod
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/sdc-onboard-backend:1.14.2
+onboardingInitImage: onap/sdc-onboard-cassandra-init:1.14.2
+pullPolicy: Always
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+config:
+  javaOptions: "-Xmx1g -Xms1g"
+  cassandraSslEnabled: "false"
+
+#environment file
+env:
+  name: AUTO
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  path: /onboarding-api/v1.0/healthcheck
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  timeoutSeconds: 15
+  successThreshold: 1
+  failureThreshold: 3
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  path: /onboarding-api/v1.0/healthcheck
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  timeoutSeconds: 15
+  successThreshold: 1
+  failureThreshold: 3
+
+startup:
+  path: /onboarding-api/v1.0/healthcheck
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 15
+  successThreshold: 1
+  failureThreshold: 60
+
+service:
+  type: ClusterIP
+  name: sdc-onboarding-be
+  internalPort: 8081
+  jobPort: 8080
+  ports:
+    - name: http
+      port: 8081
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: sdc-be-read
+
+## Persist data to a persitent volume
+persistence:
+  enabled: true
+
+  ## A manually managed Persistent Volume and Claim
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # existingClaim:
+  volumeReclaimPolicy: Retain
+
+  ## database data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # storageClass: "-"
+  accessMode: ReadWriteOnce
+  size: 2Gi
+  mountPath: /dockerdata-nfs
+  mountSubPath: /sdc/sdc-cs/CS
+
+ingress:
+  enabled: false
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1.5Gi"
+  large:
+    limits:
+      cpu: "2"
+      memory: "3Gi"
+    requests:
+      cpu: "1"
+      memory: "3Gi"
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: sdc-onboarding-be
+  roles:
+    - read
+
+wait_for_job_container:
+  containers:
+    - '{{ include "common.name" . }}-job'
+
+readinessCheck:
+  wait_for:
+    timeout: 25
+    jobs:
+      - '{{ include "common.release" . }}-sdc-onboarding-be'
+  job_wait_for:
+    timeout: 20
+    jobs:
+      - '{{ include "common.release" . }}-sdc-cs'
+
+#Log configuration
+log:
+  path: /var/log/onap
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
+
+securityContext:
+  user_id: 1000
+  group_id: 101
+
+volumes:
+  logSizeLimit: 300Mi
+  jettySizeLimit: 400Mi
+  tmpSizeLimit: 500Mi
+
+resources_initContainer:
+  limits:
+    cpu: "100m"
+    memory: "500Mi"
+  requests:
+    cpu: "3m"
+    memory: "20Mi"
+
+jobPodSecurityContext:
+  fsGroup: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+#################################################################
+# Settings from Default.rb
+#################################################################
+ONBOARDING_BE:
+  http_port: 8081
+  https_port: 8445
+  catalog_notification_url: "%s://%s:%s/sdc2/rest/v1/catalog/notif/vsp/"
+FE:
+  http_port: 8181
+  https_port: 9443
+disableHttp: true
+cassandra:
+  truststore_password: Aa123456
+  cassandra_port: 9042
+  datacenter_name: DC-
+  cluster_name: SDC-CS-
+  socket_read_timeout: 20000
+  socket_connect_timeout: 20000
+  janusgraph_connection_timeout: 10000
+  cassandra_user: asdc_user
+  cassandra_password: Aa1234%^!
+sdcHelmValidator:
+  enabled: true
+  helmVersion: 3.5.2
+  deployable: true
+  lintable: false
+  strictLintable: false
+  url: http://sdc-helm-validator:8080/validate
+VnfRepo:
+  vnfRepoPort: 8703
+  vnfRepoHost: refrepo
+jetty:
+  trustStorePassword: "z+KEj;t+,KN^iimSiS89e#p0"
+  keyManagerPassword: "?(kP!Yur![*!Y5!E^f(ZKc31"
+  keyStorePassword: "?(kP!Yur![*!Y5!E^f(ZKc31"
+basic_auth:
+  enabled: true
+  user_name: testName
+  user_pass: testPass
+  excludedUrls: /v1.0/healthcheck
+
+EXTTEST:
+  ep1_config: vtp,VTP,true,http://refrepo:8702/onapapi/vnfsdk-marketplace,onap.*
+  ep2_config: repository,Repository,false,,.*
+
+#Addiding extra Envs
+permittedAncestors: ""
+JETTY_BASE: "/app/jetty"
+http_option: http_option
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 75
+
+# number of ReplicaSets that should be retained for the Deployment
+revisionHistoryLimit: 1
+
+# the minimum number of seconds that a newly created Pod should be ready
+minReadySeconds: 30
+updateStrategy:
+  type: RollingUpdate
+  # The number of pods that can be unavailable during the update process
+  maxUnavailable: 0
+  # The number of pods that can be created above the desired amount of pods during an update
+  maxSurge: 1
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    targetPort: 8081
+    path: /onboarding-api/v1.0/actuator/prometheus
+    basicAuth:
+      enabled: false
+
+logback:
+  rootLogLevel: INFO
+
+# Annotations to control the execution and deletion of the job
+# Can be used to delete a job before an Upgrade
+#
+# jobAnnotations:
+#   # In case of an ArgoCD deployment this Hook deletes the job before syncing
+#   argocd.argoproj.io/hook: Sync
+#   argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+#
+#   # In case of an Helm/Flux deployment this Hook deletes the job
+#   # This is what defines this resource as a hook. Without this line, the
+#   # job is considered part of the release.
+#   "helm.sh/hook": "pre-upgrade,pre-rollback,post-install"
+#   "helm.sh/hook-delete-policy": "before-hook-creation"
+#   "helm.sh/hook-weight": "1"

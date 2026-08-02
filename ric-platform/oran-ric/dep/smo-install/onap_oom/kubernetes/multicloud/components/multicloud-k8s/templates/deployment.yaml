@@ -1,0 +1,118 @@
+{{/*
+# Copyright 2019 Intel Corporation, Inc
+# Modifications Copyright © 2024 Deutsche Telekom
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      containers:
+      - image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: {{ include "common.name" . }}
+        command: ["/opt/multicloud/k8splugin/k8plugin"]
+        workingDir: /opt/multicloud/k8splugin
+        ports: {{ include "common.containerPorts" . | nindent 10  }}
+        {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+        {{- if eq .Values.liveness.enabled true }}
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.service.internalPort }}
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        {{ end -}}
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.service.internalPort }}
+          initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readiness.periodSeconds }}
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir-k8s
+        - mountPath: /opt/multicloud/k8splugin/k8sconfig.json
+          name: {{ include "common.name" .}}
+          subPath: k8sconfig.json
+        resources: {{ include "common.resources" . | nindent 10 }}
+        {{- if .Values.nodeSelector }}
+        nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 10 }}
+        {{- end -}}
+        {{- if .Values.affinity }}
+        affinity:
+{{ toYaml .Values.affinity | indent 10 }}
+        {{- end }}
+      - image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.global.artifactImage }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        name: framework-artifactbroker
+        command: ["/opt/app/distribution/bin/artifact-dist.sh"]
+        args: ["/opt/app/distribution/etc/mounted/config.json"]
+        {{ include "common.containerSecurityContext" . | indent 10 | trim }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+        ports:
+        - containerPort: {{ .Values.artifactbroker.internalPort }}
+          protocol: TCP
+        {{- if eq .Values.liveness.enabled true }}
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.artifactbroker.internalPort }}
+          initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.liveness.periodSeconds }}
+        {{ end -}}
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.artifactbroker.internalPort }}
+          initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readiness.periodSeconds }}
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir-broker
+        - mountPath: "{{ .Values.log.path }}"
+          name: framework-log
+        - mountPath: /opt/app/distribution/etc/mounted/config.json
+          name: {{ include "common.name" .}}
+          subPath: config.json
+        - mountPath: /data
+          name: artifact-data
+        env:
+        - name: SASL_JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes:
+      - name: tmp-dir-k8s
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.tmpK8SSizeLimit }}
+      - name: tmp-dir-broker
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.tmpBrokerSizeLimit }}
+      - name: framework-log
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.logSizeLimit }}
+      - name : {{ include "common.name" . }}
+        configMap:
+          name: {{ include "common.fullname" . }}
+      - name: artifact-data
+        emptyDir:
+          sizeLimit: {{ .Values.volumes.artifactDataSizeLimit }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
