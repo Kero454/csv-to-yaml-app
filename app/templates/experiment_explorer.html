@@ -403,6 +403,8 @@ async function runPipelineStep(button, step) {
                     msg += '<br><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Image not built yet (' + (data.build_backend || 'docker unavailable') + ') - will build at deploy</small>';
                 }
                 if (data.artifacts) msg += '<br><small>Artifacts: ' + data.artifacts.join(', ') + '</small>';
+                // Save model_name so deploy step uses the correct model
+                if (data.model_name) pipeline.dataset.modelName = data.model_name;
                 // Enable step 7
                 pipeline.querySelector('.step7-btn').disabled = false;
             }

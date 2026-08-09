@@ -5328,6 +5328,7 @@ def deploy_to_ric():
         return jsonify({'success': False, 'error': 'Missing experiment_name'}), 400
     
     experiment_name = data['experiment_name']
+    model_name_filter = data.get('model_name', '')
     safe_user = secure_filename(current_user.username)
     safe_exp = secure_filename(experiment_name)
     
@@ -5341,11 +5342,14 @@ def deploy_to_ric():
             'error': 'No artifacts found. Run Step 5 and Step 6 first.'
         }), 400
     
-    # Load publish state
+    # Load publish state — filter by model_name if provided so the correct
+    # model is deployed when multiple publish states exist in the same experiment.
     publish_state = None
     state_file = None
-    for fname in os.listdir(pkl_dir):
+    for fname in sorted(os.listdir(pkl_dir), reverse=True):
         if fname.endswith('_publish_state.json'):
+            if model_name_filter and model_name_filter not in fname:
+                continue
             state_file = os.path.join(pkl_dir, fname)
             with open(state_file, 'r') as f:
                 publish_state = json_mod.load(f)
