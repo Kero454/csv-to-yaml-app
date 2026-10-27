@@ -5432,6 +5432,7 @@ def deploy_to_ric():
             if r.status_code == 200:
                 catalog_deploy_result = r.json()
         except Exception:
+            current_app.logger.error(f"[Step7] Catalog deployment failed: {e}")
             pass
     
     # ---- Resolve the kubectl invocation (talk to the cluster directly) ----

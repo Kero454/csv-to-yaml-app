@@ -1,0 +1,275 @@
+\documentclass[aspectratio=169]{beamer}
+
+% ---------------------------------------------------------------
+% O-RAN ML Model Lifecycle - Implementation Presentation
+% Build with:  pdflatex oran_ml_lifecycle_presentation.tex  (run twice)
+% ---------------------------------------------------------------
+
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+
+\definecolor{oranblue}{RGB}{31,119,180}
+\definecolor{orangreen}{RGB}{44,160,44}
+\definecolor{oranorange}{RGB}{255,127,14}
+\definecolor{codegray}{RGB}{245,245,245}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codegray},
+  breaklines=true,
+  frame=single,
+  framesep=3pt,
+  showstringspaces=false
+}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\title[O-RAN ML Lifecycle]{From Trained Model to Running xApp}
+\subtitle{Implementing the O-RAN ML Model Lifecycle on a Near-RT RIC}
+\author{Kero}
+\institute{Smart Grid Workstation 6}
+\date{\today}
+
+\begin{document}
+
+% ---------- Slide 1: Title ----------
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% ---------- Slide 2: The big picture ----------
+\begin{frame}{The Big Picture: O-RAN ML Model Lifecycle}
+  \begin{columns}
+    \column{0.55\textwidth}
+    The O-RAN Alliance defines a standard journey for an ML model:
+    \begin{enumerate}
+      \item \textbf{Design} the model (ML Designer)
+      \item \textbf{Train} it on selected data (ML Training Hosts)
+      \item \textbf{Publish} the trained model to a catalog
+      \item \textbf{Package} it with policies as a deployable unit
+      \item \textbf{Deploy} it to the Near-RT RIC as an \emph{xApp}
+      \item \textbf{Collect} live telemetry (O1/E2) and feed it back
+    \end{enumerate}
+    \column{0.42\textwidth}
+    \begin{block}{What we built}
+      A web framework that automates \textbf{every step of this loop}:
+      from a CSV file and a YAML config all the way to a live,
+      subscribed xApp pod running our trained model inside the
+      Near-RT RIC cluster.
+    \end{block}
+  \end{columns}
+\end{frame}
+
+% ---------- Slide 3: Our platform stack ----------
+\begin{frame}{Our Platform Stack}
+  \begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Infrastructure (on the server)}
+    \begin{itemize}
+      \item Minikube Kubernetes cluster (\texttt{kero-ric} profile)
+      \item O-RAN SC Near-RT RIC platform in namespace \texttt{ricplt}:
+        \begin{itemize}
+          \item \texttt{appmgr} -- xApp lifecycle manager
+          \item \texttt{xapp-onboarder} + chartmuseum
+          \item \texttt{e2mgr}, \texttt{e2term}, \texttt{submgr}, \texttt{a1mediator}, \texttt{rtmgr}, \ldots
+        \end{itemize}
+      \item xApps run in namespace \texttt{ricxapp}
+    \end{itemize}
+    \column{0.48\textwidth}
+    \textbf{Framework (Flask web app)}
+    \begin{itemize}
+      \item Guided workflow: upload data $\rightarrow$ configure $\rightarrow$ train $\rightarrow$ deploy
+      \item Google-Form-style YAML configuration builders
+      \item DSIPTS time-series models (LSTM, Autoformer, Informer, Diffusion, \ldots)
+      \item 7-step RIC pipeline per experiment
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+% ---------- Slide 4: The 7-step pipeline ----------
+\begin{frame}{The 7-Step Pipeline (Loop 2 of the Lifecycle)}
+  \small
+  \begin{enumerate}
+    \item \textbf{Design \& Configure} -- user builds \texttt{config.yaml} + architecture YAMLs in the UI (maps to \emph{Design Model})
+    \item \textbf{Select Training Data} -- CSV upload or reuse of existing datasets (maps to \emph{Select Training Data})
+    \item \textbf{Train} -- DSIPTS training run produces model weights (maps to \emph{ML Training Hosts})
+    \item \textbf{Export} -- trained model serialized to a \texttt{.pkl} artifact
+    \item \textbf{Publish} -- \texttt{.pkl} + hyperparameters registered in the ML Model Catalog (maps to \emph{Upload Trained Model / ML Model Catalog})
+    \item \textbf{Package} -- xApp generated: descriptor, Helm chart, A1 policy, Docker image with the model baked in (maps to \emph{Package model, set policies})
+    \item \textbf{Deploy} -- onboard + deploy + verify + subscribe, all through REST APIs (maps to \emph{Download to near-RT RIC})
+  \end{enumerate}
+  \begin{alertblock}{One click each}
+    Every step is a single button in the experiment explorer; the framework does the rest.
+  \end{alertblock}
+\end{frame}
+
+% ---------- Slide 5: Step 6 in detail ----------
+\begin{frame}[fragile]{Step 6 -- Packaging the Model as an xApp}
+  What happens when the user clicks \textbf{Package}:
+  \begin{itemize}
+    \item \texttt{build\_xapp.py} generates the full xApp skeleton:
+      \texttt{xapp\_main.py}, \texttt{Dockerfile}, \texttt{config-file.json},
+      Helm chart, RMR route table
+    \item The trained \texttt{model.pkl} is copied in and \textbf{baked into the Docker image}
+    \item The framework injects the model's configuration into the descriptor's
+      \texttt{controls} section and generates a matching \texttt{schema.json}
+      (the onboarder validates them against each other)
+    \item A1 policy type (20008), appmgr config and submgr subscription config are generated
+    \item The image is built \emph{directly into minikube's Docker daemon}:
+  \end{itemize}
+\begin{lstlisting}
+eval $(minikube -p kero-ric docker-env)
+docker build -t registry.local:30500/xapps/<model>:<version> .
+\end{lstlisting}
+  \begin{itemize}
+    \item \texttt{imagePullPolicy=Never} $\Rightarrow$ no external registry needed
+  \end{itemize}
+\end{frame}
+
+% ---------- Slide 6: Step 7 in detail ----------
+\begin{frame}[fragile]{Step 7 -- Fully API-Driven Deployment}
+  Deployment is \textbf{pure REST}, exactly as O-RAN intends -- no manual Helm, no kubectl apply:
+  \begin{enumerate}
+    \item \textbf{Onboard} -- descriptor + schema posted to the xApp onboarder;
+      it renders a Helm chart and pushes it to the in-cluster chartmuseum
+\begin{lstlisting}
+POST /api/v1/onboard   {"config-file.json": ..., "controls-schema.json": ...}
+\end{lstlisting}
+    \item \textbf{Deploy} -- appmgr installs the onboarded chart itself
+\begin{lstlisting}
+POST /ric/v1/xapps     {"xappName": "...", "namespace": "ricxapp",
+                        "overrideFile": {"image_pull_policy": "Never"}}
+\end{lstlisting}
+    \item \textbf{Verify} -- pod health check + SHA-256 comparison of the
+      \texttt{model.pkl} inside the running pod vs.\ the local artifact
+    \item \textbf{Subscribe} -- lifecycle/telemetry events via
+      \texttt{POST /ric/v1/subscriptions}
+  \end{enumerate}
+  Each call reaches the ClusterIP services through short-lived \texttt{kubectl port-forward} tunnels.
+\end{frame}
+
+% ---------- Slide 7: The hard part ----------
+\begin{frame}[fragile]{The Hard Part: appmgr Could Not Actually Deploy}
+  \begin{alertblock}{The problem}
+    Stock appmgr 0.5.9 answered every deploy request with: \\
+    \texttt{"operation XappDeployXapp has not yet been implemented"} \\
+    The REST handler was a go-swagger \emph{stub} -- and the image shipped without Helm.
+  \end{alertblock}
+  \textbf{How we fixed it (patched appmgr, tag \texttt{0.5.9-deploy}):}
+  \begin{itemize}
+    \item Registered the missing handlers in \texttt{pkg/restful/restful.go}:
+      deploy, undeploy, list, get-by-name
+    \item Installed \textbf{Helm 3.14.4} into the appmgr Docker image
+    \item Extended the appmgr ServiceAccount RBAC (secrets, apps, networking)
+      so Helm 3 can operate in-cluster
+    \item Added \texttt{HELMVERSION} env var in the \texttt{ric-dep} chart
+    \item Fixed \texttt{overrideFile} handling in \texttt{pkg/helm/helm.go}
+      to accept JSON objects
+  \end{itemize}
+\end{frame}
+
+% ---------- Slide 8: Battle scars ----------
+\begin{frame}{Battle Scars: Problems We Hit and Solved}
+  \small
+  \begin{tabular}{p{0.45\textwidth} p{0.48\textwidth}}
+    \textbf{Problem} & \textbf{Fix} \\ \hline
+    Windows CRLF line endings broke the container entrypoint (\texttt{permission denied}) & Stripped \texttt{\textbackslash r}, restored the exec bit, added \texttt{chmod 755} in the Dockerfile \\[3pt]
+    Onboarder rejected the registry \texttt{localhost:30500} & Schema requires a dotted registry name $\Rightarrow$ \texttt{registry.local:30500} (local tag only, never pulled) \\[3pt]
+    Onboarder rejected non-empty \texttt{controls} & Auto-generate a matching draft-07 \texttt{schema.json} from the controls \\[3pt]
+    Port-forwards died on pod restarts & Short-lived, per-call port-forwards with cleanup \\[3pt]
+    Deploy button deployed the \emph{wrong model} (first publish state alphabetically) & \texttt{deploy\_to\_ric} now filters by \texttt{model\_name}; UI passes it from Step 6 \\
+  \end{tabular}
+\end{frame}
+
+% ---------- Slide 9: Proof it works ----------
+\begin{frame}[fragile]{Proof It Works: End-to-End Result}
+  One click on \textbf{Deploy to RIC} produced:
+\begin{lstlisting}
+Onboard oran-autoformer (POST /api/v1/onboard)   -> onboarded (201)
+Deploy  oran-autoformer (POST /ric/v1/xapps)     -> appmgr deployed (201)
+Test xApp pod health -> Pod Running, /health OK:
+  {"healthy": true, "model_loaded": true, "rmr_ready": true}
+Verify deployed image matches .pkl -> sha256 62701e64df8d... MATCH
+Subscribe to xApp telemetry events -> subscribed (201)
+\end{lstlisting}
+  \begin{itemize}
+    \item The pod in \texttt{ricxapp} runs \emph{our exact trained model}
+      (verified by checksum, not by trust)
+    \item The xApp is RMR-connected: ready to receive \texttt{RIC\_INDICATION}
+      telemetry and emit predictions
+    \item Multiple models already onboarded: autoformer, informer, diffusion variants
+  \end{itemize}
+\end{frame}
+
+% ---------- Slide 10: Lifecycle mapping ----------
+\begin{frame}{Where We Stand on the Official Lifecycle Diagram}
+  \small
+  \begin{tabular}{c p{0.42\textwidth} c}
+    \textbf{Diagram step} & \textbf{Our implementation} & \textbf{Status} \\ \hline
+    1 Design Model & YAML config builders in the UI & \textcolor{orangreen}{Done} \\
+    2 Deploy Untrained Model & Training job dispatch & \textcolor{orangreen}{Done} \\
+    3 Select Training Data & CSV upload / dataset picker & \textcolor{orangreen}{Done} \\
+    4 Upload Trained Model & \texttt{.pkl} export + catalog publish & \textcolor{orangreen}{Done} \\
+    5 Publish to Non-RT RIC & ML Model Catalog API & \textcolor{orangreen}{Done} \\
+    6 Package model, set policies & xApp build: image, chart, A1 policy & \textcolor{orangreen}{Done} \\
+    7 Download to near-RT RIC & Onboard + appmgr REST deploy & \textcolor{orangreen}{Done} \\
+    8 Collect (O1 FM/PM) & Event subscription registered & \textcolor{oranorange}{Partial} \\
+  \end{tabular}
+  \vspace{1em}
+  \begin{block}{Loop closure}
+    Steps 1--7 of loop 2 are fully automated. Step 8 (live telemetry driving
+    retraining) is where we go next.
+  \end{block}
+\end{frame}
+
+% ---------- Slide 11: Next steps ----------
+\begin{frame}{What's Next}
+  \begin{enumerate}
+    \item \textbf{Close the data loop} -- feed E2/KPM indications from the RAN
+      simulator into the deployed xApp and capture its predictions
+    \item \textbf{A1 policy flow} -- push the generated policy type (20008)
+      through the A1 mediator and let the xApp react to policy changes
+    \item \textbf{Retraining trigger} -- use the telemetry subscription events
+      to detect drift and automatically kick off a new training run (loop back
+      to step 3 of the lifecycle)
+    \item \textbf{Model comparison} -- deploy two model versions side by side
+      and compare live prediction quality
+    \item \textbf{Hardening} -- upstream the appmgr deploy-handler patch,
+      replace port-forwards with an ingress, add CI for the xApp builder
+    \item \textbf{Documentation \& branch} -- finish committing all platform
+      fixes to the \texttt{appmgr-api-deploy} branch
+  \end{enumerate}
+\end{frame}
+
+% ---------- Slide 12: Summary ----------
+\begin{frame}{Summary}
+  \begin{columns}
+    \column{0.55\textwidth}
+    \textbf{What we achieved}
+    \begin{itemize}
+      \item A complete, working implementation of the O-RAN ML model lifecycle
+        on a real Near-RT RIC
+      \item Any trained time-series model becomes a running, verified,
+        subscribed xApp \textbf{with one click}
+      \item Fixed a genuine gap in the O-RAN SC appmgr (unimplemented deploy
+        API) along the way
+    \end{itemize}
+    \column{0.42\textwidth}
+    \begin{exampleblock}{The one-liner}
+      \centering
+      \emph{From CSV to a live xApp\\in seven clicks --\\entirely through\\O-RAN standard APIs.}
+    \end{exampleblock}
+  \end{columns}
+  \vspace{1em}
+  \centering
+  \large Thank you! Questions?
+\end{frame}
+
+\end{document}
