@@ -474,6 +474,17 @@ async function runPipelineStep(button, step) {
                 if (dep.steps && dep.steps.length && stepsUl) {
                     await renderStepsProgressive(stepsUl, dep.steps);
                 }
+                // Terminal commands actually executed (curl -> appmgr via scripts/xappctl.sh)
+                if (dep.cli_commands && dep.cli_commands.length) {
+                    msg += '<br><small class="text-muted"><i class="bi bi-terminal me-1"></i>Terminal commands run on the server:</small>'
+                         + '<pre class="mt-1 mb-1 p-2 bg-dark text-light" style="font-size:0.72em;white-space:pre-wrap;">'
+                         + dep.cli_commands.join('\n') + '</pre>';
+                }
+                if (dep.verify_commands && dep.verify_commands.length) {
+                    msg += '<small class="text-muted"><i class="bi bi-check2-square me-1"></i>Verify manually from the terminal:</small>'
+                         + '<pre class="mt-1 mb-0 p-2 bg-light border" style="font-size:0.72em;white-space:pre-wrap;">'
+                         + dep.verify_commands.join('\n') + '</pre>';
+                }
             }
             
             msgDiv.innerHTML = msg;

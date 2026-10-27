@@ -5060,6 +5060,40 @@ class _PortForward:
         return False
 
 
+def _xappctl_path():
+    """Absolute path of the terminal CLI (scripts/xappctl.sh) shipped with the app."""
+    return os.path.normpath(os.path.join(os.path.dirname(current_app.root_path), 'scripts', 'xappctl.sh'))
+
+
+def _xappctl(args, timeout=300, mode=None):
+    """
+    Run a Near-RT RIC lifecycle operation through the terminal CLI
+    `scripts/xappctl.sh` - the same plain `curl` commands an operator types
+    on the server (modelled on ric-plt-appmgr/scripts/appmgrcli and
+    oran-ric/dep/demos/bronze/xapp-hw.sh). The app never speaks to appmgr
+    itself; it only invokes the CLI and reports the exact command it ran.
+
+    Returns {command, returncode, stdout, stderr, http_code, success}.
+    """
+    import subprocess
+    import re
+    mode = mode or os.environ.get('XAPPCTL_MODE', 'portforward')
+    cmd = ['bash', _xappctl_path(), '--mode', mode] + [str(a) for a in args]
+    out = {'command': ' '.join(cmd), 'success': False}
+    current_app.logger.info(f"[Step7] xappctl: {out['command']}")
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        out['returncode'] = r.returncode
+        out['stdout'] = (r.stdout or '')[:1200]
+        out['stderr'] = (r.stderr or '')[:800]
+        m = re.search(r'HTTP (\d{3})', r.stderr or '')
+        out['http_code'] = int(m.group(1)) if m else None
+        out['success'] = r.returncode == 0
+    except Exception as e:
+        out['error'] = str(e)
+    return out
+
+
 def _onboard_xapp(onboarder_url, descriptor, controls_schema, timeout=60):
     """
     Onboard an xApp via the xApp onboarder REST API (POST /api/v1/onboard).
@@ -5511,18 +5545,24 @@ def deploy_to_ric():
                                capture_output=True, text=True, timeout=15)
                 steps[-1]['status'] = 'done'
 
-                # Step 3: Onboard the xApp (REST API -> onboarder).
-                steps.append({'name': f'Onboard {m_name} (POST /api/v1/onboard)', 'status': 'running'})
-                with _PortForward(kubectl_base, onboarder_svc['namespace'],
-                                  onboarder_svc['service'], onboarder_svc['port']) as pf:
-                    onboard_res = _onboard_xapp(pf.base_url, descriptor, controls_schema)
+                # Steps 3/4/7 below are executed through the terminal CLI
+                # scripts/xappctl.sh (plain curl, same as appmgrcli / xapp-hw.sh)
+                # so the app runs exactly what an operator would type. The
+                # commands are collected in `cli_commands` and shown in the UI.
+                cli_commands = []
+                xappctl = _xappctl_path()
+
+                # Step 3: Onboard the xApp (CLI -> curl POST /api/v1/onboard).
+                steps.append({'name': f'Onboard {m_name} (xappctl onboard -> POST /api/v1/onboard)', 'status': 'running'})
+                onboard_res = _xappctl(['onboard', descriptor_path, schema_path])
+                cli_commands.append(onboard_res['command'])
                 deployment_result['onboard'] = onboard_res
                 if onboard_res.get('success'):
                     steps[-1]['status'] = 'done'
-                    steps[-1]['detail'] = onboard_res.get('note') or f"onboarded ({onboard_res.get('status_code')})"
+                    steps[-1]['detail'] = f"onboarded (HTTP {onboard_res.get('http_code')})"
                 else:
                     steps[-1]['status'] = 'error'
-                    steps[-1]['detail'] = f"onboard failed: {onboard_res.get('error') or onboard_res.get('response')}"
+                    steps[-1]['detail'] = f"onboard failed: {onboard_res.get('error') or onboard_res.get('stdout') or onboard_res.get('stderr')}"
 
                 # Step 4: Deploy the onboarded chart via the appmgr REST API.
                 #
@@ -5534,20 +5574,22 @@ def deploy_to_ric():
                 # stub "operation XappDeployXapp has not yet been implemented".
                 deployed_ok = False
                 if onboard_res.get('success'):
-                    steps.append({'name': f'Deploy {m_name} (appmgr POST /ric/v1/xapps)', 'status': 'running'})
-                    with _PortForward(kubectl_base, appmgr_svc['namespace'],
-                                      appmgr_svc['service'], appmgr_svc['port']) as pf:
-                        appmgr_res = _deploy_via_appmgr(
-                            pf.base_url, m_name, m_version, namespace='ricxapp',
-                            override={'image_pull_policy': 'Never'})
+                    steps.append({'name': f'Deploy {m_name} (xappctl deploy -> POST /ric/v1/xapps)', 'status': 'running'})
+                    # Remove any prior release first so re-deploys are idempotent.
+                    undeploy_res = _xappctl(['undeploy', m_name], timeout=120)
+                    cli_commands.append(undeploy_res['command'])
+                    deployment_result['appmgr_undeploy_previous'] = undeploy_res
+                    appmgr_res = _xappctl(['deploy', m_name, '--namespace', 'ricxapp',
+                                           '--override', '{"image_pull_policy":"Never"}'])
+                    cli_commands.append(appmgr_res['command'])
                     deployment_result['appmgr_deploy'] = appmgr_res
                     deployed_ok = appmgr_res.get('success', False)
                     steps[-1]['status'] = 'done' if deployed_ok else 'error'
-                    steps[-1]['detail'] = (f"appmgr deployed ({appmgr_res.get('status_code')})"
+                    steps[-1]['detail'] = (f"appmgr deployed (HTTP {appmgr_res.get('http_code')})"
                                            if deployed_ok else
-                                           f"deploy failed: {appmgr_res.get('error') or appmgr_res.get('response')}")
+                                           f"deploy failed: {appmgr_res.get('error') or appmgr_res.get('stdout') or appmgr_res.get('stderr')}")
 
-                deployment_result['deploy_via'] = 'appmgr-rest-api' if deployed_ok else None
+                deployment_result['deploy_via'] = 'xappctl-cli (curl -> appmgr REST)' if deployed_ok else None
 
                 if deployed_ok:
                     # Step 5: Wait for pod readiness and test the xApp.
@@ -5578,15 +5620,22 @@ def deploy_to_ric():
                     target_url = os.environ.get(
                         'RIC_SUBSCRIPTION_TARGET_URL',
                         f"{catalog_url}/models/{model_id}/events" if model_id else f'{catalog_url}/events')
-                    with _PortForward(kubectl_base, appmgr_svc['namespace'],
-                                      appmgr_svc['service'], appmgr_svc['port']) as pf:
-                        sub_res = _subscribe_telemetry(pf.base_url, target_url, event_type='all')
+                    sub_res = _xappctl(['subscribe', target_url, 'all', '5', '10'], timeout=120)
+                    cli_commands.append(sub_res['command'])
                     deployment_result['subscription'] = sub_res
                     steps[-1]['status'] = 'done' if sub_res.get('success') else 'warning'
-                    steps[-1]['detail'] = (f"subscribed ({sub_res.get('status_code')})"
+                    steps[-1]['detail'] = (f"subscribed (HTTP {sub_res.get('http_code')})"
                                            if sub_res.get('success') else
-                                           f"subscribe failed: {sub_res.get('error') or sub_res.get('response')}")
+                                           f"subscribe failed: {sub_res.get('error') or sub_res.get('stdout') or sub_res.get('stderr')}")
 
+                deployment_result['cli_commands'] = cli_commands
+                deployment_result['verify_commands'] = [
+                    f'bash {xappctl} status',
+                    f'bash {xappctl} status {m_name}',
+                    f'bash {xappctl} subscriptions',
+                    f'bash {xappctl} wait {m_name}',
+                    f'kubectl get pods -n ricxapp -l release={m_name}',
+                ]
                 deployment_result['deployed'] = deployed_ok
                 deployment_result['live_mode'] = True
             else:
