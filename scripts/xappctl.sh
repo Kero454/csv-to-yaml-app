@@ -98,16 +98,27 @@ free_port() {
 
 # start_portforward <service> <remotePort>  -> sets LOCAL_URL
 start_portforward() {
-  local svc="$1" rport="$2" lport
+  local svc="$1" rport="$2" lport ok=0
   lport=$(free_port)
+  PF_LOG=$(mktemp /tmp/xappctl_pf.XXXXXX)
   vlog "$KUBECTL port-forward -n $RIC_NAMESPACE svc/$svc $lport:$rport"
-  $KUBECTL port-forward -n "$RIC_NAMESPACE" "svc/$svc" "$lport:$rport" >/dev/null 2>&1 &
+  $KUBECTL port-forward -n "$RIC_NAMESPACE" "svc/$svc" "$lport:$rport" >"$PF_LOG" 2>&1 &
   PF_PID=$!
-  # wait until the tunnel accepts connections (max ~10s)
-  for _ in $(seq 1 20); do
-    if (echo > /dev/tcp/127.0.0.1/$lport) 2>/dev/null; then break; fi
+  # wait until the tunnel accepts connections (max ~15s)
+  for _ in $(seq 1 30); do
+    if ! kill -0 "$PF_PID" 2>/dev/null; then break; fi
+    if (echo > /dev/tcp/127.0.0.1/$lport) 2>/dev/null; then ok=1; break; fi
     sleep 0.5
   done
+  if [ $ok -ne 1 ]; then
+    log "port-forward to svc/$svc:$rport in $RIC_NAMESPACE did not open on 127.0.0.1:$lport"
+    log "kubectl output:"; sed 's/^/[kubectl] /' "$PF_LOG" >&2
+    log "hints: '$KUBECTL get svc -n $RIC_NAMESPACE | grep -E \"appmgr|onboard\"'  or use '--mode incluster'"
+    rm -f "$PF_LOG"; cleanup
+    HTTP_CODE="000"; echo "HTTP 000" >&2
+    return 1
+  fi
+  rm -f "$PF_LOG"
   LOCAL_URL="http://127.0.0.1:$lport"
 }
 
@@ -172,7 +183,7 @@ rest() {
       fi
       ;;
     portforward|*)
-      start_portforward "$svc" "$port"
+      start_portforward "$svc" "$port" || return 1
       local url="${LOCAL_URL}${path}"
       vlog "curl -X $method $url"
       if [ -n "$data" ]; then
