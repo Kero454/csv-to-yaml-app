@@ -383,6 +383,13 @@ async function runPipelineStep(button, step) {
                 if (data.model_type) msg += ' &middot; <small>Type: ' + data.model_type.toUpperCase() + '</small>';
                 if (data.pkl_file) msg += '<br><small><i class="bi bi-file-earmark-binary me-1"></i>.pkl sent: <code>' + data.pkl_file + '</code>' + (data.pkl_size ? ' (' + data.pkl_size + ')' : '') + '</small>';
                 if (data.param_count !== undefined) msg += ' &middot; <small>' + data.param_count + ' params</small>';
+                if (data.model_uid) msg += '<br><small><i class="bi bi-fingerprint me-1"></i>Model UID: <code>' + data.model_uid + '</code></small>';
+                if (data.pkl_sha256) msg += '<br><small><i class="bi bi-shield-lock me-1"></i>SHA-256: <code style="font-size:0.85em;">' + data.pkl_sha256 + '</code></small>';
+                if (data.weights) {
+                    msg += '<br><small class="text-success"><i class="bi bi-cpu me-1"></i>Trained weights embedded: <code>' + data.weights.file + '</code> (' + (data.weights.size / 1024).toFixed(1) + ' KB)</small>';
+                } else {
+                    msg += '<br><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Config-only artifact: no trained checkpoint (.ckpt/.pt/.pth) found in the experiment</small>';
+                }
                 if (data.catalog_confirmation && data.catalog_confirmation.verified) {
                     msg += '<br><small class="text-success"><i class="bi bi-patch-check-fill me-1"></i>Catalog confirmed: status=' + data.catalog_confirmation.status + ', ' + data.catalog_confirmation.hyperparameters_stored + ' params stored</small>';
                 } else if (data.demo_mode) {
@@ -470,6 +477,17 @@ async function runPipelineStep(button, step) {
                     }
                 }
                 if (dep.namespace) msg += '<br><small>Target namespace: <code>' + dep.namespace + '</code></small>';
+                // Model integrity: local .pkl vs pod vs ML Model Catalog hash
+                if (dep.pkl_verification && dep.pkl_verification.checked) {
+                    const pv = dep.pkl_verification;
+                    const ok = pv.match && pv.catalog_match !== false;
+                    msg += '<br><small class="' + (ok ? 'text-success' : 'text-danger') + '"><i class="bi bi-shield-' + (ok ? 'check' : 'x') + ' me-1"></i>'
+                         + 'Model integrity: pod <code>' + (pv.image_pkl_sha256 || '').substring(0, 12) + '…</code>'
+                         + ' vs local <code>' + (pv.local_pkl_sha256 || '').substring(0, 12) + '…</code>'
+                         + (pv.catalog_pkl_sha256 ? ' vs catalog <code>' + pv.catalog_pkl_sha256.substring(0, 12) + '…</code>' : ' (catalog hash unavailable)')
+                         + (pv.model_id ? ' &middot; model_id <code>' + pv.model_id.substring(0, 8) + '…</code>' : '')
+                         + '</small>';
+                }
                 // Show deployment steps for remote
                 if (dep.steps && dep.steps.length && stepsUl) {
                     await renderStepsProgressive(stepsUl, dep.steps);

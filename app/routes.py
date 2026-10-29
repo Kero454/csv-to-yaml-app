@@ -3860,6 +3860,55 @@ def _scan_experiment_models(exp_path):
     return models_found
 
 
+def _sha256_file(path):
+    """SHA-256 hex digest of a file (streamed)."""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+WEIGHT_EXTENSIONS = ('.ckpt', '.pt', '.pth', '.safetensors', '.joblib', '.h5', '.onnx')
+MAX_EMBEDDED_WEIGHTS_BYTES = int(os.environ.get('MAX_EMBEDDED_WEIGHTS_BYTES', 256 * 1024 * 1024))
+
+
+def _find_trained_weights(exp_path, model_type=None):
+    """
+    Locate the trained weights/checkpoint produced for an experiment so the
+    published artifact carries the *model*, not only its configuration
+    (O-RAN: the delivered model must be executable by the ML Model Runner).
+
+    Scans the experiment tree (excluding ric_artifacts/) for checkpoint files;
+    prefers a file whose name contains the model type, else the most recent.
+    Returns {'path','file','size','sha256'} or None.
+    """
+    candidates = []
+    for root, dirs, files in os.walk(exp_path):
+        dirs[:] = [d for d in dirs if d not in ('ric_artifacts', '__pycache__', '.git')]
+        for fn in files:
+            if fn.lower().endswith(WEIGHT_EXTENSIONS):
+                p = os.path.join(root, fn)
+                try:
+                    candidates.append((os.path.getmtime(p), p))
+                except OSError:
+                    continue
+    if not candidates:
+        return None
+    if model_type:
+        typed = [c for c in candidates if model_type.lower() in os.path.basename(c[1]).lower()]
+        if typed:
+            candidates = typed
+    _, path = max(candidates)
+    return {
+        'path': path,
+        'file': os.path.relpath(path, exp_path),
+        'size': os.path.getsize(path),
+        'sha256': _sha256_file(path),
+    }
+
+
 @web.route('/api/publish_to_ric', methods=['POST'])
 @login_required
 def publish_to_ric():
@@ -3939,13 +3988,38 @@ def publish_to_ric():
     add_step(f'Extract {model_type.upper()} hyperparameters', 'done',
              f'{len(hyperparameters)} parameter(s) captured')
 
+    # ---- Locate trained weights (the executable model, not only its config) ----
+    weights = _find_trained_weights(exp_path, model_type)
+    weights_blob = None
+    weights_meta = None
+    if weights:
+        weights_meta = {k: weights[k] for k in ('file', 'size', 'sha256')}
+        if weights['size'] <= MAX_EMBEDDED_WEIGHTS_BYTES:
+            with open(weights['path'], 'rb') as wf:
+                weights_blob = wf.read()
+            add_step('Collect trained weights', 'done',
+                     f"{weights['file']} ({weights['size'] / 1024:.1f} KB, sha256 {weights['sha256'][:12]}...)")
+        else:
+            add_step('Collect trained weights', 'warning',
+                     f"{weights['file']} is {weights['size'] / 1e6:.0f} MB > limit; referenced by hash only")
+    else:
+        add_step('Collect trained weights', 'warning',
+                 'No checkpoint (.ckpt/.pt/.pth/...) found in experiment - artifact is config-only')
+
     # ---- Generate .pkl artifact ----
+    # Unique identity for this exact artifact (O-RAN: every model instance is
+    # individually identifiable in the catalog and at the Near-RT RIC).
+    import uuid as uuid_mod
+    model_uid = str(uuid_mod.uuid4())
+
     pkl_dir = os.path.join(exp_path, 'ric_artifacts')
     os.makedirs(pkl_dir, exist_ok=True)
     pkl_filename = f"{model_name}_v{model_version}.pkl"
     pkl_path = os.path.join(pkl_dir, pkl_filename)
     
     pkl_artifact = {
+        'artifact_schema': 'csv-to-yaml-pkl/v2',
+        'model_uid': model_uid,
         'model_name': model_name,
         'model_type': model_type,
         'version': model_version,
@@ -3954,6 +4028,8 @@ def publish_to_ric():
         'training_params': training_params,
         'train_config': train_config,
         'ts_config': ts_config,
+        'weights': weights_meta,
+        'weights_blob': weights_blob,
         'source_arch_file': model_info['filename'],
         'source_experiment': experiment_name,
         'framework': 'csv-to-yaml-platform',
@@ -3961,12 +4037,13 @@ def publish_to_ric():
     }
     
     with open(pkl_path, 'wb') as f:
-        pickle.dump(pkl_artifact, f)
+        pickle.dump(pkl_artifact, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     pkl_size = os.path.getsize(pkl_path)
-    current_app.logger.info(f"Generated .pkl artifact: {pkl_path} ({pkl_size} bytes)")
+    pkl_sha256 = _sha256_file(pkl_path)
+    current_app.logger.info(f"Generated .pkl artifact: {pkl_path} ({pkl_size} bytes, sha256={pkl_sha256})")
     add_step('Generate .pkl artifact', 'done',
-             f'{pkl_filename} ({pkl_size / 1024:.1f} KB)')
+             f'{pkl_filename} ({pkl_size / 1024:.1f} KB) uid={model_uid[:8]} sha256={pkl_sha256[:12]}...')
     
     # ---- Build catalog payload ----
     catalog_payload = {
@@ -3979,6 +4056,11 @@ def publish_to_ric():
         'metrics': training_params,
         'hyperparameters': hyperparameters,
         'training_framework': 'csv-to-yaml-platform',
+        'model_uid': model_uid,
+        'pkl_sha256': pkl_sha256,
+        'pkl_size_bytes': pkl_size,
+        'weights': weights_meta,
+        'artifact_schema': 'csv-to-yaml-pkl/v2',
         'input_schema': {
             'past_variables': ts_config.get('past_variables', []),
             'future_variables': ts_config.get('future_variables', None),
@@ -4066,6 +4148,10 @@ def publish_to_ric():
     publish_state_path = os.path.join(pkl_dir, f"{model_name}_publish_state.json")
     publish_state = {
         'model_id': model_id,
+        'model_uid': model_uid,
+        'pkl_sha256': pkl_sha256,
+        'pkl_size_bytes': pkl_size,
+        'weights': weights_meta,
         'model_name': model_name,
         'model_type': model_type,
         'version': model_version,
@@ -4088,6 +4174,9 @@ def publish_to_ric():
         'success': True,
         'message': f'Model "{model_name}" published to Non-RT RIC ML Model Catalog!',
         'model_id': model_id,
+        'model_uid': model_uid,
+        'pkl_sha256': pkl_sha256,
+        'weights': weights_meta,
         'model_name': model_name,
         'model_type': model_type,
         'pkl_path': pkl_path,
@@ -4132,6 +4221,7 @@ Auto-generated by xApp Builder (csv-to-yaml-platform).
 import pickle
 import json
 import os
+import hashlib
 import signal
 import sys
 import time
@@ -4141,6 +4231,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
 MODEL_PATH = os.environ.get("MODEL_PATH", "/app/model.pkl")
+WEIGHTS_DIR = os.environ.get("WEIGHTS_DIR", "/app/weights")
+STRICT_MODEL_INTEGRITY = os.environ.get("STRICT_MODEL_INTEGRITY", "false").lower() == "true"
 RMR_PORT = int(os.environ.get("RMR_PORT", "4560"))
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8080"))
 XAPP_NAME = "{model_name}"
@@ -4201,10 +4293,13 @@ class MLModelRunner:
         self.start_time = datetime.utcnow()
         self.stats = {{"predictions": 0, "a1_policies": 0, "e2_indications": 0, "errors": 0}}
         self.active_policies = {{}}
+        self.integrity = {{"checked": False, "match": None}}
+        self.weights_path = None
         # Runtime config from the xApp descriptor 'controls' section
         self.controls = load_controls()
         self.model_type = self.controls.get("model_type", MODEL_TYPE)
         self.hyperparameters = self.controls.get("hyperparameters", {{}})
+        self.model_identity = self.controls.get("model_identity", {{}}) or {{}}
         logger.info(f"xApp config: model_type={{self.model_type}}, {{len(self.hyperparameters)}} hyperparameters")
         signal.signal(signal.SIGTERM, self._shutdown)
         signal.signal(signal.SIGINT, self._shutdown)
@@ -4224,10 +4319,36 @@ class MLModelRunner:
         threading.Thread(target=serve, daemon=True).start()
         logger.info(f"Health endpoint on port {{HEALTH_PORT}}")
 
+    def verify_model_integrity(self):
+        """Compare the shipped .pkl hash with the one recorded in the ML Model Catalog."""
+        expected = (self.model_identity.get("pkl_sha256") or "").strip()
+        with open(MODEL_PATH, "rb") as f:
+            actual = hashlib.sha256(f.read()).hexdigest()
+        self.integrity = {{"checked": bool(expected), "match": (actual == expected) if expected else None,
+                           "pkl_sha256": actual, "expected_pkl_sha256": expected,
+                           "model_id": self.model_identity.get("model_id", ""),
+                           "model_uid": self.model_identity.get("model_uid", "")}}
+        if expected and actual != expected:
+            logger.error(f"MODEL INTEGRITY MISMATCH: pkl={{actual[:12]}} catalog={{expected[:12]}}")
+            return not STRICT_MODEL_INTEGRITY
+        logger.info(f"Model integrity: {{'OK' if expected else 'not verifiable (no catalog hash)'}}")
+        return True
+
     def load_model(self):
         logger.info(f"Loading model from {{MODEL_PATH}}")
         with open(MODEL_PATH, "rb") as f:
             self.model = pickle.load(f)
+        if isinstance(self.model, dict):
+            blob = self.model.get("weights_blob")
+            wmeta = self.model.get("weights") or {{}}
+            if blob:
+                os.makedirs(WEIGHTS_DIR, exist_ok=True)
+                self.weights_path = os.path.join(WEIGHTS_DIR, os.path.basename(wmeta.get("file", "weights.bin")))
+                with open(self.weights_path, "wb") as wf:
+                    wf.write(blob)
+                logger.info(f"Trained weights restored to {{self.weights_path}} ({{len(blob)}} bytes)")
+            else:
+                logger.warning("Artifact carries no trained weights (config-only model)")
         logger.info(f"Model loaded: type={{self.model.get('model_type', MODEL_TYPE) if isinstance(self.model, dict) else MODEL_TYPE}}")
         self.healthy = True
 
@@ -4250,12 +4371,19 @@ class MLModelRunner:
         return {{
             "healthy": self.healthy and self.running,
             "xapp": XAPP_NAME, "model_type": self.model_type,
+            "model_id": self.model_identity.get("model_id", ""),
+            "model_uid": self.model_identity.get("model_uid", ""),
+            "weights_loaded": self.weights_path is not None,
+            "integrity": self.integrity,
             "uptime": (datetime.utcnow() - self.start_time).total_seconds(),
             "predictions": self.stats["predictions"]
         }}
 
     def run(self):
         logger.info(f"O-RAN ML Model Runner: {{XAPP_NAME}} ({{MODEL_TYPE}})")
+        if not self.verify_model_integrity():
+            logger.error("Model integrity check failed (STRICT_MODEL_INTEGRITY=true), exiting")
+            sys.exit(2)
         self.load_model()
         logger.info(f"xApp running, waiting for RMR messages...")
         while self.running:
@@ -4538,7 +4666,7 @@ def _test_xapp_pod(kubectl_base, m_name, namespace='ricxapp', timeout_s=60):
 
 
 def _build_xapp_controls(model_type, model_version, model_configs, hyperparameters,
-                         ts_config, training_params):
+                         ts_config, training_params, identity=None):
     """
     Build the xApp descriptor 'controls' section from the framework's
     architecture YAML config so the two schemas match.
@@ -4559,9 +4687,22 @@ def _build_xapp_controls(model_type, model_version, model_configs, hyperparamete
     # Keep only JSON-serializable scalar/list/dict values
     merged_hp = {k: v for k, v in merged_hp.items() if isinstance(v, (str, int, float, bool, list, dict))}
 
+    identity = identity or {}
+    weights = identity.get('weights') or {}
+
     controls = {
         'model_type': str(model_type),
         'model_version': str(model_version),
+        # O-RAN: the model delivered to the Near-RT RIC must be uniquely
+        # identifiable and integrity-checkable against the ML Model Catalog.
+        'model_identity': {
+            'model_id': str(identity.get('model_id') or ''),
+            'model_uid': str(identity.get('model_uid') or ''),
+            'pkl_sha256': str(identity.get('pkl_sha256') or ''),
+            'weights_file': str(weights.get('file') or ''),
+            'weights_sha256': str(weights.get('sha256') or ''),
+            'catalog_url': str(identity.get('catalog_url') or ''),
+        },
         'prediction': {
             'rmr_output_type': 30000,
             'report_period_ms': 1000
@@ -4870,6 +5011,8 @@ def package_xapp():
         publish_state.get('hyperparameters', {}),
         publish_state.get('ts_config', {}),
         publish_state.get('training_params', {}),
+        identity={k: publish_state.get(k) for k in
+                  ('model_id', 'model_uid', 'pkl_sha256', 'weights', 'catalog_url')},
     )
     xapp_descriptor['controls'] = xapp_controls
 
@@ -5269,7 +5412,8 @@ def _subscribe_telemetry(appmgr_url, target_url, event_type='all',
     return out
 
 
-def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace='ricxapp'):
+def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace='ricxapp',
+                         catalog_sha256=None):
     """
     Compare the local .pkl artifact against the model.pkl baked into the image
     that is actually running in the cluster pod.
@@ -5280,18 +5424,14 @@ def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace
     model the framework packaged - verified against the cluster, not the server FS.
     """
     import subprocess
-    import hashlib
-    result = {'checked': False, 'match': None}
+    result = {'checked': False, 'match': None, 'catalog_match': None,
+              'catalog_pkl_sha256': catalog_sha256}
 
     if not pkl_path or not os.path.exists(pkl_path):
         result['error'] = f'local pkl not found: {pkl_path}'
         return result
     try:
-        h = hashlib.sha256()
-        with open(pkl_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(65536), b''):
-                h.update(chunk)
-        local_hash = h.hexdigest()
+        local_hash = _sha256_file(pkl_path)
         result['local_pkl_sha256'] = local_hash
         result['local_pkl_path'] = pkl_path
     except Exception as e:
@@ -5327,6 +5467,8 @@ def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace
         if exec_r.returncode == 0 and len(remote_hash) == 64:
             result['image_pkl_sha256'] = remote_hash
             result['match'] = (remote_hash == local_hash)
+            if catalog_sha256:
+                result['catalog_match'] = (remote_hash == catalog_sha256)
             result['checked'] = True
         else:
             result['error'] = f'in-pod hash failed: {(exec_r.stderr or exec_r.stdout or "")[:150]}'
@@ -5458,16 +5600,23 @@ def deploy_to_ric():
     except Exception:
         pass
     
-    # ---- Request deployment via catalog ----
+    # ---- Request deployment via catalog + fetch the catalogued integrity hash ----
     catalog_deploy_result = None
+    catalog_model = None
     if infra_status['catalog'] and model_id:
         try:
             r = http_requests.post(f'{catalog_url}/models/{model_id}/deploy', timeout=5)
             if r.status_code == 200:
                 catalog_deploy_result = r.json()
-        except Exception:
-            current_app.logger.error(f"[Step7] Catalog deployment failed: {e}")
-            pass
+            rg = http_requests.get(f'{catalog_url}/models/{model_id}', timeout=5)
+            if rg.status_code == 200:
+                catalog_model = rg.json()
+        except Exception as e:
+            current_app.logger.error(f"[Step7] Catalog deployment request failed: {e}")
+    # Expected hash: what the Non-RT RIC catalog recorded at publish time; fall
+    # back to the publish_state copy when the catalog is offline/was restarted.
+    expected_pkl_sha256 = ((catalog_model or {}).get('pkl_sha256')
+                           or publish_state.get('pkl_sha256'))
     
     # ---- Resolve the kubectl invocation (talk to the cluster directly) ----
     # The framework is co-located with the cluster; prefer a plain `kubectl`,
@@ -5602,15 +5751,34 @@ def deploy_to_ric():
 
                     # Step 6: Verify the deployed image's model.pkl matches the local .pkl.
                     steps.append({'name': 'Verify deployed image matches .pkl', 'status': 'running'})
-                    pkl_check = _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image)
+                    pkl_check = _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image,
+                                                     catalog_sha256=expected_pkl_sha256)
+                    pkl_check['model_id'] = model_id
+                    pkl_check['model_uid'] = publish_state.get('model_uid')
                     deployment_result['pkl_verification'] = pkl_check
                     if pkl_check.get('checked'):
-                        if pkl_check.get('match'):
+                        if pkl_check.get('match') and pkl_check.get('catalog_match') is not False:
                             steps[-1]['status'] = 'done'
-                            steps[-1]['detail'] = f"model.pkl matches (sha256 {pkl_check['local_pkl_sha256'][:12]}...)"
+                            cat_note = ' + catalog' if pkl_check.get('catalog_match') else ''
+                            steps[-1]['detail'] = (f"model.pkl in pod matches local{cat_note} "
+                                                   f"(sha256 {pkl_check['local_pkl_sha256'][:12]}...)")
+                        elif pkl_check.get('catalog_match') is False:
+                            steps[-1]['status'] = 'error'
+                            steps[-1]['detail'] = 'Deployed .pkl does NOT match the hash recorded in the ML Model Catalog'
                         else:
                             steps[-1]['status'] = 'error'
                             steps[-1]['detail'] = 'Deployed image .pkl does NOT match local artifact'
+                        # Close the loop: tell the Non-RT RIC catalog what is running.
+                        if infra_status['catalog'] and model_id:
+                            try:
+                                http_requests.post(f'{catalog_url}/models/{model_id}/verify', json={
+                                    'image_pkl_sha256': pkl_check.get('image_pkl_sha256'),
+                                    'deployed_image': pkl_check.get('deployed_image'),
+                                    'pod': pkl_check.get('pod'),
+                                    'namespace': 'ricxapp',
+                                }, timeout=5)
+                            except Exception as e:
+                                current_app.logger.warning(f"[Step7] catalog verify report failed: {e}")
                     else:
                         steps[-1]['status'] = 'warning'
                         steps[-1]['detail'] = pkl_check.get('error', 'verification skipped')
