@@ -23,11 +23,45 @@ from app import db
 # imagePullPolicy=Never, so this name is only a local tag - no real registry is
 # contacted. Override with the XAPP_REGISTRY env var if a real registry is used.
 XAPP_REGISTRY = os.environ.get('XAPP_REGISTRY', 'registry.local:30500')
+# Image name prefix inside the registry. Docker Hub does not allow nested
+# namespaces (docker.io/<user>/xapps/<model> is invalid), so set
+# XAPP_IMAGE_PREFIX='' together with XAPP_REGISTRY='docker.io/<user>'.
+XAPP_IMAGE_PREFIX = os.environ.get('XAPP_IMAGE_PREFIX', 'xapps/')
+# Push the built image to XAPP_REGISTRY (product mode: K8s pulls it). When
+# false (dev mode) the image only lives in minikube's docker daemon and is
+# deployed with imagePullPolicy=Never.
+XAPP_REGISTRY_PUSH = os.environ.get('XAPP_REGISTRY_PUSH', 'false').lower() in ('1', 'true', 'yes')
+MINIKUBE_PROFILE = os.environ.get('MINIKUBE_PROFILE', 'kero-ric')
+
+
+def xapp_model_name(username, experiment, model_type, max_len=40):
+    """
+    Unique, DNS-1123-safe xApp name: <user>-<experiment>-<model_type>.
+    Used for the Helm release, pod labels, image repository and catalog name,
+    so several users can publish the same experiment/model type on the shared
+    server without colliding (K8s limits labels to 63 chars; keep margin for
+    the release-name prefix appmgr adds).
+    """
+    import re
+    parts = [re.sub(r'[^a-z0-9]+', '-', str(p).lower()).strip('-') for p in (username, experiment, model_type)]
+    name = '-'.join(p for p in parts if p)
+    name = re.sub(r'-{2,}', '-', name)[:max_len].strip('-')
+    return name or 'xapp'
+
+
+def xapp_image_name(model_name):
+    """Image repository name (without registry/tag) for an xApp model image."""
+    return f'{XAPP_IMAGE_PREFIX}{model_name}'
 
 
 def xapp_image_tag(model_name, model_version):
     """Return the fully-qualified image tag for an xApp model image."""
-    return f'{XAPP_REGISTRY}/xapps/{model_name}:{model_version}'
+    return f'{XAPP_REGISTRY}/{xapp_image_name(model_name)}:{model_version}'
+
+
+def xapp_image_ref(model_name, model_version):
+    """O-RAN descriptor image reference: {registry, name, tag}."""
+    return {'registry': XAPP_REGISTRY, 'name': xapp_image_name(model_name), 'tag': str(model_version)}
 
 
 def get_user_csv_files(user):
@@ -3874,38 +3908,91 @@ WEIGHT_EXTENSIONS = ('.ckpt', '.pt', '.pth', '.safetensors', '.joblib', '.h5', '
 MAX_EMBEDDED_WEIGHTS_BYTES = int(os.environ.get('MAX_EMBEDDED_WEIGHTS_BYTES', 256 * 1024 * 1024))
 
 
-def _find_trained_weights(exp_path, model_type=None):
+def _training_output_dirs(exp_path):
+    """
+    Directories where DSIPTS training writes checkpoints for this experiment.
+    The framework does not train inside the upload tree: the experiment config
+    YAML points DSIPTS at train_config.dirpath / inference.output_path. Also
+    honours DSIPTS_WEIGHTS_DIRS (os.pathsep-separated) for server-wide roots.
+    """
+    roots = []
+    for fname in sorted(os.listdir(exp_path)):
+        if not fname.lower().endswith(('.yaml', '.yml', '.config')):
+            continue
+        try:
+            with open(os.path.join(exp_path, fname), 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f) or {}
+        except Exception:
+            continue
+        if not isinstance(cfg, dict):
+            continue
+        for section, key in (('train_config', 'dirpath'), ('inference', 'output_path')):
+            d = (cfg.get(section) or {}).get(key) if isinstance(cfg.get(section), dict) else None
+            if d and isinstance(d, str):
+                roots.append(d)
+    roots += [d for d in os.environ.get('DSIPTS_WEIGHTS_DIRS', '').split(os.pathsep) if d]
+    seen, out = set(), []
+    for r in roots:
+        r = os.path.expanduser(r)
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
+
+
+def _find_trained_weights(exp_path, model_type=None, ts_config=None):
     """
     Locate the trained weights/checkpoint produced for an experiment so the
     published artifact carries the *model*, not only its configuration
     (O-RAN: the delivered model must be executable by the ML Model Runner).
 
-    Scans the experiment tree (excluding ric_artifacts/) for checkpoint files;
-    prefers a file whose name contains the model type, else the most recent.
-    Returns {'path','file','size','sha256'} or None.
+    Searches the experiment tree (excluding ric_artifacts/) and the DSIPTS
+    training output dirs (train_config.dirpath / inference.output_path /
+    DSIPTS_WEIGHTS_DIRS). In those dirs DSIPTS stores weights under
+    <dirpath>/<ts.name>/<ts.version>/, so a matching subfolder is preferred;
+    otherwise a file whose name contains the model type, else the most recent.
+    Returns {'path','file','size','sha256','searched'} or {'searched': [...]} .
     """
+    ts_config = ts_config or {}
+    ts_name = str(ts_config.get('name') or '').lower()
+    ts_version = str(ts_config.get('version') or '')
+    search_roots = [exp_path] + [d for d in _training_output_dirs(exp_path) if os.path.isdir(d)]
+    searched = [exp_path] + _training_output_dirs(exp_path)
+
     candidates = []
-    for root, dirs, files in os.walk(exp_path):
-        dirs[:] = [d for d in dirs if d not in ('ric_artifacts', '__pycache__', '.git')]
-        for fn in files:
-            if fn.lower().endswith(WEIGHT_EXTENSIONS):
-                p = os.path.join(root, fn)
-                try:
-                    candidates.append((os.path.getmtime(p), p))
-                except OSError:
-                    continue
+    for base in search_roots:
+        for root, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in ('ric_artifacts', '__pycache__', '.git')]
+            for fn in files:
+                if fn.lower().endswith(WEIGHT_EXTENSIONS):
+                    p = os.path.join(root, fn)
+                    try:
+                        candidates.append((os.path.getmtime(p), p, base))
+                    except OSError:
+                        continue
     if not candidates:
-        return None
-    if model_type:
-        typed = [c for c in candidates if model_type.lower() in os.path.basename(c[1]).lower()]
-        if typed:
-            candidates = typed
-    _, path = max(candidates)
+        return {'searched': searched}
+
+    def _score(c):
+        rel = os.path.relpath(c[1], c[2]).lower().replace('\\', '/')
+        parts = rel.split('/')
+        s = 0
+        if ts_name and ts_name in parts:
+            s += 4
+            if ts_version and ts_version in parts:
+                s += 2
+        if model_type and model_type.lower() in rel:
+            s += 1
+        return (s, c[0])
+
+    _, path, base = max(candidates, key=_score)
     return {
         'path': path,
-        'file': os.path.relpath(path, exp_path),
+        'file': os.path.relpath(path, base),
+        'source_dir': base,
         'size': os.path.getsize(path),
         'sha256': _sha256_file(path),
+        'searched': searched,
     }
 
 
@@ -3972,7 +4059,7 @@ def publish_to_ric():
     ts_config = model_info['ts']
     
     model_version = data.get('version', '1.0.0')
-    model_name = f"{safe_exp}-{model_type}".lower().replace('_', '-')
+    model_name = xapp_model_name(safe_user, safe_exp, model_type)
 
     add_step('Select model', 'done',
              f'{model_type.upper()} from {model_info["filename"]}')
@@ -3989,11 +4076,14 @@ def publish_to_ric():
              f'{len(hyperparameters)} parameter(s) captured')
 
     # ---- Locate trained weights (the executable model, not only its config) ----
-    weights = _find_trained_weights(exp_path, model_type)
+    weights = _find_trained_weights(exp_path, model_type, ts_config)
+    searched_dirs = weights.get('searched', [exp_path])
+    if 'path' not in weights:
+        weights = None
     weights_blob = None
     weights_meta = None
     if weights:
-        weights_meta = {k: weights[k] for k in ('file', 'size', 'sha256')}
+        weights_meta = {k: weights[k] for k in ('file', 'size', 'sha256', 'source_dir')}
         if weights['size'] <= MAX_EMBEDDED_WEIGHTS_BYTES:
             with open(weights['path'], 'rb') as wf:
                 weights_blob = wf.read()
@@ -4004,7 +4094,10 @@ def publish_to_ric():
                      f"{weights['file']} is {weights['size'] / 1e6:.0f} MB > limit; referenced by hash only")
     else:
         add_step('Collect trained weights', 'warning',
-                 'No checkpoint (.ckpt/.pt/.pth/...) found in experiment - artifact is config-only')
+                 'No checkpoint (.ckpt/.pt/.pth/...) found - artifact is config-only. Searched: '
+                 + ', '.join(searched_dirs)
+                 + '. Train the model with DSIPTS first (weights go to train_config.dirpath/<ts.name>/<ts.version>/) '
+                   'or copy the checkpoint into the experiment folder.')
 
     # ---- Generate .pkl artifact ----
     # Unique identity for this exact artifact (O-RAN: every model instance is
@@ -4223,10 +4316,12 @@ import json
 import os
 import hashlib
 import signal
+import socket
 import sys
 import time
 import threading
 import logging
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
@@ -4235,6 +4330,8 @@ WEIGHTS_DIR = os.environ.get("WEIGHTS_DIR", "/app/weights")
 STRICT_MODEL_INTEGRITY = os.environ.get("STRICT_MODEL_INTEGRITY", "false").lower() == "true"
 RMR_PORT = int(os.environ.get("RMR_PORT", "4560"))
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8080"))
+APPMGR_URL = os.environ.get("APPMGR_URL", "http://service-ricplt-appmgr-http.ricplt.svc.cluster.local:8080")
+XAPP_REGISTER = os.environ.get("XAPP_REGISTER", "true").lower() == "true"
 XAPP_NAME = "{model_name}"
 MODEL_TYPE = "{model_type}"
 
@@ -4295,6 +4392,7 @@ class MLModelRunner:
         self.active_policies = {{}}
         self.integrity = {{"checked": False, "match": None}}
         self.weights_path = None
+        self.registered = False
         # Runtime config from the xApp descriptor 'controls' section
         self.controls = load_controls()
         self.model_type = self.controls.get("model_type", MODEL_TYPE)
@@ -4318,6 +4416,27 @@ class MLModelRunner:
                 server.handle_request()
         threading.Thread(target=serve, daemon=True).start()
         logger.info(f"Health endpoint on port {{HEALTH_PORT}}")
+
+    def register_with_appmgr(self):
+        """O-RAN xApp registration: POST /ric/v1/register so appmgr/rtmgr know this instance."""
+        if not XAPP_REGISTER:
+            return
+        pod_ip = os.environ.get("POD_IP", socket.gethostbyname(socket.gethostname()))
+        payload = {{"appName": XAPP_NAME, "appVersion": self.controls.get("model_version", ""),
+                   "appInstanceName": os.environ.get("HOSTNAME", XAPP_NAME),
+                   "httpEndpoint": f"{{pod_ip}}:{{HEALTH_PORT}}", "rmrEndpoint": f"{{pod_ip}}:{{RMR_PORT}}",
+                   "config": json.dumps(self.controls)}}
+        for attempt in range(1, 6):
+            try:
+                req = urllib.request.Request(APPMGR_URL + "/ric/v1/register", data=json.dumps(payload).encode(),
+                                             headers={{"Content-Type": "application/json"}}, method="POST")
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    logger.info(f"Registered with appmgr HTTP {{resp.status}}")
+                self.registered = True
+                return
+            except Exception as e:
+                logger.warning(f"appmgr register attempt {{attempt}} failed: {{e}}")
+                time.sleep(min(5 * attempt, 20))
 
     def verify_model_integrity(self):
         """Compare the shipped .pkl hash with the one recorded in the ML Model Catalog."""
@@ -4375,6 +4494,7 @@ class MLModelRunner:
             "model_uid": self.model_identity.get("model_uid", ""),
             "weights_loaded": self.weights_path is not None,
             "integrity": self.integrity,
+            "registered_with_appmgr": self.registered,
             "uptime": (datetime.utcnow() - self.start_time).total_seconds(),
             "predictions": self.stats["predictions"]
         }}
@@ -4385,6 +4505,7 @@ class MLModelRunner:
             logger.error("Model integrity check failed (STRICT_MODEL_INTEGRITY=true), exiting")
             sys.exit(2)
         self.load_model()
+        threading.Thread(target=self.register_with_appmgr, daemon=True).start()
         logger.info(f"xApp running, waiting for RMR messages...")
         while self.running:
             time.sleep(1)
@@ -4422,7 +4543,7 @@ CMD ["python3", "/app/xapp_main.py"]
     descriptor = {
         'xapp_name': model_name,
         'version': model_version,
-        'containers': [{'name': model_name, 'image': {'registry': XAPP_REGISTRY, 'name': f'xapps/{model_name}', 'tag': model_version}}],
+        'containers': [{'name': model_name, 'image': xapp_image_ref(model_name, model_version)}],
         'messaging': {'ports': [{'name': 'rmr-data', 'container': model_name, 'port': 4560,
                                   'rxMessages': ['A1_POLICY_REQ', 'RIC_SUB_RESP', 'RIC_INDICATION'],
                                   'txMessages': ['A1_POLICY_RESP', 'RIC_SUB_REQ', 'PREDICTION_OUTPUT'],
@@ -4484,20 +4605,39 @@ CMD ["python3", "/app/xapp_main.py"]
     return f'Inline generation complete: xapp_main.py, Dockerfile, config-file.json, Helm chart'
 
 
-def _build_docker_image(build_dir, image_tag, minikube_profile='kero-ric'):
+def _build_docker_image(build_dir, image_tag, minikube_profile=None, push=None):
     """
     Build the xApp Docker image from the generated artifacts.
 
-    Builds into minikube's Docker daemon (when available) so the image is
-    immediately usable by the cluster for deployment without an external push.
-    Falls back to the host Docker daemon if minikube is not present.
+    Product mode (XAPP_REGISTRY_PUSH=true): the image is pushed to XAPP_REGISTRY
+    (e.g. Docker Hub) so any cluster node can pull it - the O-RAN flow where the
+    chart's image.registry/name/tag is resolved by Kubernetes.
+    Dev mode: builds into minikube's Docker daemon so the image is usable with
+    imagePullPolicy=Never and no registry is contacted.
 
-    Returns a dict: {built: bool, backend: str, docker_available: bool, steps: [...]}
+    Returns a dict: {built, pushed, backend, docker_available, steps}
     """
     import subprocess
+    minikube_profile = minikube_profile or MINIKUBE_PROFILE
+    push = XAPP_REGISTRY_PUSH if push is None else push
 
     steps = []
-    result = {'built': False, 'backend': 'none', 'docker_available': False, 'steps': steps}
+    build_log_path = os.path.join(build_dir, 'build.log')
+    result = {'built': False, 'pushed': False, 'backend': 'none', 'docker_available': False,
+              'image': image_tag, 'steps': steps, 'build_log_path': build_log_path, 'build_log': ''}
+
+    def _log(title, proc=None, text=None):
+        """Append a command's output to build.log and to result['build_log']."""
+        body = text if text is not None else ((proc.stdout or '') + (proc.stderr or ''))
+        chunk = f"===== {datetime.utcnow().isoformat()}Z  {title} =====\n{body.rstrip()}\n\n"
+        try:
+            with open(build_log_path, 'a', encoding='utf-8') as lf:
+                lf.write(chunk)
+        except OSError:
+            pass
+        result['build_log'] = (result['build_log'] + chunk)[-6000:]
+
+    _log(f'docker build {image_tag} (backend resolution follows)', text=f'build_dir={build_dir} push={push}')
 
     # 1) Check Docker availability
     steps.append({'name': 'Check Docker daemon', 'status': 'running'})
@@ -4535,55 +4675,107 @@ def _build_docker_image(build_dir, image_tag, minikube_profile='kero-ric'):
             steps[-1]['status'] = 'done'
             steps[-1]['detail'] = f'Using minikube docker daemon ({minikube_profile})'
         else:
-            steps[-1]['status'] = 'done'
-            steps[-1]['detail'] = 'Using host Docker daemon (minikube env unavailable)'
+            minikube_err = (env_cmd.stderr or env_cmd.stdout or '').strip()[-400:]
+            if push:
+                steps[-1]['status'] = 'done'
+                steps[-1]['detail'] = 'Using host Docker daemon (image will be pushed to the registry)'
+            else:
+                # Dev mode deploys with imagePullPolicy=Never: an image that only
+                # exists in the host daemon can never start in the cluster.
+                steps[-1]['status'] = 'error'
+                steps[-1]['detail'] = (
+                    f'minikube profile "{minikube_profile}" is not reachable from the framework '
+                    f'process (`minikube -p {minikube_profile} docker-env` rc={env_cmd.returncode}: '
+                    f'{minikube_err or "no output"}). Start it with `minikube -p {minikube_profile} start` '
+                    f'(or set MINIKUBE_PROFILE / XAPP_REGISTRY_PUSH=true for a real registry) and re-run Step 6.')
+                result['error'] = steps[-1]['detail']
+                return result
     except Exception as e:
         current_app.logger.info(f"[Build] minikube docker-env failed: {e}")
-        steps[-1]['status'] = 'done'
-        steps[-1]['detail'] = 'Using host Docker daemon'
+        if push:
+            steps[-1]['status'] = 'done'
+            steps[-1]['detail'] = 'Using host Docker daemon (image will be pushed to the registry)'
+        else:
+            steps[-1]['status'] = 'error'
+            steps[-1]['detail'] = (f'minikube CLI not available to the framework process ({e}). '
+                                   f'Install/put minikube on PATH of the user running Flask, or set '
+                                   f'XAPP_REGISTRY_PUSH=true to use a real registry.')
+            result['error'] = steps[-1]['detail']
+            return result
     result['backend'] = backend
 
     # 3) Build the image
     steps.append({'name': f'Build image {image_tag}', 'status': 'running'})
     try:
         build_r = subprocess.run(
-            ['docker', 'build', '-t', image_tag, build_dir],
+            ['docker', 'build', '--progress=plain', '-t', image_tag, build_dir],
             env=build_env, capture_output=True, text=True, timeout=600
         )
+        _log(f'docker build --progress=plain -t {image_tag} {build_dir}  (rc={build_r.returncode}, {backend})', build_r)
         if build_r.returncode == 0:
             steps[-1]['status'] = 'done'
-            steps[-1]['detail'] = 'Image built successfully'
+            steps[-1]['detail'] = f'Image built successfully (log: {build_log_path})'
             result['built'] = True
         else:
             steps[-1]['status'] = 'error'
             steps[-1]['detail'] = (build_r.stderr or build_r.stdout or 'build failed')[-300:]
+            result['error'] = f'docker build failed (rc={build_r.returncode}); see build.log'
             current_app.logger.error(f"[Build] docker build failed: {build_r.stderr[-500:]}")
             return result
     except subprocess.TimeoutExpired:
         steps[-1]['status'] = 'error'
         steps[-1]['detail'] = 'Build timed out after 600s'
+        result['error'] = steps[-1]['detail']
+        _log('docker build', text='TIMEOUT after 600s')
         return result
     except Exception as e:
         steps[-1]['status'] = 'error'
         steps[-1]['detail'] = str(e)[:200]
+        result['error'] = steps[-1]['detail']
+        _log('docker build', text=f'EXCEPTION {e}')
         return result
 
     # 4) Verify the image exists in the daemon
     steps.append({'name': 'Verify image in registry', 'status': 'running'})
     try:
         verify_r = subprocess.run(
-            ['docker', 'images', '-q', image_tag],
+            ['docker', 'images', '--format', '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}} {{.CreatedSince}}', image_tag],
             env=build_env, capture_output=True, text=True, timeout=15
         )
-        if verify_r.stdout.strip():
+        _log(f'docker images {image_tag}', verify_r)
+        image_line = verify_r.stdout.strip().splitlines()[0] if verify_r.stdout.strip() else ''
+        if image_line:
             steps[-1]['status'] = 'done'
-            steps[-1]['detail'] = f'Image id: {verify_r.stdout.strip()[:12]}'
+            steps[-1]['detail'] = f'Image {image_line}'
         else:
             steps[-1]['status'] = 'warning'
             steps[-1]['detail'] = 'Image not found after build'
     except Exception as e:
         steps[-1]['status'] = 'warning'
         steps[-1]['detail'] = str(e)[:150]
+
+    # 5) Product mode: push to the registry so Kubernetes can pull it on any node
+    if push:
+        steps.append({'name': f'Push image to {XAPP_REGISTRY}', 'status': 'running'})
+        try:
+            push_r = subprocess.run(['docker', 'push', image_tag], env=build_env,
+                                    capture_output=True, text=True, timeout=900)
+            _log(f'docker push {image_tag} (rc={push_r.returncode})', push_r)
+            if push_r.returncode == 0:
+                result['pushed'] = True
+                steps[-1]['status'] = 'done'
+                steps[-1]['detail'] = f'Pushed {image_tag}'
+            else:
+                steps[-1]['status'] = 'error'
+                steps[-1]['detail'] = (push_r.stderr or push_r.stdout or 'push failed')[-300:]
+                current_app.logger.error(f"[Build] docker push failed: {push_r.stderr[-500:]}")
+        except Exception as e:
+            steps[-1]['status'] = 'error'
+            steps[-1]['detail'] = str(e)[:200]
+    else:
+        steps.append({'name': 'Registry push', 'status': 'done',
+                      'detail': 'Skipped (dev mode: image stays in minikube docker, imagePullPolicy=Never). '
+                                'Set XAPP_REGISTRY_PUSH=true for product mode.'})
 
     return result
 
@@ -4876,7 +5068,7 @@ def package_xapp():
     # build_xapp.py reads the registry from XAPP_REGISTRY; pass ours so the
     # descriptor + chart it generates use the same schema-valid dotted registry
     # that Step 7 onboards/deploys and that we tag the image with.
-    build_env = {**os.environ, 'XAPP_REGISTRY': XAPP_REGISTRY}
+    build_env = {**os.environ, 'XAPP_REGISTRY': XAPP_REGISTRY, 'XAPP_IMAGE_PREFIX': XAPP_IMAGE_PREFIX}
     builder_output = ''
     try:
         result = subprocess.run(
@@ -5024,15 +5216,11 @@ def package_xapp():
     if isinstance(containers, list) and containers:
         for c in containers:
             if isinstance(c, dict):
-                c['image'] = {
-                    'registry': XAPP_REGISTRY,
-                    'name': f'xapps/{m_name}',
-                    'tag': m_version,
-                }
+                c['image'] = xapp_image_ref(m_name, m_version)
     else:
         xapp_descriptor['containers'] = [{
             'name': m_name,
-            'image': {'registry': XAPP_REGISTRY, 'name': f'xapps/{m_name}', 'tag': m_version},
+            'image': xapp_image_ref(m_name, m_version),
         }]
     with open(desc_path, 'w') as f:
         json_mod.dump(xapp_descriptor, f, indent=2)
@@ -5081,6 +5269,8 @@ def package_xapp():
     publish_state['descriptor_path'] = desc_path
     publish_state['controls_schema_path'] = schema_path
     publish_state['image_built'] = build_result['built']
+    publish_state['image_pushed'] = build_result.get('pushed', False)
+    publish_state['image_ref'] = xapp_image_ref(m_name, m_version)
     publish_state['build_backend'] = build_result.get('backend', 'none')
     
     if state_file:
@@ -5095,13 +5285,19 @@ def package_xapp():
     else:
         build_note = ' Docker not available - image will build at deploy time.'
     
+    build_failed = not build_result['built'] and build_result.get('docker_available')
     return jsonify({
-        'success': True,
-        'message': f'Model "{m_name}" packaged as xApp! '
-                   f'({len(all_artifacts)} artifacts generated).{build_note}',
+        'success': not build_failed,
+        'error': build_result.get('error') if build_failed else None,
+        'message': (f'xApp image for "{m_name}" was NOT built: {build_result.get("error", "docker build failed")}'
+                    if build_failed else
+                    f'Model "{m_name}" packaged as xApp! '
+                    f'({len(all_artifacts)} artifacts generated).{build_note}'),
         'model_name': m_name,
         'model_type': m_type,
         'docker_image': image_tag,
+        'image_ref': xapp_image_ref(m_name, m_version),
+        'image_pushed': build_result.get('pushed', False),
         'artifacts': all_artifacts,
         'has_helm_chart': has_helm,
         'xapp_descriptor': xapp_descriptor,
@@ -5412,6 +5608,37 @@ def _subscribe_telemetry(appmgr_url, target_url, event_type='all',
     return out
 
 
+def _cluster_reachable_catalog_url(catalog_url, minikube_profile=None):
+    """
+    appmgr runs inside the cluster and POSTs subscription notifications to the
+    TargetUrl itself; 'localhost' there is the appmgr pod, not this host. Return a
+    URL for the catalog that is reachable from inside the minikube network.
+
+    Precedence: RIC_CATALOG_CLUSTER_URL env, else the minikube node's default
+    gateway (= this host on the minikube bridge), else the original URL.
+    """
+    import subprocess
+    from urllib.parse import urlsplit, urlunsplit
+    minikube_profile = minikube_profile or MINIKUBE_PROFILE
+    override = os.environ.get('RIC_CATALOG_CLUSTER_URL')
+    if override:
+        return override.rstrip('/')
+    parts = urlsplit(catalog_url)
+    if parts.hostname not in ('localhost', '127.0.0.1', '0.0.0.0'):
+        return catalog_url.rstrip('/')
+    try:
+        r = subprocess.run(
+            ['minikube', '-p', minikube_profile, 'ssh', '--', "ip route | awk '/default/ {print $3}'"],
+            capture_output=True, text=True, timeout=20)
+        gw = (r.stdout or '').strip().split('\n')[0].strip()
+        if r.returncode == 0 and gw and gw.count('.') == 3:
+            netloc = f"{gw}:{parts.port}" if parts.port else gw
+            return urlunsplit((parts.scheme, netloc, parts.path, '', '')).rstrip('/')
+    except Exception as e:
+        current_app.logger.warning(f"[Step7] could not resolve minikube gateway: {e}")
+    return catalog_url.rstrip('/')
+
+
 def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace='ricxapp',
                          catalog_sha256=None):
     """
@@ -5573,24 +5800,39 @@ def deploy_to_ric():
     except Exception:
         pass
     
-    # Check Kubernetes (try kubectl directly, then minikube kubectl)
+    # Check Kubernetes (try kubectl directly, then minikube kubectl). Keep the
+    # real stderr so a failure is actionable instead of a silent "demo mode".
+    infra_status['diagnostics'] = {}
     try:
         r = subprocess.run(['kubectl', 'cluster-info'], capture_output=True, text=True, timeout=10)
         infra_status['kubernetes'] = r.returncode == 0
+        if r.returncode != 0:
+            infra_status['diagnostics']['kubectl'] = (r.stderr or r.stdout).strip()[-400:]
         current_app.logger.info(f"[Step7] kubectl cluster-info: rc={r.returncode}, out={r.stdout[:100]}")
     except Exception as e:
+        infra_status['diagnostics']['kubectl'] = f'not runnable: {e}'
         current_app.logger.info(f"[Step7] kubectl not found: {e}")
     
     if not infra_status['kubernetes']:
         try:
-            r = subprocess.run(['minikube', '-p', 'kero-ric', 'kubectl', '--', 'cluster-info'],
+            r = subprocess.run(['minikube', '-p', MINIKUBE_PROFILE, 'kubectl', '--', 'cluster-info'],
                               capture_output=True, text=True, timeout=10)
             infra_status['kubernetes'] = r.returncode == 0
             if r.returncode == 0:
-                infra_status['kubectl_cmd'] = 'minikube -p kero-ric kubectl --'
+                infra_status['kubectl_cmd'] = f'minikube -p {MINIKUBE_PROFILE} kubectl --'
                 current_app.logger.info(f"[Step7] minikube kubectl works: {r.stdout[:100]}")
+            else:
+                infra_status['diagnostics'][f'minikube -p {MINIKUBE_PROFILE}'] = (r.stderr or r.stdout).strip()[-400:]
         except Exception as e:
+            infra_status['diagnostics'][f'minikube -p {MINIKUBE_PROFILE}'] = f'not runnable: {e}'
             current_app.logger.info(f"[Step7] minikube kubectl failed: {e}")
+    infra_status['process_env'] = {
+        'user': os.environ.get('USER') or os.environ.get('USERNAME', ''),
+        'HOME': os.environ.get('HOME', ''),
+        'KUBECONFIG': os.environ.get('KUBECONFIG', ''),
+        'PATH': os.environ.get('PATH', '')[:300],
+        'MINIKUBE_PROFILE': MINIKUBE_PROFILE,
+    }
     
     # Check ML Model Catalog
     catalog_url = os.environ.get('RIC_CATALOG_URL', 'http://localhost:8080')
@@ -5675,17 +5917,24 @@ def deploy_to_ric():
 
             # Step 1: Ensure the image is available in the cluster docker daemon.
             steps.append({'name': 'Ensure xApp image is available', 'status': 'running'})
+            image_pushed = bool(publish_state.get('image_pushed'))
             if publish_state.get('image_built'):
                 steps[-1]['status'] = 'done'
-                steps[-1]['detail'] = f"Reusing image from packaging ({publish_state.get('build_backend', 'docker')})"
+                steps[-1]['detail'] = (f"Reusing image from packaging ({publish_state.get('build_backend', 'docker')}, "
+                                       f"{'pushed to ' + XAPP_REGISTRY if image_pushed else 'local, pullPolicy=Never'})")
                 build_ok = True
             else:
                 build_res = _build_docker_image(build_dir, docker_image)
                 build_ok = build_res['built']
+                image_pushed = build_res.get('pushed', False)
                 steps[-1]['status'] = 'done' if build_ok else 'error'
                 steps[-1]['detail'] = 'Image built' if build_ok else 'Build failed'
                 steps.extend(build_res['steps'])
-            deployment_result['docker_build'] = {'success': build_ok}
+            # O-RAN: appmgr resolves {registry}/{name}:{tag} from the chart; K8s
+            # pulls it unless we are in dev mode with a minikube-local image.
+            pull_policy = 'IfNotPresent' if image_pushed else 'Never'
+            deployment_result['docker_build'] = {'success': build_ok, 'pushed': image_pushed,
+                                                 'image_pull_policy': pull_policy}
 
             if build_ok:
                 # Step 2: Ensure the ricxapp namespace exists.
@@ -5729,7 +5978,7 @@ def deploy_to_ric():
                     cli_commands.append(undeploy_res['command'])
                     deployment_result['appmgr_undeploy_previous'] = undeploy_res
                     appmgr_res = _xappctl(['deploy', m_name, '--namespace', 'ricxapp',
-                                           '--override', '{"image_pull_policy":"Never"}'])
+                                           '--override', json_mod.dumps({'image_pull_policy': pull_policy})])
                     cli_commands.append(appmgr_res['command'])
                     deployment_result['appmgr_deploy'] = appmgr_res
                     deployed_ok = appmgr_res.get('success', False)
@@ -5785,14 +6034,18 @@ def deploy_to_ric():
 
                     # Step 7: Subscribe to xApp lifecycle events for telemetry.
                     steps.append({'name': 'Subscribe to xApp telemetry events', 'status': 'running'})
-                    target_url = os.environ.get(
-                        'RIC_SUBSCRIPTION_TARGET_URL',
-                        f"{catalog_url}/models/{model_id}/events" if model_id else f'{catalog_url}/events')
+                    target_url = os.environ.get('RIC_SUBSCRIPTION_TARGET_URL')
+                    if not target_url:
+                        cluster_catalog = _cluster_reachable_catalog_url(catalog_url)
+                        target_url = (f"{cluster_catalog}/models/{model_id}/events"
+                                      if (model_id and not publish_state.get('demo_mode'))
+                                      else f'{cluster_catalog}/events')
                     sub_res = _xappctl(['subscribe', target_url, 'all', '5', '10'], timeout=120)
+                    sub_res['target_url'] = target_url
                     cli_commands.append(sub_res['command'])
                     deployment_result['subscription'] = sub_res
                     steps[-1]['status'] = 'done' if sub_res.get('success') else 'warning'
-                    steps[-1]['detail'] = (f"subscribed (HTTP {sub_res.get('http_code')})"
+                    steps[-1]['detail'] = (f"subscribed (HTTP {sub_res.get('http_code')}) -> {target_url}"
                                            if sub_res.get('success') else
                                            f"subscribe failed: {sub_res.get('error') or sub_res.get('stdout') or sub_res.get('stderr')}")
 
@@ -5803,6 +6056,8 @@ def deploy_to_ric():
                     f'bash {xappctl} subscriptions',
                     f'bash {xappctl} wait {m_name}',
                     f'kubectl get pods -n ricxapp -l release={m_name}',
+                    (f'curl -s {catalog_url}/models/{model_id}/events' if model_id
+                     else f'curl -s {catalog_url}/events'),
                 ]
                 deployment_result['deployed'] = deployed_ok
                 deployment_result['live_mode'] = True
@@ -5815,9 +6070,8 @@ def deploy_to_ric():
             deployment_result['steps'] = steps
             current_app.logger.error(f"appmgr deployment failed: {e}")
 
-    # ---- DEMO MODE (appmgr / onboarder / infra not available) ----
+    # ---- RIC NOT REACHABLE (appmgr / onboarder / cluster) ----
     else:
-        deployment_result['deployment_mode'] = 'demo'
         missing = []
         if not infra_status['docker']:
             missing.append('Docker')
@@ -5830,9 +6084,34 @@ def deploy_to_ric():
         if not os.path.exists(descriptor_path) or not os.path.exists(schema_path):
             missing.append('config-file.json / schema.json (run Step 6 first)')
 
+        deployment_result['missing_infra'] = missing
+        deployment_result['diagnostics'] = infra_status.get('diagnostics', {})
+        deployment_result['process_env'] = infra_status.get('process_env', {})
+        deployment_result['server_fix'] = [
+            f'minikube -p {MINIKUBE_PROFILE} status || minikube -p {MINIKUBE_PROFILE} start',
+            'kubectl -n ricplt get svc service-ricplt-appmgr-http service-ricplt-xapp-onboarder-http',
+            '# Flask must run as the user that owns ~/.kube and ~/.minikube, with minikube/kubectl on PATH:',
+            'which minikube kubectl docker',
+        ]
+
+        allow_demo = os.environ.get('RIC_ALLOW_DEMO_MODE', 'false').lower() in ('1', 'true', 'yes')
+        if not allow_demo:
+            deployment_result['deployment_mode'] = 'failed'
+            deployment_result['deployed'] = False
+            deployment_result['error'] = (
+                f'xApp "{m_name}" was NOT deployed: the Near-RT RIC is not reachable from the framework '
+                f'process. Missing: {", ".join(missing)}. See diagnostics/server_fix.'
+            )
+            deployment_result['message'] = deployment_result['error']
+            publish_state['deploy_status'] = 'failed'
+            publish_state['deploy_error'] = deployment_result['error']
+            with open(state_file, 'w') as f:
+                json.dump(publish_state, f, indent=2)
+            return jsonify(deployment_result), 503
+
+        deployment_result['deployment_mode'] = 'demo'
         deployment_result['demo_mode'] = True
         deployment_result['deployed'] = True
-        deployment_result['missing_infra'] = missing
         deployment_result['message'] = (
             f'xApp "{m_name}" cannot be deployed via appmgr yet.\n'
             + (f'Missing: {", ".join(missing)}. ' if missing else '')

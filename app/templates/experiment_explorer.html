@@ -528,10 +528,29 @@ async function runPipelineStep(button, step) {
                                                .replace('btn-success', 'btn-outline-success');
         } else {
             alertDiv.className = 'alert alert-danger';
-            msgDiv.innerHTML = '<strong>Error:</strong> ' + (data.error || 'Unknown error');
+            let emsg = '<strong>Error:</strong> ' + (data.error || data.message || 'Unknown error');
+            if (data.missing_infra && data.missing_infra.length) {
+                emsg += '<br><small>Missing: ' + data.missing_infra.join(', ') + '</small>';
+            }
+            if (data.diagnostics && Object.keys(data.diagnostics).length) {
+                emsg += '<pre class="mt-1 mb-0 p-2 bg-light border" style="font-size:0.72em;white-space:pre-wrap;">'
+                      + Object.entries(data.diagnostics).map(([k, v]) => k + ': ' + v).join('\n') + '</pre>';
+            }
+            if (data.server_fix && data.server_fix.length) {
+                emsg += '<small class="text-muted">Run on the server:</small>'
+                      + '<pre class="mt-1 mb-0 p-2 bg-light border" style="font-size:0.72em;white-space:pre-wrap;">'
+                      + data.server_fix.join('\n') + '</pre>';
+            }
+            msgDiv.innerHTML = emsg;
+            if (data.steps && data.steps.length && stepsUl) {
+                await renderStepsProgressive(stepsUl, data.steps);
+            }
             if (data.details) {
                 detailsPre.textContent = data.details;
                 detailsPre.style.display = 'block';
+            } else if (data.diagnostics || data.process_env) {
+                detailsPre.textContent = JSON.stringify(data, null, 2);
+                toggleBtn.style.display = 'inline-block';
             }
             button.innerHTML = origHTML;
             button.disabled = false;
