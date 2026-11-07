@@ -20,6 +20,7 @@
 #   health                                       appmgr health (alive + ready)
 #   subscribe <targetUrl> [eventType] [maxRetries] [retryTimer]
 #   subscriptions                                list subscriptions
+#   unsubscribe <id> | --stale                   delete a subscription (--stale: all with a localhost targetUrl)
 #   wait     <name> [timeoutSec]                 wait for the xApp pod to be Running
 #   testpod  start|stop|exec <curl args...>      manage the in-cluster curl test pod
 #   help
@@ -304,6 +305,28 @@ cmd_subscriptions() {
   rest appmgr GET "${APPMGR_BASE}/subscriptions"
 }
 
+# appmgr notifies from inside its pod, so a targetUrl on localhost/127.0.0.1
+# can never be delivered; --stale removes all such subscriptions.
+cmd_unsubscribe() {
+  [ -n "${1:-}" ] || die "usage: unsubscribe <id> | --stale"
+  if [ "$1" = "--stale" ]; then
+    local ids id
+    ids=$(rest appmgr GET "${APPMGR_BASE}/subscriptions" 2>/dev/null \
+          | python3 -c 'import sys,json
+for s in json.load(sys.stdin):
+    u=s.get("data",{}).get("targetUrl","")
+    if "://localhost" in u or "://127.0.0.1" in u: print(s["id"])')
+    [ -n "$ids" ] || { log "no stale (localhost) subscriptions"; return 0; }
+    for id in $ids; do
+      log "DELETE ${APPMGR_BASE}/subscriptions/$id"
+      rest appmgr DELETE "${APPMGR_BASE}/subscriptions/$id" || true
+    done
+    return 0
+  fi
+  log "DELETE ${APPMGR_BASE}/subscriptions/$1"
+  rest appmgr DELETE "${APPMGR_BASE}/subscriptions/$1"
+}
+
 # Poll like xapp-hw.sh: wait until a pod for the release is Running.
 cmd_wait() {
   [ -n "${1:-}" ] || die "usage: wait <name> [timeoutSec]"
@@ -359,6 +382,7 @@ case "$cmd" in
   health|heal)        cmd_health ;;
   subscribe|sub)      cmd_subscribe "$@" ;;
   subscriptions|subs) cmd_subscriptions ;;
+  unsubscribe|unsub)  cmd_unsubscribe "$@" ;;
   wait)               cmd_wait "$@" ;;
   testpod)            cmd_testpod "$@" ;;
   *) die "unknown command '$cmd' (run: $0 help)" ;;

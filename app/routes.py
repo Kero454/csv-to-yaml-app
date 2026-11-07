@@ -1807,13 +1807,29 @@ def experiment_explorer():
                         }
                     }
                 }
+                # O-RAN pipeline state written by Steps 5/6 (ric_artifacts/*_publish_state.json)
+                ric_state = {'published': False, 'packaged': False, 'models': []}
+                ric_dir = os.path.join(exp_path, 'ric_artifacts')
+                if os.path.isdir(ric_dir):
+                    for fname in sorted(os.listdir(ric_dir)):
+                        if fname.endswith('_publish_state.json'):
+                            try:
+                                with open(os.path.join(ric_dir, fname), 'r') as sf:
+                                    st = json_mod.load(sf)
+                                ric_state['published'] = True
+                                ric_state['packaged'] = ric_state['packaged'] or bool(st.get('packaged'))
+                                ric_state['models'].append({'model_name': st.get('model_name'),
+                                                            'packaged': bool(st.get('packaged'))})
+                            except Exception:
+                                pass
                 experiments.append({
                     'name': experiment_name,
                     'path': exp_path,
                     'timestamp': timestamp,
                     'config_files': config_files,
                     'arch_files': arch_files,
-                    'data_files': data_files
+                    'data_files': data_files,
+                    'ric_state': ric_state
                 })
                 current_app.logger.info(f"Successfully processed experiment: {experiment_name}")
             except Exception as e:
@@ -4334,13 +4350,17 @@ APPMGR_URL = os.environ.get("APPMGR_URL", "http://service-ricplt-appmgr-http.ric
 XAPP_REGISTER = os.environ.get("XAPP_REGISTER", "true").lower() == "true"
 XAPP_NAME = "{model_name}"
 MODEL_TYPE = "{model_type}"
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+HEARTBEAT_SECONDS = int(os.environ.get("HEARTBEAT_SECONDS", "60"))
 
 # O-RAN xApp descriptor: the onboarder mounts config-file.json into the container
 # and points XAPP_DESCRIPTOR_PATH at its directory. The 'controls' section carries
 # the framework config (model type, hyperparameters, timeseries, training).
 XAPP_DESCRIPTOR_PATH = os.environ.get("XAPP_DESCRIPTOR_PATH", "/opt/ric/config")
 
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [xApp] %(levelname)s - %(message)s')
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
+                    format='[%(asctime)s] [xApp:' + XAPP_NAME + '] %(levelname)s - %(message)s',
+                    stream=sys.stdout, force=True)
 logger = logging.getLogger(XAPP_NAME)
 
 def load_controls():
@@ -4380,6 +4400,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+        logger.debug(f"HTTP GET {{self.path}} from {{self.client_address[0]}}")
     def log_message(self, format, *args): pass
 
 class MLModelRunner:
@@ -4398,7 +4419,12 @@ class MLModelRunner:
         self.model_type = self.controls.get("model_type", MODEL_TYPE)
         self.hyperparameters = self.controls.get("hyperparameters", {{}})
         self.model_identity = self.controls.get("model_identity", {{}}) or {{}}
-        logger.info(f"xApp config: model_type={{self.model_type}}, {{len(self.hyperparameters)}} hyperparameters")
+        logger.info("=" * 60)
+        logger.info(f"O-RAN xApp ML Model Runner  name={{XAPP_NAME}}  type={{self.model_type}}  log_level={{LOG_LEVEL}}")
+        logger.info(f"  pod={{os.environ.get('HOSTNAME', '?')}}  health_port={{HEALTH_PORT}}  rmr_port={{RMR_PORT}}  appmgr={{APPMGR_URL}}")
+        logger.info(f"  model_id={{self.model_identity.get('model_id', '')}}  model_uid={{self.model_identity.get('model_uid', '')}}")
+        logger.info(f"  hyperparameters ({{len(self.hyperparameters)}}): {{json.dumps(self.hyperparameters, default=str)}}")
+        logger.info("=" * 60)
         signal.signal(signal.SIGTERM, self._shutdown)
         signal.signal(signal.SIGINT, self._shutdown)
         self._start_health()
@@ -4426,12 +4452,13 @@ class MLModelRunner:
                    "appInstanceName": os.environ.get("HOSTNAME", XAPP_NAME),
                    "httpEndpoint": f"{{pod_ip}}:{{HEALTH_PORT}}", "rmrEndpoint": f"{{pod_ip}}:{{RMR_PORT}}",
                    "config": json.dumps(self.controls)}}
+        logger.info(f"Registering with appmgr: POST {{APPMGR_URL}}/ric/v1/register http={{payload['httpEndpoint']}} rmr={{payload['rmrEndpoint']}}")
         for attempt in range(1, 6):
             try:
                 req = urllib.request.Request(APPMGR_URL + "/ric/v1/register", data=json.dumps(payload).encode(),
                                              headers={{"Content-Type": "application/json"}}, method="POST")
                 with urllib.request.urlopen(req, timeout=5) as resp:
-                    logger.info(f"Registered with appmgr HTTP {{resp.status}}")
+                    logger.info(f"Registered with appmgr HTTP {{resp.status}} as instance {{payload['appInstanceName']}}")
                 self.registered = True
                 return
             except Exception as e:
@@ -4475,16 +4502,26 @@ class MLModelRunner:
         self.stats["a1_policies"] += 1
         policy_id = policy.get("policy_id", "unknown")
         self.active_policies[policy_id] = policy
-        logger.info(f"A1 policy {{policy_id}} applied")
+        logger.info(f"A1 policy received id={{policy_id}} type={{policy.get('policy_type_id', '?')}} "
+                    f"payload={{json.dumps(policy, default=str)[:300]}} (active={{len(self.active_policies)}})")
         return {{"status": "ACK", "policy_id": policy_id}}
 
     def predict(self, input_data):
         self.stats["predictions"] += 1
-        return {{
+        t0 = time.time()
+        result = {{
             "model": XAPP_NAME, "model_type": self.model_type,
             "prediction": {{"value": 0.0, "confidence": 0.95}},
             "timestamp": datetime.utcnow().isoformat(), "status": "SUCCESS"
         }}
+        logger.info(f"Prediction #{{self.stats['predictions']}} input_keys={{list(input_data.keys()) if isinstance(input_data, dict) else type(input_data).__name__}} "
+                    f"-> {{result['prediction']}} ({{(time.time() - t0) * 1000:.1f}} ms)")
+        return result
+
+    def heartbeat(self):
+        uptime = (datetime.utcnow() - self.start_time).total_seconds()
+        logger.info(f"heartbeat uptime={{uptime:.0f}}s healthy={{self.healthy}} registered={{self.registered}} "
+                    f"weights={{self.weights_path is not None}} stats={{json.dumps(self.stats)}}")
 
     def get_health(self):
         return {{
@@ -4506,10 +4543,14 @@ class MLModelRunner:
             sys.exit(2)
         self.load_model()
         threading.Thread(target=self.register_with_appmgr, daemon=True).start()
-        logger.info(f"xApp running, waiting for RMR messages...")
+        logger.info(f"xApp running, waiting for RMR messages (heartbeat every {{HEARTBEAT_SECONDS}}s)...")
+        last_beat = time.time()
         while self.running:
             time.sleep(1)
-        logger.info("Shutdown complete.")
+            if HEARTBEAT_SECONDS > 0 and time.time() - last_beat >= HEARTBEAT_SECONDS:
+                self.heartbeat()
+                last_beat = time.time()
+        logger.info(f"Shutdown complete. Final stats: {{json.dumps(self.stats)}}")
 
 if __name__ == "__main__":
     MLModelRunner().run()
@@ -5272,6 +5313,7 @@ def package_xapp():
     publish_state['image_pushed'] = build_result.get('pushed', False)
     publish_state['image_ref'] = xapp_image_ref(m_name, m_version)
     publish_state['build_backend'] = build_result.get('backend', 'none')
+    publish_state['build_log_path'] = build_result.get('build_log_path')
     
     if state_file:
         with open(state_file, 'w') as f:
@@ -5304,6 +5346,8 @@ def package_xapp():
         'ric_configs': list(ric_configs.keys()),
         'image_built': build_result['built'],
         'build_backend': build_result.get('backend', 'none'),
+        'build_log': build_result.get('build_log', ''),
+        'build_log_path': build_result.get('build_log_path'),
         'steps': package_steps,
         'builder_output': builder_output[:500]
     }), 200
@@ -5614,29 +5658,59 @@ def _cluster_reachable_catalog_url(catalog_url, minikube_profile=None):
     TargetUrl itself; 'localhost' there is the appmgr pod, not this host. Return a
     URL for the catalog that is reachable from inside the minikube network.
 
-    Precedence: RIC_CATALOG_CLUSTER_URL env, else the minikube node's default
-    gateway (= this host on the minikube bridge), else the original URL.
+    Precedence: RIC_CATALOG_CLUSTER_URL env; else host.minikube.internal when
+    CoreDNS publishes it (pods can resolve it); else the docker gateway of the
+    minikube network (= this host); else the node's default gateway via ssh.
+    Returns (url_or_None, [notes about what was tried]).
     """
     import subprocess
+    import re
     from urllib.parse import urlsplit, urlunsplit
     minikube_profile = minikube_profile or MINIKUBE_PROFILE
+    notes = []
     override = os.environ.get('RIC_CATALOG_CLUSTER_URL')
     if override:
-        return override.rstrip('/')
+        return override.rstrip('/'), ['RIC_CATALOG_CLUSTER_URL set']
     parts = urlsplit(catalog_url)
     if parts.hostname not in ('localhost', '127.0.0.1', '0.0.0.0'):
-        return catalog_url.rstrip('/')
+        return catalog_url.rstrip('/'), ['catalog URL is not localhost']
+
+    def _with_host(host):
+        netloc = f"{host}:{parts.port}" if parts.port else host
+        return urlunsplit((parts.scheme, netloc, parts.path, '', '')).rstrip('/')
+
+    def _run(cmd, timeout=20):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
+
+    kubectl_base = ['kubectl']
+    # 1) CoreDNS Corefile: minikube adds "hosts { <ip> host.minikube.internal }"
     try:
-        r = subprocess.run(
-            ['minikube', '-p', minikube_profile, 'ssh', '--', "ip route | awk '/default/ {print $3}'"],
-            capture_output=True, text=True, timeout=20)
-        gw = (r.stdout or '').strip().split('\n')[0].strip()
-        if r.returncode == 0 and gw and gw.count('.') == 3:
-            netloc = f"{gw}:{parts.port}" if parts.port else gw
-            return urlunsplit((parts.scheme, netloc, parts.path, '', '')).rstrip('/')
+        rc, out, err = _run(kubectl_base + ['-n', 'kube-system', 'get', 'cm', 'coredns', '-o', 'jsonpath={.data.Corefile}'])
+        if rc == 0 and 'host.minikube.internal' in out:
+            return _with_host('host.minikube.internal'), notes + ['CoreDNS publishes host.minikube.internal']
+        notes.append(f'coredns Corefile: rc={rc} has_host_entry={"host.minikube.internal" in out} {err[-120:]}')
     except Exception as e:
-        current_app.logger.warning(f"[Step7] could not resolve minikube gateway: {e}")
-    return catalog_url.rstrip('/')
+        notes.append(f'coredns lookup failed: {e}')
+    # 2) docker driver: the minikube network gateway is this host
+    try:
+        rc, out, err = _run(['docker', 'network', 'inspect', minikube_profile, '-f', '{{(index .IPAM.Config 0).Gateway}}'])
+        if rc == 0 and re.fullmatch(r'\d+\.\d+\.\d+\.\d+', out):
+            return _with_host(out), notes + [f'docker network {minikube_profile} gateway {out}']
+        notes.append(f'docker network inspect: rc={rc} out={out[-60:]} {err[-120:]}')
+    except Exception as e:
+        notes.append(f'docker network inspect failed: {e}')
+    # 3) last resort: ask the node itself
+    try:
+        rc, out, err = _run(['minikube', '-p', minikube_profile, 'ssh', '--', "ip route | awk '/default/ {print $3}'"])
+        gw = out.split('\n')[0].strip() if out else ''
+        if rc == 0 and re.fullmatch(r'\d+\.\d+\.\d+\.\d+', gw):
+            return _with_host(gw), notes + [f'minikube ssh default gateway {gw}']
+        notes.append(f'minikube ssh: rc={rc} out={out[-60:]} {err[-160:]}')
+    except Exception as e:
+        notes.append(f'minikube ssh failed: {e}')
+    current_app.logger.warning(f"[Step7] cluster-reachable catalog URL not resolved: {notes}")
+    return None, notes
 
 
 def _verify_pkl_in_image(kubectl_base, m_name, pkl_path, docker_image, namespace='ricxapp',
@@ -5724,6 +5798,7 @@ def deploy_to_ric():
     """
     import json as json_mod
     import subprocess
+    import time
     import requests as http_requests
     
     data = request.get_json()
@@ -5962,7 +6037,76 @@ def deploy_to_ric():
                     steps[-1]['status'] = 'error'
                     steps[-1]['detail'] = f"onboard failed: {onboard_res.get('error') or onboard_res.get('stdout') or onboard_res.get('stderr')}"
 
-                # Step 4: Deploy the onboarded chart via the appmgr REST API.
+                # Step 4: Subscribe to xApp lifecycle events BEFORE deploying so the
+                # undeployed/deployed notifications appmgr emits for this very run
+                # (resthooks.PublishSubscription) are delivered to the catalog.
+                if onboard_res.get('success'):
+                    steps.append({'name': 'Subscribe to xApp telemetry events', 'status': 'running'})
+                    target_url = os.environ.get('RIC_SUBSCRIPTION_TARGET_URL')
+                    cluster_catalog = None
+                    if not target_url:
+                        cluster_catalog, resolve_notes = _cluster_reachable_catalog_url(catalog_url)
+                        deployment_result['catalog_cluster_url_resolution'] = resolve_notes
+                        if cluster_catalog:
+                            target_url = (f"{cluster_catalog}/models/{model_id}/events"
+                                          if (model_id and not publish_state.get('demo_mode'))
+                                          else f'{cluster_catalog}/events')
+                    if not target_url:
+                        steps[-1]['status'] = 'warning'
+                        steps[-1]['detail'] = (
+                            f'Not subscribed: catalog URL {catalog_url} is "localhost", which inside the appmgr pod '
+                            f'is appmgr itself. Tried: ' + ' | '.join(deployment_result.get('catalog_cluster_url_resolution', [])) +
+                            f'. Set RIC_CATALOG_CLUSTER_URL (e.g. http://host.minikube.internal:8080) and re-run Step 7.')
+                        deployment_result['subscription'] = {'success': False, 'error': steps[-1]['detail']}
+                    else:
+                        # Idempotent: drop earlier catalog subscriptions (previous Step 7 runs,
+                        # other model_ids of the same framework) so appmgr keeps exactly one.
+                        removed_subs = []
+                        cleanup_info = {'listed': 0, 'error': None}
+                        try:
+                            existing = []
+                            for _attempt in range(2):
+                                ls = _xappctl(['subscriptions'], timeout=60)
+                                existing = json_mod.loads(ls.get('stdout') or '[]') if ls.get('http_code') == 200 else []
+                                if existing:
+                                    break
+                                cleanup_info['error'] = f"list attempt {_attempt + 1}: HTTP {ls.get('http_code')} {ls.get('error') or ''}".strip()
+                            cleanup_info['listed'] = len(existing)
+                            catalog_host = (cluster_catalog or target_url).split('://', 1)[-1].split('/', 1)[0]
+                            for s in existing:
+                                u = (s.get('data') or {}).get('targetUrl', '')
+                                if ('://' + catalog_host + '/') in u or '://localhost' in u or '://127.0.0.1' in u:
+                                    d = _xappctl(['unsubscribe', s.get('id', '')], timeout=60)
+                                    removed_subs.append({'id': s.get('id'), 'targetUrl': u, 'http_code': d.get('http_code')})
+                            if existing:
+                                cleanup_info['error'] = None
+                        except Exception as e:
+                            cleanup_info['error'] = str(e)
+                            current_app.logger.warning(f"[Step7] subscription cleanup skipped: {e}")
+                        sub_res = _xappctl(['subscribe', target_url, 'all', '5', '10'], timeout=120)
+                        sub_res['target_url'] = target_url
+                        sub_res['removed_stale'] = removed_subs
+                        cli_commands.append(sub_res['command'])
+                        # Can appmgr (inside the cluster) actually reach the catalog target?
+                        reach = _xappctl(['testpod', 'exec', 'curl', '-s', '-m', '5', '-o', '/dev/null',
+                                          '-w', '%{http_code}', f'{cluster_catalog or target_url.rsplit("/models", 1)[0]}/health'],
+                                         timeout=120)
+                        reach_code = (reach.get('stdout') or '').strip()[-3:]
+                        sub_res['catalog_reachable_from_cluster'] = reach_code == '200'
+                        sub_res['catalog_reach_http'] = reach_code
+                        deployment_result['subscription'] = sub_res
+                        ok_sub = sub_res.get('success') and sub_res['catalog_reachable_from_cluster']
+                        steps[-1]['status'] = 'done' if ok_sub else 'warning'
+                        if sub_res.get('success'):
+                            steps[-1]['detail'] = (f"subscribed (HTTP {sub_res.get('http_code')}) -> {target_url}"
+                                                   + (f"; removed {len(removed_subs)} stale" if removed_subs else '')
+                                                   + (f"; catalog reachable from cluster (HTTP 200)" if sub_res['catalog_reachable_from_cluster']
+                                                      else f"; WARNING catalog NOT reachable from inside the cluster (got '{reach_code}') - "
+                                                           f"appmgr notifications will fail; check host firewall for the minikube bridge"))
+                        else:
+                            steps[-1]['detail'] = f"subscribe failed: {sub_res.get('error') or sub_res.get('stdout') or sub_res.get('stderr')}"
+
+                # Step 5: Deploy the onboarded chart via the appmgr REST API.
                 #
                 # POST /ric/v1/xapps -> appmgr runs `helm install helm-repo/<name>`
                 # itself, pulling the chart the onboarder just pushed to its
@@ -6032,22 +6176,86 @@ def deploy_to_ric():
                         steps[-1]['status'] = 'warning'
                         steps[-1]['detail'] = pkl_check.get('error', 'verification skipped')
 
-                    # Step 7: Subscribe to xApp lifecycle events for telemetry.
-                    steps.append({'name': 'Subscribe to xApp telemetry events', 'status': 'running'})
-                    target_url = os.environ.get('RIC_SUBSCRIPTION_TARGET_URL')
-                    if not target_url:
-                        cluster_catalog = _cluster_reachable_catalog_url(catalog_url)
-                        target_url = (f"{cluster_catalog}/models/{model_id}/events"
-                                      if (model_id and not publish_state.get('demo_mode'))
-                                      else f'{cluster_catalog}/events')
-                    sub_res = _xappctl(['subscribe', target_url, 'all', '5', '10'], timeout=120)
-                    sub_res['target_url'] = target_url
-                    cli_commands.append(sub_res['command'])
-                    deployment_result['subscription'] = sub_res
-                    steps[-1]['status'] = 'done' if sub_res.get('success') else 'warning'
-                    steps[-1]['detail'] = (f"subscribed (HTTP {sub_res.get('http_code')}) -> {target_url}"
-                                           if sub_res.get('success') else
-                                           f"subscribe failed: {sub_res.get('error') or sub_res.get('stdout') or sub_res.get('stderr')}")
+                    # Step 8: prove it from the RIC side, not from this host.
+                    # appmgr's view of the release, the chart in chartmuseum (via appmgr's
+                    # helm repo), and whether appmgr's notification actually reached the catalog.
+                    steps.append({'name': 'Verify on the Near-RT RIC (appmgr / chartmuseum / catalog event)', 'status': 'running'})
+                    ric_view = {}
+                    st = _xappctl(['status', m_name], timeout=60)
+                    try:
+                        ric_view['appmgr_xapp'] = json_mod.loads(st.get('stdout') or 'null')
+                    except Exception:
+                        ric_view['appmgr_xapp'] = st.get('stdout')
+                    ch = _xappctl(['charts'], timeout=60)
+                    chart_names = []
+                    try:
+                        for c in json_mod.loads(ch.get('stdout') or '[]'):
+                            chart_names.append(c if isinstance(c, str) else (c.get('name') or c.get('xappName') or ''))
+                    except Exception:
+                        chart_names = [l.strip() for l in (ch.get('stdout') or '').splitlines() if l.strip()]
+                    ric_view['chart_in_repo'] = m_name in chart_names
+                    ric_view['charts'] = chart_names
+                    helm_r = subprocess.run(['helm', 'list', '-n', 'ricxapp', '-f', f'^{m_name}$', '-o', 'json'],
+                                            capture_output=True, text=True, timeout=30)
+                    try:
+                        ric_view['helm_release'] = (json_mod.loads(helm_r.stdout or '[]') or [None])[0]
+                    except Exception:
+                        ric_view['helm_release'] = None
+                    events_received = []
+                    if infra_status['catalog'] and model_id:
+                        for _ in range(6):
+                            try:
+                                ev = http_requests.get(f'{catalog_url}/models/{model_id}/events', timeout=5)
+                                if ev.status_code == 200:
+                                    body = ev.json()
+                                    events_received = body if isinstance(body, list) else body.get('events', [])
+                                    if events_received:
+                                        break
+                            except Exception:
+                                pass
+                            time.sleep(2)
+                    ric_view['catalog_events_from_appmgr'] = len(events_received)
+                    ric_view['last_event'] = events_received[-1] if events_received else None
+                    # Final catalog view of this model (status is driven by appmgr events + /verify)
+                    if infra_status['catalog'] and model_id:
+                        try:
+                            rg = http_requests.get(f'{catalog_url}/models/{model_id}', timeout=5)
+                            if rg.status_code == 200:
+                                cm = rg.json()
+                                ric_view['catalog_status'] = cm.get('status')
+                                ric_view['catalog_lifecycle'] = cm.get('lifecycle')
+                                if isinstance(deployment_result.get('catalog_deploy'), dict) and cm.get('status'):
+                                    deployment_result['catalog_deploy']['status'] = cm['status']
+                        except Exception:
+                            pass
+                    # appmgr's own account of what it published (resthooks.notify logs)
+                    try:
+                        lg = subprocess.run(kubectl_base + ['-n', 'ricplt', 'logs', 'deploy/deployment-ricplt-appmgr',
+                                                            '--since=5m', '--tail=400'],
+                                            capture_output=True, text=True, timeout=30)
+                        ric_view['appmgr_notify_log'] = [
+                            l.strip()[:300] for l in (lg.stdout or '').splitlines()
+                            if ('Posting notification' in l or 'Posting to subscription failed' in l
+                                or 'Nothing to publish' in l)
+                        ][-10:]
+                    except Exception as e:
+                        ric_view['appmgr_notify_log'] = [f'log read failed: {e}']
+                    deployment_result['ric_view'] = ric_view
+                    inst = (ric_view['appmgr_xapp'] or {}).get('instances') if isinstance(ric_view['appmgr_xapp'], dict) else None
+                    ok_bits = [
+                        f"appmgr status={ (ric_view['appmgr_xapp'] or {}).get('status') if isinstance(ric_view['appmgr_xapp'], dict) else '?'}",
+                        f"instances={'n/a (helm3 appmgr does not list pods)' if inst is None else len(inst)}",
+                        f"chart in repo={'yes' if ric_view['chart_in_repo'] else 'NO'}",
+                        f"helm release={'yes' if ric_view['helm_release'] else 'NO'}",
+                        f"appmgr->catalog events={len(events_received)}",
+                    ]
+                    steps[-1]['status'] = 'done' if (ric_view['chart_in_repo'] and ric_view['helm_release']) else 'warning'
+                    steps[-1]['detail'] = '; '.join(ok_bits)
+                    if not events_received and deployment_result.get('subscription', {}).get('success'):
+                        steps[-1]['status'] = 'warning'
+                        nl = ric_view.get('appmgr_notify_log') or []
+                        steps[-1]['detail'] += (' - no notification reached the catalog. appmgr log: '
+                                                + (' || '.join(nl[-3:]) if nl else 'no Posting/Nothing-to-publish lines in the last 5 min'))
 
                 deployment_result['cli_commands'] = cli_commands
                 deployment_result['verify_commands'] = [

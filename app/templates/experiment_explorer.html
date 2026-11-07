@@ -133,6 +133,15 @@
                                             </div>
                                         </div>
                                         {% endif %}
+                                        {% if experiment.ric_state.models %}
+                                        <small class="text-muted d-block" style="font-size:0.75em;">
+                                            Existing artifacts:
+                                            {% for m in experiment.ric_state.models %}
+                                                <code>{{ m.model_name }}</code> ({{ 'packaged' if m.packaged else 'published' }}){% if not loop.last %}, {% endif %}
+                                            {% endfor %}
+                                            &mdash; Steps 6/7 can be re-run directly.
+                                        </small>
+                                        {% endif %}
                                         <div class="row g-2 mt-2">
                                             <!-- Step 5: Publish -->
                                             <div class="col-md-4">
@@ -155,7 +164,7 @@
                                                         <span class="badge bg-warning text-dark rounded-circle mb-1" style="width:28px;height:28px;line-height:20px;font-size:14px;">6</span>
                                                         <h6 class="card-title mb-1">Package xApp</h6>
                                                         <p class="card-text text-muted" style="font-size:0.75em;">Docker image + A1 policies + xApp descriptor</p>
-                                                        <button class="btn btn-sm btn-warning w-100 step-btn step6-btn" disabled
+                                                        <button class="btn btn-sm btn-warning w-100 step-btn step6-btn" {% if not experiment.ric_state.published %}disabled{% endif %}
                                                                 onclick="runPipelineStep(this, 'package')">
                                                             <i class="bi bi-box-seam me-1"></i>Package
                                                         </button>
@@ -169,7 +178,7 @@
                                                         <span class="badge bg-success rounded-circle mb-1" style="width:28px;height:28px;line-height:20px;font-size:14px;">7</span>
                                                         <h6 class="card-title mb-1">Deploy to RIC</h6>
                                                         <p class="card-text text-muted" style="font-size:0.75em;">Deploy xApp to Near-RT RIC (ricxapp)</p>
-                                                        <button class="btn btn-sm btn-success w-100 step-btn step7-btn" disabled
+                                                        <button class="btn btn-sm btn-success w-100 step-btn step7-btn" {% if not experiment.ric_state.packaged %}disabled{% endif %}
                                                                 onclick="runPipelineStep(this, 'deploy')">
                                                             <i class="bi bi-rocket-takeoff me-1"></i>Deploy
                                                         </button>
@@ -410,6 +419,12 @@ async function runPipelineStep(button, step) {
                     msg += '<br><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Image not built yet (' + (data.build_backend || 'docker unavailable') + ') - will build at deploy</small>';
                 }
                 if (data.artifacts) msg += '<br><small>Artifacts: ' + data.artifacts.join(', ') + '</small>';
+                if (data.build_log) {
+                    msg += '<details class="mt-1"><summary class="small text-muted"><i class="bi bi-terminal me-1"></i>Docker build log'
+                         + (data.build_log_path ? ' (<code>' + data.build_log_path + '</code>)' : '') + '</summary>'
+                         + '<pre class="mt-1 mb-0 p-2 bg-dark text-light border" style="font-size:0.7em;max-height:260px;overflow:auto;white-space:pre-wrap;">'
+                         + data.build_log.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></details>';
+                }
                 // Save model_name so deploy step uses the correct model
                 if (data.model_name) pipeline.dataset.modelName = data.model_name;
                 // Enable step 7
@@ -487,6 +502,24 @@ async function runPipelineStep(button, step) {
                          + (pv.catalog_pkl_sha256 ? ' vs catalog <code>' + pv.catalog_pkl_sha256.substring(0, 12) + '…</code>' : ' (catalog hash unavailable)')
                          + (pv.model_id ? ' &middot; model_id <code>' + pv.model_id.substring(0, 8) + '…</code>' : '')
                          + '</small>';
+                }
+                // RIC-side view: what appmgr / chartmuseum / the catalog saw
+                if (dep.ric_view) {
+                    const rv = dep.ric_view;
+                    const ax = (rv.appmgr_xapp && typeof rv.appmgr_xapp === 'object') ? rv.appmgr_xapp : {};
+                    const okRic = rv.chart_in_repo && rv.helm_release;
+                    msg += '<br><small class="' + (okRic ? 'text-success' : 'text-warning') + '"><i class="bi bi-diagram-3 me-1"></i>'
+                         + 'Near-RT RIC view: appmgr status=<code>' + (ax.status || '?') + '</code>'
+                         + ' &middot; chart in repo: ' + (rv.chart_in_repo ? 'yes' : '<b>no</b>')
+                         + ' &middot; helm release: ' + (rv.helm_release ? ('<code>' + (rv.helm_release.chart || rv.helm_release.name) + '</code> ' + (rv.helm_release.status || '')) : '<b>none</b>')
+                         + ' &middot; appmgr&rarr;catalog events: ' + (rv.catalog_events_from_appmgr || 0)
+                         + '</small>';
+                    if (rv.last_event) {
+                        msg += '<br><small class="text-muted">last event: <code>' + JSON.stringify(rv.last_event).substring(0, 160).replace(/</g, '&lt;') + '</code></small>';
+                    }
+                }
+                if (dep.subscription && dep.subscription.target_url) {
+                    msg += '<br><small class="text-muted"><i class="bi bi-broadcast me-1"></i>appmgr notifies: <code>' + dep.subscription.target_url + '</code></small>';
                 }
                 // Show deployment steps for remote
                 if (dep.steps && dep.steps.length && stepsUl) {
